@@ -75,9 +75,7 @@ export async function prepareRunContext(
     };
   }
   if (workspace.mode === "random") {
-    const workspaces = await privateDirectory(
-      options.workspaceRoot ?? join(homedir(), "OctoWork")
-    );
+    const workspaces = await privateDirectory(options.workspaceRoot ?? join(homedir(), "OctoWork"));
     const proposed = join(workspaces, `agent-${randomUUID()}`, "workdir");
     const chosen = options.store.conversationWorkspace(options.agentSessionId, proposed);
     if (chosen.created) {

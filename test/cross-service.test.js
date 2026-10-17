@@ -43,19 +43,19 @@ const windowsSpec = {
 test("service specs reject relative paths, multiline text, and likely credentials", () => {
   assert.throws(
     () => normalizeServiceSpec({ ...unixSpec, command: "octo-daemon" }, "linux"),
-    error => error instanceof ServiceError && error.code === "INVALID_SPEC"
+    (error) => error instanceof ServiceError && error.code === "INVALID_SPEC"
   );
   assert.throws(
     () => normalizeServiceSpec({ ...unixSpec, description: "line one\nline two" }, "linux"),
-    error => error instanceof ServiceError && error.code === "INVALID_SPEC"
+    (error) => error instanceof ServiceError && error.code === "INVALID_SPEC"
   );
   assert.throws(
     () => normalizeServiceSpec({ ...unixSpec, args: ["--token", "secret"] }, "linux"),
-    error => error instanceof ServiceError && error.code === "INVALID_SPEC"
+    (error) => error instanceof ServiceError && error.code === "INVALID_SPEC"
   );
   assert.throws(
     () => normalizeServiceSpec({ ...unixSpec, environment: { ACCESS_TOKEN: "secret" } }, "linux"),
-    error => error instanceof ServiceError && error.code === "INVALID_SPEC"
+    (error) => error instanceof ServiceError && error.code === "INVALID_SPEC"
   );
 });
 
@@ -71,7 +71,10 @@ test("launchd renderer keeps executable and argv structured and escapes XML", ()
 
 test("systemd renderer quotes argv without a shell and applies lifecycle settings", () => {
   const unit = renderSystemdUnit(unixSpec);
-  assert.match(unit, /^ExecStart=:"\/opt\/octo runtime\/bin\/octo-daemon" "run" "--profile" "trusted user" "literal&value"$/m);
+  assert.match(
+    unit,
+    /^ExecStart=:"\/opt\/octo runtime\/bin\/octo-daemon" "run" "--profile" "trusted user" "literal&value"$/m
+  );
   assert.match(unit, /^Environment="OCTO_PROFILE=trusted & local"$/m);
   assert.match(unit, /^Restart=on-failure$/m);
   assert.match(unit, /^RestartSec=7s$/m);
@@ -99,25 +102,38 @@ test("Windows renderer uses a least-privilege current-user logon task", () => {
 
 test("Windows backend rejects fields Task Scheduler cannot preserve", () => {
   assert.throws(
-    () => renderWindowsTaskXml({ ...windowsSpec, environment: { OCTO_PROFILE: "default" } }, "WORKGROUP\\alice"),
-    error => error instanceof ServiceError && error.code === "UNSUPPORTED_SPEC"
+    () =>
+      renderWindowsTaskXml(
+        { ...windowsSpec, environment: { OCTO_PROFILE: "default" } },
+        "WORKGROUP\\alice"
+      ),
+    (error) => error instanceof ServiceError && error.code === "UNSUPPORTED_SPEC"
   );
   assert.throws(
-    () => renderWindowsTaskXml({ ...windowsSpec, restart: { policy: "always" } }, "WORKGROUP\\alice"),
-    error => error instanceof ServiceError && error.code === "UNSUPPORTED_SPEC"
+    () =>
+      renderWindowsTaskXml({ ...windowsSpec, restart: { policy: "always" } }, "WORKGROUP\\alice"),
+    (error) => error instanceof ServiceError && error.code === "UNSUPPORTED_SPEC"
   );
 });
 
-test("systemd install is idempotent and does not start a new service", async t => {
+test("systemd install is idempotent and does not start a new service", async (t) => {
   const home = await mkdtemp(join(tmpdir(), "octo-cross-service-systemd-"));
   t.after(() => rm(home, { recursive: true, force: true }));
   const runner = new FakeRunner((_command, args) => {
     if (args.includes("show")) {
-      return result(0, "LoadState=loaded\nUnitFileState=enabled\nActiveState=inactive\nSubState=dead\nMainPID=0\nExecMainStatus=0\n");
+      return result(
+        0,
+        "LoadState=loaded\nUnitFileState=enabled\nActiveState=inactive\nSubState=dead\nMainPID=0\nExecMainStatus=0\n"
+      );
     }
     return result();
   });
-  const backend = new SystemdUserBackend({ platform: "linux", runner, homeDirectory: home, environment: {} });
+  const backend = new SystemdUserBackend({
+    platform: "linux",
+    runner,
+    homeDirectory: home,
+    environment: {}
+  });
   const localSpec = {
     ...unixSpec,
     workingDirectory: home,
@@ -130,13 +146,13 @@ test("systemd install is idempotent and does not start a new service", async t =
 
   const unitPath = join(home, ".config", "systemd", "user", `${unixSpec.id}.service`);
   assert.equal(await readFile(unitPath, "utf8"), renderSystemdUnit(localSpec));
-  assert.equal(runner.calls.filter(call => call.args.includes("daemon-reload")).length, 1);
-  assert.equal(runner.calls.filter(call => call.args.includes("enable")).length, 2);
-  assert.equal(runner.calls.filter(call => call.args.includes("start")).length, 0);
-  assert.ok(runner.calls.every(call => call.options?.env !== process.env));
+  assert.equal(runner.calls.filter((call) => call.args.includes("daemon-reload")).length, 1);
+  assert.equal(runner.calls.filter((call) => call.args.includes("enable")).length, 2);
+  assert.equal(runner.calls.filter((call) => call.args.includes("start")).length, 0);
+  assert.ok(runner.calls.every((call) => call.options?.env !== process.env));
 });
 
-test("launchd install then start bootstraps the current user's LaunchAgent", async t => {
+test("launchd install then start bootstraps the current user's LaunchAgent", async (t) => {
   const home = await mkdtemp(join(tmpdir(), "octo-cross-service-launchd-"));
   t.after(() => rm(home, { recursive: true, force: true }));
   const runner = new FakeRunner((_command, args) => {
@@ -159,15 +175,21 @@ test("launchd install then start bootstraps the current user's LaunchAgent", asy
   };
 
   await backend.install(localSpec);
-  assert.equal(runner.calls.some(call => call.args[0] === "bootstrap"), false);
+  assert.equal(
+    runner.calls.some((call) => call.args[0] === "bootstrap"),
+    false
+  );
   await backend.start(localSpec);
 
-  const bootstrap = runner.calls.find(call => call.args[0] === "bootstrap");
+  const bootstrap = runner.calls.find((call) => call.args[0] === "bootstrap");
   assert.deepEqual(bootstrap?.args.slice(0, 2), ["bootstrap", "gui/501"]);
-  assert.match(bootstrap?.args[2] ?? "", /Library\/LaunchAgents\/cn\.mininglamp\.octo-runtime\.daemon\.plist$/);
+  assert.match(
+    bootstrap?.args[2] ?? "",
+    /Library\/LaunchAgents\/cn\.mininglamp\.octo-runtime\.daemon\.plist$/
+  );
 });
 
-test("Windows install registers structured XML and inspect detects no drift", async t => {
+test("Windows install registers structured XML and inspect detects no drift", async (t) => {
   const definitionDirectory = await mkdtemp(join(tmpdir(), "octo-cross-service-windows-"));
   t.after(() => rm(definitionDirectory, { recursive: true, force: true }));
   let registered = false;
@@ -177,17 +199,20 @@ test("Windows install registers structured XML and inspect detects no drift", as
     }
     if (command.endsWith("powershell.exe")) {
       if (!registered) return result(1, "", "task not found");
-      return result(0, JSON.stringify({
-        state: "Ready",
-        enabled: true,
-        last_exit_code: 0,
-        execute: windowsSpec.command,
-        arguments: "run --profile \"trusted user\" ends-with\\",
-        working_directory: windowsSpec.workingDirectory,
-        principal_user_id: "WORKGROUP\\alice",
-        principal_logon_type: "Interactive",
-        trigger_user_id: "WORKGROUP\\alice"
-      }));
+      return result(
+        0,
+        JSON.stringify({
+          state: "Ready",
+          enabled: true,
+          last_exit_code: 0,
+          execute: windowsSpec.command,
+          arguments: 'run --profile "trusted user" ends-with\\',
+          working_directory: windowsSpec.workingDirectory,
+          principal_user_id: "WORKGROUP\\alice",
+          principal_logon_type: "Interactive",
+          trigger_user_id: "WORKGROUP\\alice"
+        })
+      );
     }
     if (args[0] === "/Create") registered = true;
     return result();
@@ -202,10 +227,21 @@ test("Windows install registers structured XML and inspect detects no drift", as
   });
 
   await backend.install(windowsSpec);
-  const create = runner.calls.find(call => call.args[0] === "/Create");
-  assert.deepEqual(create?.args.slice(0, 4), ["/Create", "/TN", "\\OctoRuntime.cn.mininglamp.octo-runtime.daemon", "/XML"]);
-  assert.equal(runner.calls.some(call => call.args[0] === "/Run"), false);
-  assert.match(await readFile(join(definitionDirectory, `${windowsSpec.id}.xml`), "utf8"), /<LogonType>InteractiveToken<\/LogonType>/);
+  const create = runner.calls.find((call) => call.args[0] === "/Create");
+  assert.deepEqual(create?.args.slice(0, 4), [
+    "/Create",
+    "/TN",
+    "\\OctoRuntime.cn.mininglamp.octo-runtime.daemon",
+    "/XML"
+  ]);
+  assert.equal(
+    runner.calls.some((call) => call.args[0] === "/Run"),
+    false
+  );
+  assert.match(
+    await readFile(join(definitionDirectory, `${windowsSpec.id}.xml`), "utf8"),
+    /<LogonType>InteractiveToken<\/LogonType>/
+  );
 
   const status = await backend.inspect(windowsSpec);
   assert.equal(status.state, "stopped");
@@ -215,17 +251,26 @@ test("Windows install registers structured XML and inspect detects no drift", as
 
 test("backend factory selects the native user manager and rejects unsupported platforms", () => {
   const runner = new FakeRunner(() => result());
-  assert.equal(createServiceBackend({ platform: "darwin", runner, homeDirectory: "/tmp", uid: 501 }).kind, "launchd-user");
-  assert.equal(createServiceBackend({ platform: "linux", runner, homeDirectory: "/tmp" }).kind, "systemd-user");
-  assert.equal(createServiceBackend({
-    platform: "win32",
-    runner,
-    homeDirectory: "C:\\Users\\alice",
-    windowsUserId: "alice"
-  }).kind, "windows-user-task");
+  assert.equal(
+    createServiceBackend({ platform: "darwin", runner, homeDirectory: "/tmp", uid: 501 }).kind,
+    "launchd-user"
+  );
+  assert.equal(
+    createServiceBackend({ platform: "linux", runner, homeDirectory: "/tmp" }).kind,
+    "systemd-user"
+  );
+  assert.equal(
+    createServiceBackend({
+      platform: "win32",
+      runner,
+      homeDirectory: "C:\\Users\\alice",
+      windowsUserId: "alice"
+    }).kind,
+    "windows-user-task"
+  );
   assert.throws(
     () => createServiceBackend({ platform: "freebsd", runner, homeDirectory: "/tmp" }),
-    error => error instanceof ServiceError && error.code === "UNSUPPORTED_PLATFORM"
+    (error) => error instanceof ServiceError && error.code === "UNSUPPORTED_PLATFORM"
   );
 });
 

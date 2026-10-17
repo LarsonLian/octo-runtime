@@ -1,17 +1,65 @@
 {
   "version": 1,
   "adapters": [
-    { "type": "codex", "module": "@mininglamp-oss/octo-runtime-adapter-codex", "export": "codexAdapter" },
-    { "type": "claude-code", "module": "@mininglamp-oss/octo-runtime-adapter-claude-code", "export": "claudeCodeAdapter" },
-    { "type": "codebuddy", "module": "@mininglamp-oss/octo-runtime-adapter-codebuddy", "export": "codebuddyAdapter" },
-    { "type": "hermes", "module": "@mininglamp-oss/octo-runtime-adapter-hermes", "export": "hermesAdapter" },
-    { "type": "kimi-code", "module": "@mininglamp-oss/octo-runtime-adapter-kimi-code", "export": "kimiCodeAdapter" },
-    { "type": "mcode", "module": "@mininglamp-oss/octo-runtime-adapter-mcode", "export": "mcodeAdapter" },
-    { "type": "opencode", "module": "@mininglamp-oss/octo-runtime-adapter-opencode", "export": "opencodeAdapter" },
-    { "type": "openclaw", "module": "@mininglamp-oss/octo-runtime-adapter-openclaw", "export": "openclawAdapter" },
-    { "type": "qodercli", "module": "@mininglamp-oss/octo-runtime-adapter-qodercli", "export": "qoderCliAdapter" },
-    { "type": "qoderclicn", "module": "@mininglamp-oss/octo-runtime-adapter-qoderclicn", "export": "qoderCliCnAdapter" },
-    { "type": "zcode-gui", "module": "@mininglamp-oss/octo-runtime-adapter-zcode-gui", "export": "zcodeGuiAdapter" },
-    { "type": "antigravity", "module": "@mininglamp-oss/octo-runtime-adapter-antigravity", "export": "antigravityAdapter" }
+    {
+      "type": "codex",
+      "module": "@mininglamp-oss/octo-runtime-adapter-codex",
+      "export": "codexAdapter"
+    },
+    {
+      "type": "claude-code",
+      "module": "@mininglamp-oss/octo-runtime-adapter-claude-code",
+      "export": "claudeCodeAdapter"
+    },
+    {
+      "type": "codebuddy",
+      "module": "@mininglamp-oss/octo-runtime-adapter-codebuddy",
+      "export": "codebuddyAdapter"
+    },
+    {
+      "type": "hermes",
+      "module": "@mininglamp-oss/octo-runtime-adapter-hermes",
+      "export": "hermesAdapter"
+    },
+    {
+      "type": "kimi-code",
+      "module": "@mininglamp-oss/octo-runtime-adapter-kimi-code",
+      "export": "kimiCodeAdapter"
+    },
+    {
+      "type": "mcode",
+      "module": "@mininglamp-oss/octo-runtime-adapter-mcode",
+      "export": "mcodeAdapter"
+    },
+    {
+      "type": "opencode",
+      "module": "@mininglamp-oss/octo-runtime-adapter-opencode",
+      "export": "opencodeAdapter"
+    },
+    {
+      "type": "openclaw",
+      "module": "@mininglamp-oss/octo-runtime-adapter-openclaw",
+      "export": "openclawAdapter"
+    },
+    {
+      "type": "qodercli",
+      "module": "@mininglamp-oss/octo-runtime-adapter-qodercli",
+      "export": "qoderCliAdapter"
+    },
+    {
+      "type": "qoderclicn",
+      "module": "@mininglamp-oss/octo-runtime-adapter-qoderclicn",
+      "export": "qoderCliCnAdapter"
+    },
+    {
+      "type": "zcode-gui",
+      "module": "@mininglamp-oss/octo-runtime-adapter-zcode-gui",
+      "export": "zcodeGuiAdapter"
+    },
+    {
+      "type": "antigravity",
+      "module": "@mininglamp-oss/octo-runtime-adapter-antigravity",
+      "export": "antigravityAdapter"
+    }
   ]
 }

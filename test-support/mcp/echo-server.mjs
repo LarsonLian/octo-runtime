@@ -4,7 +4,7 @@ import readline from "node:readline";
 
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 
-input.on("line", line => {
+input.on("line", (line) => {
   let request;
   try {
     request = JSON.parse(line);
@@ -26,16 +26,18 @@ input.on("line", line => {
       break;
     case "tools/list":
       respond(request.id, {
-        tools: [{
-          name: "octo_echo",
-          description: "Returns a deterministic Octo Runtime MCP integration marker.",
-          inputSchema: {
-            type: "object",
-            properties: { value: { type: "string" } },
-            required: ["value"],
-            additionalProperties: false
+        tools: [
+          {
+            name: "octo_echo",
+            description: "Returns a deterministic Octo Runtime MCP integration marker.",
+            inputSchema: {
+              type: "object",
+              properties: { value: { type: "string" } },
+              required: ["value"],
+              additionalProperties: false
+            }
           }
-        }]
+        ]
       });
       break;
     case "tools/call": {
@@ -44,7 +46,10 @@ input.on("line", line => {
         fail(request.id, -32602, "octo_echo requires a string value");
         break;
       }
-      respond(request.id, { content: [{ type: "text", text: `octo-echo:${value}` }], isError: false });
+      respond(request.id, {
+        content: [{ type: "text", text: `octo-echo:${value}` }],
+        isError: false
+      });
       break;
     }
     default:

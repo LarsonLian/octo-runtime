@@ -140,9 +140,16 @@ export function assertHostRunReceipt(value: unknown): asserts value is HostRunRe
 export function assertHostControl(value: unknown): asserts value is HostControl {
   assertProtocolJson(value, "HOST_CONTROL_INVALID");
   if (!isRecord(value)) throw protocolError("HOST_CONTROL_INVALID");
-  if (value.type === "evidence" && value.name === "execution" && exactKeys(value, ["type", "name", "payload"])) {
-    try { assertExecutionEvidence(value.payload); }
-    catch { throw protocolError("HOST_CONTROL_INVALID"); }
+  if (
+    value.type === "evidence" &&
+    value.name === "execution" &&
+    exactKeys(value, ["type", "name", "payload"])
+  ) {
+    try {
+      assertExecutionEvidence(value.payload);
+    } catch {
+      throw protocolError("HOST_CONTROL_INVALID");
+    }
     return;
   }
   if (

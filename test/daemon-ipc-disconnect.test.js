@@ -21,18 +21,24 @@ test("a broken IPC client closes only its connection and leaves the daemon ready
     manifestPath: join(root, "test/fixtures/adapters.json"),
     hostEntrypoint: join(root, "packages/octo-runtime-adapter-host/dist/runner.js")
   });
-  const accepted = new Promise(resolve => app.server.once("connection", resolve));
+  const accepted = new Promise((resolve) => app.server.once("connection", resolve));
   const client = net.createConnection(socketPath);
   client.on("error", () => client.destroy());
   try {
     const connection = await accepted;
-    const closed = new Promise(resolve => connection.once("close", resolve));
-    assert.doesNotThrow(() => connection.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" })));
+    const closed = new Promise((resolve) => connection.once("close", resolve));
+    assert.doesNotThrow(() =>
+      connection.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }))
+    );
     await closed;
-    const status = JSON.parse((await execute(
-      process.execPath, [join(root, "apps/cli/dist/index.js"), "status"],
-      { cwd: root, env: { ...process.env, OCTO_RUNTIME_HOME: home } }
-    )).stdout);
+    const status = JSON.parse(
+      (
+        await execute(process.execPath, [join(root, "apps/cli/dist/index.js"), "status"], {
+          cwd: root,
+          env: { ...process.env, OCTO_RUNTIME_HOME: home }
+        })
+      ).stdout
+    );
     assert.equal(status.ready, true);
   } finally {
     client.destroy();

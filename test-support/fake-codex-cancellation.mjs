@@ -3,12 +3,12 @@ import { writeFileSync } from "node:fs";
 import { createInterface } from "node:readline";
 
 const reader = createInterface({ input: process.stdin });
-const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
+const send = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
 const respond = (id, result) => send({ jsonrpc: "2.0", id, result });
 const notify = (method, params) => send({ jsonrpc: "2.0", method, params });
 let threadId = "thread-cancel";
 
-reader.on("line", line => {
+reader.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.method === "initialize") {
     respond(message.id, { userAgent: "fake-codex-cancellation" });
@@ -27,7 +27,10 @@ reader.on("line", line => {
     });
     if (pidFile && grandchild.pid) writeFileSync(pidFile, String(grandchild.pid));
     respond(message.id, { turn: { id: "turn-cancel", status: "inProgress", items: [] } });
-    notify("turn/started", { threadId, turn: { id: "turn-cancel", status: "inProgress", items: [] } });
+    notify("turn/started", {
+      threadId,
+      turn: { id: "turn-cancel", status: "inProgress", items: [] }
+    });
     notify("item/started", {
       threadId,
       turnId: "turn-cancel",

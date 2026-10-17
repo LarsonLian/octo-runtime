@@ -23,7 +23,11 @@ import { chmod, lstat, mkdir, open, readFile, rm } from "node:fs/promises";
 import net, { type Server } from "node:net";
 import { dirname, join } from "node:path";
 import { readBoundedLines } from "@mininglamp-oss/octo-runtime-adapter-sdk";
-import { RuntimeLogging, assertRuntimeLogging, type RuntimeLoggingOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import {
+  RuntimeLogging,
+  assertRuntimeLogging,
+  type RuntimeLoggingOptions
+} from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import { INVOKE_REQUEST_MAX_BYTES } from "@mininglamp-oss/octo-runtime-protocol";
 import { HostRunService } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { InvocationManifest } from "./invocation-manifest.js";
@@ -125,7 +129,7 @@ export async function startDaemonServer({
   DaemonModules.validate(registrations);
   // Validate duplicate names before acquiring process resources.
   ExtraPlugins.validate(extraRegistrations);
-  if (registrations.some(entry => extraRegistrations.some(extra => extra.name === entry.id)))
+  if (registrations.some((entry) => extraRegistrations.some((extra) => extra.name === entry.id)))
     throw new Error("EXTRA_MODULE_NAME_CONFLICT");
   if (
     adapterHostRestartDelaysMs.length === 0 ||
@@ -137,7 +141,10 @@ export async function startDaemonServer({
 
   let releasePid = (): Promise<void> => Promise.resolve();
   let invocationManifest: InvocationManifest;
-  const invocationManifestPath = join(stateDirectory ?? join(homePath ?? dirname(socketPath), "run"), "invocations.json");
+  const invocationManifestPath = join(
+    stateDirectory ?? join(homePath ?? dirname(socketPath), "run"),
+    "invocations.json"
+  );
   try {
     if (pidPath) releasePid = await acquirePidFile(pidPath);
     if (process.platform !== "win32") {
@@ -170,7 +177,11 @@ export async function startDaemonServer({
     const spawned = await spawnAdapterHost({
       entrypoint: hostEntrypoint,
       manifest: manifestPath,
-      env: { ...process.env, OCTO_RUNTIME_HOME: homePath ?? dirname(socketPath), OCTO_RUNTIME_LOGS_DIRECTORY: logging?.directory ?? "" },
+      env: {
+        ...process.env,
+        OCTO_RUNTIME_HOME: homePath ?? dirname(socketPath),
+        OCTO_RUNTIME_LOGS_DIRECTORY: logging?.directory ?? ""
+      },
       ...(signal ? { signal } : {}),
       ...(adapterHostReadyTimeoutMs !== undefined
         ? { readyTimeoutMs: adapterHostReadyTimeoutMs }
@@ -258,7 +269,8 @@ export async function startDaemonServer({
     );
   };
   const withLocalConfiguration = (request: InvokeInput): InvokeInput => {
-    const selectedAdapter = contextItem(request.contexts, "octo.execution", "adapter")?.payload.type;
+    const selectedAdapter = contextItem(request.contexts, "octo.execution", "adapter")?.payload
+      .type;
     const adapterType = typeof selectedAdapter === "string" ? selectedAdapter : "codex";
     const configuration = localConfigurations(request.runMetadata)?.[adapterType];
     return configuration
@@ -289,7 +301,8 @@ export async function startDaemonServer({
     ),
     async *invokeFrames(input, environment) {
       const invocationId = requiredString(input.invocationId, "invocationId");
-      const selectedAdapter = contextItem(input.contexts, "octo.execution", "adapter")?.payload.type;
+      const selectedAdapter = contextItem(input.contexts, "octo.execution", "adapter")?.payload
+        .type;
       await invocationManifest.begin({
         invocationId,
         runId: requiredString(input.runId, "runId"),
@@ -393,12 +406,16 @@ export async function startDaemonServer({
 
   monitorAdapterHost(hostProcess);
   const host = new HostRunService(transportHost);
-  const modules = new DaemonModules(registrations, {
-    host,
-    homePath: homePath ?? dirname(socketPath),
-    account
-  }, name => logs.extra(name));
-  const extras = new ExtraPlugins(extraRegistrations, host, name => logs.extra(name));
+  const modules = new DaemonModules(
+    registrations,
+    {
+      host,
+      homePath: homePath ?? dirname(socketPath),
+      account
+    },
+    (name) => logs.extra(name)
+  );
+  const extras = new ExtraPlugins(extraRegistrations, host, (name) => logs.extra(name));
   const connections = new Set<net.Socket>();
   const server = net.createServer((socket) => {
     connections.add(socket);
@@ -412,20 +429,24 @@ export async function startDaemonServer({
       stopInput();
     });
     const stopInput = readBoundedLines(socket, INVOKE_REQUEST_MAX_BYTES, {
-      onError: () => socket.destroy(), onClose: () => {},
-      onTooLarge: () => socket.end(`${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "INVOKE_REQUEST_TOO_LARGE" } })}\n`),
+      onError: () => socket.destroy(),
+      onClose: () => {},
+      onTooLarge: () =>
+        socket.end(
+          `${JSON.stringify({ jsonrpc: "2.0", id: null, error: { code: -32000, message: "INVOKE_REQUEST_TOO_LARGE" } })}\n`
+        ),
       onLine: (line) => {
-      stopInput();
-      void handleRequestLine({
-        line,
-        socket,
-        host,
-        runtime,
-        modules,
-        extras,
-        resolveConfigurations: localConfigurations,
-        connectionId
-      });
+        stopInput();
+        void handleRequestLine({
+          line,
+          socket,
+          host,
+          runtime,
+          modules,
+          extras,
+          resolveConfigurations: localConfigurations,
+          connectionId
+        });
       }
     });
   });
@@ -439,20 +460,37 @@ export async function startDaemonServer({
     // 0600 restricts it to the current host account (there is no RBAC above it).
     if (process.platform !== "win32") await chmod(socketPath, 0o600);
     modules.startConfigured();
-    await Promise.allSettled(extraRegistrations.filter(entry => entry.enabled !== false).map(async entry => {
-      if (consoleOutput) console.error("extra loading", { name: entry.name });
-      try {
-        await extras.load(entry.name);
-        if (consoleOutput) {
-          try { console.error("extra internal status", JSON.stringify({ name: entry.name, status: await extras.inspect(entry.name) })); }
-          catch { console.error("extra internal status", { name: entry.name, error: "EXTRA_STATUS_FAILED" }); }
-        }
-      } finally {
-        if (consoleOutput) console.error("extra startup result", { name: entry.name, ...extras.status[entry.name] });
-      }
-    }));
+    await Promise.allSettled(
+      extraRegistrations
+        .filter((entry) => entry.enabled !== false)
+        .map(async (entry) => {
+          if (consoleOutput) console.error("extra loading", { name: entry.name });
+          try {
+            await extras.load(entry.name);
+            if (consoleOutput) {
+              try {
+                console.error(
+                  "extra internal status",
+                  JSON.stringify({ name: entry.name, status: await extras.inspect(entry.name) })
+                );
+              } catch {
+                console.error("extra internal status", {
+                  name: entry.name,
+                  error: "EXTRA_STATUS_FAILED"
+                });
+              }
+            }
+          } finally {
+            if (consoleOutput)
+              console.error("extra startup result", {
+                name: entry.name,
+                ...extras.status[entry.name]
+              });
+          }
+        })
+    );
     if (consoleOutput) {
-      for (const entry of extraRegistrations.filter(entry => entry.enabled === false))
+      for (const entry of extraRegistrations.filter((entry) => entry.enabled === false))
         console.error("extra startup result", { name: entry.name, phase: "disabled" });
     }
     if (consoleOutput)
@@ -494,7 +532,9 @@ export async function startDaemonServer({
       if (hostStableReset) clearTimeout(hostStableReset);
       if (consoleOutput) console.error("daemon stopping");
       let extraError: unknown;
-      await extras.close().catch(error => { extraError = error; });
+      await extras.close().catch((error) => {
+        extraError = error;
+      });
       await modules.close();
       await host.close();
       for (const connection of connections) connection.destroy();
@@ -506,7 +546,10 @@ export async function startDaemonServer({
       await releasePid();
       await logs.close();
       if (consoleOutput) console.error("daemon stopped");
-      if (extraError) throw extraError instanceof Error ? extraError : new Error("EXTRA_DISPOSE_FAILED", { cause: extraError });
+      if (extraError)
+        throw extraError instanceof Error
+          ? extraError
+          : new Error("EXTRA_DISPOSE_FAILED", { cause: extraError });
     }
   };
 }
@@ -547,7 +590,8 @@ async function handleRequestLine({
         try {
           const receipt = await host.submit(request.params?.input as InvokeInput, {
             signal: pending.signal,
-            executionEnvOverrides: request.params?.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"]
+            executionEnvOverrides: request.params
+              ?.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"]
           });
           request.params = { run_id: receipt.run_id };
         } finally {
@@ -785,7 +829,9 @@ async function dispatch({
       await extras.unload(requiredString(params.name, "name"));
       return extras.status;
     case "extra.status":
-      return params.name === undefined ? extras.status : extras.inspect(requiredString(params.name, "name"));
+      return params.name === undefined
+        ? extras.status
+        : extras.inspect(requiredString(params.name, "name"));
     case "module.start":
       return modules.start(requiredString(params.id, "id"), params.config);
     case "module.stop":
@@ -827,10 +873,10 @@ async function dispatch({
         resolveConfigurations(params)?.[requiredString(params.adapterType, "adapterType")]
       );
     case "agent_run.submit":
-      return host.submit(
-        params.input as InvokeInput,
-        { executionEnvOverrides: params.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"] }
-      );
+      return host.submit(params.input as InvokeInput, {
+        executionEnvOverrides:
+          params.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"]
+      });
     case "agent_run.native.respond":
       assertNativeInteractionResponse(params.response);
       await host.respondNativeRun(requiredString(params.run_id, "run_id"), params.response);

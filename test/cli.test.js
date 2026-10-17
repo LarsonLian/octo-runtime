@@ -20,7 +20,15 @@ const execute = promisify(execFile);
 const emptyContext = () => ({ schema: "octo.context-envelope/v3", items: [] });
 const defaultContext = () => ({
   schema: "octo.context-envelope/v3",
-  items: [ { namespace: "octo.execution", name: "adapter", payload: { type: "test" } }, { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: process.cwd() } }, { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } } ]
+  items: [
+    { namespace: "octo.execution", name: "adapter", payload: { type: "test" } },
+    {
+      namespace: "octo.execution",
+      name: "workspace",
+      payload: { mode: "fixed", path: process.cwd() }
+    },
+    { namespace: "octo.security", name: "approval_policy", payload: { mode: "full_access" } }
+  ]
 });
 
 test("CLI exposes Runtime operations and process-local Run controls", async () => {
@@ -32,15 +40,23 @@ test("CLI exposes Runtime operations and process-local Run controls", async () =
     manifestPath: join(root, "test/fixtures/adapters.json"),
     hostEntrypoint: join(root, "packages/octo-runtime-adapter-host/dist/runner.js")
   });
-  const cli = async args => JSON.parse((await execute(
-    process.execPath, [join(root, "apps/cli/dist/index.js"), ...args],
-    { cwd: root, env: { ...process.env, OCTO_RUNTIME_HOME: home } }
-  )).stdout);
+  const cli = async (args) =>
+    JSON.parse(
+      (
+        await execute(process.execPath, [join(root, "apps/cli/dist/index.js"), ...args], {
+          cwd: root,
+          env: { ...process.env, OCTO_RUNTIME_HOME: home }
+        })
+      ).stdout
+    );
   try {
     const status = await cli(["status"]);
     assert.equal(status.ready, true);
     assert.equal(status.counts, undefined);
-    assert.deepEqual((await cli(["adapter", "list"])).map(adapter => adapter.type), ["test"]);
+    assert.deepEqual(
+      (await cli(["adapter", "list"])).map((adapter) => adapter.type),
+      ["test"]
+    );
     await assert.rejects(cli(["agent-session", "list"]), /unknown command/);
     await assert.rejects(cli(["agent-run", "list"]), /unknown command/);
     await assert.rejects(cli(["agent-run", "events", "missing"]), /unknown command/);
@@ -67,10 +83,13 @@ test("CLI explains how to start a missing daemon", async () => {
   const root = fileURLToPath(new URL("..", import.meta.url));
   const home = await mkdtemp(join(tmpdir(), "oh-cli-missing-"));
   try {
-    await assert.rejects(execute(
-      process.execPath, [join(root, "apps/cli/dist/index.js"), "status"],
-      { cwd: root, env: { ...process.env, OCTO_RUNTIME_HOME: home } }
-    ), /cannot connect to Octo Runtime daemon/);
+    await assert.rejects(
+      execute(process.execPath, [join(root, "apps/cli/dist/index.js"), "status"], {
+        cwd: root,
+        env: { ...process.env, OCTO_RUNTIME_HOME: home }
+      }),
+      /cannot connect to Octo Runtime daemon/
+    );
   } finally {
     await rm(home, { recursive: true, force: true });
   }
@@ -88,7 +107,10 @@ test("CLI command help is local and describes adapter operations", async () => {
   const help = await execute(process.execPath, [cli, "--help"]);
   assert.doesNotMatch(help.stdout, /octo-runtime login/);
   for (const option of ["--force", "--timeout-ms=5000", "--wait-drained"]) {
-    await assert.rejects(execute(process.execPath, [cli, "daemon", "stop", option]), /unknown option/);
+    await assert.rejects(
+      execute(process.execPath, [cli, "daemon", "stop", option]),
+      /unknown option/
+    );
   }
 
   const adapterHelp = await execute(process.execPath, [cli, "adapter", "--help"]);
@@ -110,7 +132,8 @@ test("CLI help, version and removed commands never initialize Home or start a da
   const version = JSON.parse(await readFile(join(root, "package.json"), "utf8")).version;
   const build = JSON.parse(await readFile(join(root, "apps/cli/dist/build-info.json"), "utf8"));
   const commit = `commit:${build.commit?.slice(0, 12) ?? "unknown"}${build.dirty ? " (dirty)" : ""}`;
-  const run = args => execute(process.execPath, [cli, "--home", home, ...args], { timeout: 5000, cwd: directory });
+  const run = (args) =>
+    execute(process.execPath, [cli, "--home", home, ...args], { timeout: 5000, cwd: directory });
   try {
     for (const args of [[], ["--help"], ["-h"], ["help"]]) {
       const { stdout, stderr } = await run(args);
@@ -130,21 +153,40 @@ test("CLI help, version and removed commands never initialize Home or start a da
     const daemon = (await run(["daemon"])).stdout;
     assert.equal(daemon, (await run(["daemon", "--help"])).stdout);
     assert.equal(daemon, (await run(["help", "daemon"])).stdout);
-    assert.deepEqual([...daemon.matchAll(/^  (start|stop|restart|status|install|uninstall|run)\s/gm)].map(match => match[1]),
-      ["start", "stop", "restart", "status", "install", "uninstall", "run"]);
+    assert.deepEqual(
+      [...daemon.matchAll(/^  (start|stop|restart|status|install|uninstall|run)\s/gm)].map(
+        (match) => match[1]
+      ),
+      ["start", "stop", "restart", "status", "install", "uninstall", "run"]
+    );
     for (const action of ["start", "stop", "restart", "status", "install", "uninstall", "run"]) {
-      assert.match((await run(["daemon", action, "--help"])).stdout, new RegExp(`Usage:\\n  octo-runtime daemon ${action}`));
+      assert.match(
+        (await run(["daemon", action, "--help"])).stdout,
+        new RegExp(`Usage:\\n  octo-runtime daemon ${action}`)
+      );
     }
     const playboard = (await run(["playboard", "--help"])).stdout;
     assert.match(playboard, /Examples:/);
     assert.match(playboard, /octo.context-envelope\/v3/);
     assert.match(playboard, /Reference:/);
-    for (const args of [["extra", "status"], ["extra", "load", "x"], ["extra", "unload", "x"],
-      ["adapter", "connect", "openclaw"], ["agent-run", "get", "x"], ["agent-run", "cancel", "x"],
-      ["daemon", "missing", "--help"], ["help", "missing"]]) {
+    for (const args of [
+      ["extra", "status"],
+      ["extra", "load", "x"],
+      ["extra", "unload", "x"],
+      ["adapter", "connect", "openclaw"],
+      ["agent-run", "get", "x"],
+      ["agent-run", "cancel", "x"],
+      ["daemon", "missing", "--help"],
+      ["help", "missing"]
+    ]) {
       await assert.rejects(run(args), /unknown command/);
     }
-    for (const args of [["daemon", "--quiet"], ["daemon", "start", "--bogus"], ["--home"], ["status", "extra"]]) {
+    for (const args of [
+      ["daemon", "--quiet"],
+      ["daemon", "start", "--bogus"],
+      ["--home"],
+      ["status", "extra"]
+    ]) {
       await assert.rejects(run(args));
     }
     assert.equal(existsSync(home), false);
@@ -161,7 +203,9 @@ async function unusedLoopbackPort() {
   });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("test listener has no TCP port");
-  await new Promise((resolve, reject) => server.close(error => error ? reject(error) : resolve()));
+  await new Promise((resolve, reject) =>
+    server.close((error) => (error ? reject(error) : resolve()))
+  );
   return address.port;
 }
 
@@ -183,28 +227,39 @@ test("daemon PID file enforces one process per Runtime Home and is removed on cl
     await assert.rejects(startDaemonServer(options), /already running/);
 
     const cli = join(root, "apps/cli/dist/index.js");
-    const concise = await execute(process.execPath, [cli, "--home", home, "daemon", "run"])
-      .then(() => undefined, error => error);
+    const concise = await execute(process.execPath, [cli, "--home", home, "daemon", "run"]).then(
+      () => undefined,
+      (error) => error
+    );
     assert.equal(concise.code, 1);
     assert.match(concise.stderr, /extras discovered/);
     assert.match(concise.stderr, /❌ Octo Runtime daemon is already running with pid \d+\n$/);
     assert.doesNotMatch(concise.stderr, /\n\s+at /);
 
-    const verbose = await execute(process.execPath, [cli, "--verbose", "--home", home, "daemon", "run"])
-      .then(() => undefined, error => error);
+    const verbose = await execute(process.execPath, [
+      cli,
+      "--verbose",
+      "--home",
+      home,
+      "daemon",
+      "run"
+    ]).then(
+      () => undefined,
+      (error) => error
+    );
     assert.equal(verbose.code, 1);
     assert.match(verbose.stderr, /Error: Octo Runtime daemon is already running with pid \d+/);
     assert.match(verbose.stderr, /\n\s+at /);
   } finally {
     await app.close();
-    await assert.rejects(access(pidPath), error => error.code === "ENOENT");
+    await assert.rejects(access(pidPath), (error) => error.code === "ENOENT");
     await rm(home, { recursive: true, force: true });
   }
 });
 
 test("adapter-host restart delay follows a capped staircase", () => {
   assert.deepEqual(
-    [1, 2, 3, 4, 5].map(attempt => adapterHostRestartDelayMs(attempt)),
+    [1, 2, 3, 4, 5].map((attempt) => adapterHostRestartDelayMs(attempt)),
     [1_000, 5_000, 10_000, 20_000, 20_000]
   );
 });
@@ -220,7 +275,11 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     adapterHostRestartDelaysMs: [500, 100, 100, 100]
   });
   try {
-    const request = invokeRequest({ modelInput: "wait-for-host-exit", prompt: "wait-for-host-exit", approvalMode: "full_access" });
+    const request = invokeRequest({
+      modelInput: "wait-for-host-exit",
+      prompt: "wait-for-host-exit",
+      approvalMode: "full_access"
+    });
     await preparedSubmit(app.host, "test", request, { protocolMode: "canonical" });
     await waitFor(() => app.host.status.activeRuns === 1);
     const originalPid = app.hostProcess.child.pid;
@@ -228,28 +287,55 @@ test("daemon terminalizes in-flight work and restarts adapter-host without exiti
     await waitFor(() => app.host.get(request.runId).terminal);
     assert.equal(app.host.get(request.runId).terminal.control.state, "lost");
     await waitFor(() => app.runtime.adapterHost.state === "restarting");
-    const restartingStatus = JSON.parse((await execute(
-      process.execPath, [join(root, "apps/cli/dist/index.js"), "status"],
-      { cwd: root, env: { ...process.env, OCTO_RUNTIME_HOME: home } }
-    )).stdout);
+    const restartingStatus = JSON.parse(
+      (
+        await execute(process.execPath, [join(root, "apps/cli/dist/index.js"), "status"], {
+          cwd: root,
+          env: { ...process.env, OCTO_RUNTIME_HOME: home }
+        })
+      ).stdout
+    );
     assert.equal(restartingStatus.ready, false);
     assert.equal(restartingStatus.adapterHost.state, "restarting");
-    await assert.rejects(preparedSubmit(app.host, "test", invokeRequest({
-      runId: "unavailable", invocationId: "unavailable-invocation", approvalMode: "full_access"
-    }), { protocolMode: "canonical" }), /restarting/);
-    await waitFor(() => app.runtime.adapterHost.state === "ready" && app.hostProcess.child.pid !== originalPid);
+    await assert.rejects(
+      preparedSubmit(
+        app.host,
+        "test",
+        invokeRequest({
+          runId: "unavailable",
+          invocationId: "unavailable-invocation",
+          approvalMode: "full_access"
+        }),
+        { protocolMode: "canonical" }
+      ),
+      /restarting/
+    );
+    await waitFor(
+      () => app.runtime.adapterHost.state === "ready" && app.hostProcess.child.pid !== originalPid
+    );
     assert.equal(app.runtime.adapterHost.restartAttempt, 1);
-    assert.deepEqual((await app.hostProcess.client.list()).map(adapter => adapter.type), ["test"]);
+    assert.deepEqual(
+      (await app.hostProcess.client.list()).map((adapter) => adapter.type),
+      ["test"]
+    );
     const firstReplacementPid = app.hostProcess.child.pid;
     assert.equal(app.hostProcess.child.kill("SIGKILL"), true);
     await waitFor(() => app.runtime.adapterHost.state === "restarting");
     assert.equal(app.runtime.adapterHost.restartAttempt, 2);
-    await waitFor(() => app.runtime.adapterHost.state === "ready" && app.hostProcess.child.pid !== firstReplacementPid);
+    await waitFor(
+      () =>
+        app.runtime.adapterHost.state === "ready" &&
+        app.hostProcess.child.pid !== firstReplacementPid
+    );
     assert.equal(app.runtime.adapterHost.restartAttempt, 2);
-    const recoveredStatus = JSON.parse((await execute(
-      process.execPath, [join(root, "apps/cli/dist/index.js"), "status"],
-      { cwd: root, env: { ...process.env, OCTO_RUNTIME_HOME: home } }
-    )).stdout);
+    const recoveredStatus = JSON.parse(
+      (
+        await execute(process.execPath, [join(root, "apps/cli/dist/index.js"), "status"], {
+          cwd: root,
+          env: { ...process.env, OCTO_RUNTIME_HOME: home }
+        })
+      ).stdout
+    );
     assert.equal(recoveredStatus.ready, true);
     assert.equal(recoveredStatus.adapterHost.state, "ready");
   } finally {
@@ -262,14 +348,19 @@ test("adapter-host readiness timeout advances the restart staircase", async () =
   const root = fileURLToPath(new URL("..", import.meta.url));
   const home = await mkdtemp(join(tmpdir(), "oh-host-timeout-"));
   const manifestPath = join(home, "adapters.json");
-  await writeFile(manifestPath, JSON.stringify({
-    version: 1,
-    adapters: [{
-      type: "test",
-      module: join(root, "test/fixtures/test-adapter.js"),
-      export: "testAdapter"
-    }]
-  }));
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      version: 1,
+      adapters: [
+        {
+          type: "test",
+          module: join(root, "test/fixtures/test-adapter.js"),
+          export: "testAdapter"
+        }
+      ]
+    })
+  );
   const app = await startDaemonServer({
     socketPath: join(home, "d.sock"),
     homePath: home,
@@ -282,9 +373,10 @@ test("adapter-host readiness timeout advances the restart staircase", async () =
     const originalPid = app.hostProcess.child.pid;
     assert.equal(app.hostProcess.child.kill("SIGKILL"), true);
     await waitFor(
-      () => app.runtime.adapterHost.state === "ready"
-        && app.runtime.adapterHost.restartAttempt === 2
-        && app.hostProcess.child.pid !== originalPid,
+      () =>
+        app.runtime.adapterHost.state === "ready" &&
+        app.runtime.adapterHost.restartAttempt === 2 &&
+        app.hostProcess.child.pid !== originalPid,
       3_000
     );
     assert.equal(readFileSync(`${manifestPath}.host-attempt`, "utf8"), "3");
@@ -298,14 +390,19 @@ test("daemon close cancels a hung adapter-host replacement handshake", async () 
   const root = fileURLToPath(new URL("..", import.meta.url));
   const home = await mkdtemp(join(tmpdir(), "oh-host-cancel-"));
   const manifestPath = join(home, "adapters.json");
-  await writeFile(manifestPath, JSON.stringify({
-    version: 1,
-    adapters: [{
-      type: "test",
-      module: join(root, "test/fixtures/test-adapter.js"),
-      export: "testAdapter"
-    }]
-  }));
+  await writeFile(
+    manifestPath,
+    JSON.stringify({
+      version: 1,
+      adapters: [
+        {
+          type: "test",
+          module: join(root, "test/fixtures/test-adapter.js"),
+          export: "testAdapter"
+        }
+      ]
+    })
+  );
   const app = await startDaemonServer({
     socketPath: join(home, "d.sock"),
     homePath: home,

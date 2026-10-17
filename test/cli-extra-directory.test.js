@@ -139,7 +139,19 @@ test(
           ]
         }
       ],
-      ["channel-wecom", { bots: [{ bot_id: "qa", enabled: false, adapter: { adapter_type: "codex", workdir: home }, context }] }],
+      [
+        "channel-wecom",
+        {
+          bots: [
+            {
+              bot_id: "qa",
+              enabled: false,
+              adapter: { adapter_type: "codex", workdir: home },
+              context
+            }
+          ]
+        }
+      ],
       [
         "webui",
         { port, sessionStorePath: join(home, "sessions.json"), defaultProjectPath: home, context }
@@ -194,7 +206,8 @@ test(
     for (const name of ["channel-gateway", "channel-wecom", "webui"]) {
       assert.equal(status?.extras[name]?.phase, "loaded", name);
       const internal = await callDaemon(join(home, "sockets/octo-runtime-daemon.sock"), {
-        method: "extra.status", params: { name }
+        method: "extra.status",
+        params: { name }
       });
       assert.deepEqual(internal.errors, [], name);
       if (name !== "webui") {

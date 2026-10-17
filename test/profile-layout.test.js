@@ -21,7 +21,16 @@ test("profile labels accept exactly 1-128 characters", () => {
   for (const profile of ["a", "work.dev_1-2", "a".repeat(128)]) {
     assert.doesNotThrow(() => assertProfileName(profile));
   }
-  for (const profile of ["", "a".repeat(129), "../work", "work/name", " work", "work ", ".work", "a\n"]) {
+  for (const profile of [
+    "",
+    "a".repeat(129),
+    "../work",
+    "work/name",
+    " work",
+    "work ",
+    ".work",
+    "a\n"
+  ]) {
     assert.throws(() => assertProfileName(profile), /--profile/);
   }
 });
@@ -34,20 +43,29 @@ test("legacy Home-global Runtime state migrates into default without losing the 
     await mkdir(join(home, "profiles/default/credentials"), { recursive: true });
     await mkdir(join(home, "identity"), { recursive: true });
     await mkdir(join(home, "credentials"), { recursive: true });
-    await writeFile(join(home, "config.json"), JSON.stringify({
-      schema_version: 1,
-      default_profile: "default",
-      enabled_profiles: ["default"],
-      channel: "stable"
-    }));
-    await writeFile(join(home, "profiles/default/config.json"), JSON.stringify({
-      schema_version: 1,
-      profile: "default",
-      server_url: "https://server.example",
-      runtime_name: "default"
-    }));
+    await writeFile(
+      join(home, "config.json"),
+      JSON.stringify({
+        schema_version: 1,
+        default_profile: "default",
+        enabled_profiles: ["default"],
+        channel: "stable"
+      })
+    );
+    await writeFile(
+      join(home, "profiles/default/config.json"),
+      JSON.stringify({
+        schema_version: 1,
+        profile: "default",
+        server_url: "https://server.example",
+        runtime_name: "default"
+      })
+    );
     await writeFile(join(home, "profiles/default/identity/runtime.json"), "stale-identity");
-    await writeFile(join(home, "profiles/default/credentials/runtime-token.json"), "stale-credential");
+    await writeFile(
+      join(home, "profiles/default/credentials/runtime-token.json"),
+      "stale-credential"
+    );
     await writeFile(join(home, "identity/runtime.json"), "current-identity");
     await writeFile(join(home, "credentials/runtime-token.json"), "current-credential");
     await writeFile(join(home, "agent-work.db"), "current-outbox");
@@ -58,10 +76,16 @@ test("legacy Home-global Runtime state migrates into default without losing the 
     assert.equal(await readFile(join(home, "agent-work.db"), "utf8"), "current-outbox");
     await assert.rejects(access(join(paths.profileRoot, "agent-work.db")), { code: "ENOENT" });
     assert.equal(
-      await readFile(join(home, "run/profile-layout-v1-backup/default/overridden/identity/runtime.json"), "utf8"),
+      await readFile(
+        join(home, "run/profile-layout-v1-backup/default/overridden/identity/runtime.json"),
+        "utf8"
+      ),
       "stale-identity"
     );
-    await assert.rejects(access(join(home, "profiles/default")), error => error.code === "ENOENT");
+    await assert.rejects(
+      access(join(home, "profiles/default")),
+      (error) => error.code === "ENOENT"
+    );
     assert.equal(await migrateLegacyProfileLayout(paths), false);
 
     await reconcileHomeConfiguration(paths, "default", "stable");

@@ -103,7 +103,8 @@ export async function buildClaudeCommand(
 ) {
   if (hasImageInput(req))
     throw new Error("UNSUPPORTED_INPUT_MODALITY: claude-code does not encode image input");
-  const mode = contextActmode(req.context) === "plan" ? "plan" : claudePermissionMode(req.approvalMode);
+  const mode =
+    contextActmode(req.context) === "plan" ? "plan" : claudePermissionMode(req.approvalMode);
   const servers = invocationMcpServers(req);
   assertMcpOptions(servers, "claude-code", []);
   // Native Claude expands placeholders again at connection time. Reject values
@@ -833,17 +834,36 @@ export function createClaudeCodeAdapter({
         },
         parseLine: parseJsonLine
       })) {
-        if (requestedMode !== undefined && !modeReported && native.type === "system" && native.subtype === "init") {
+        if (
+          requestedMode !== undefined &&
+          !modeReported &&
+          native.type === "system" &&
+          native.subtype === "init"
+        ) {
           modeReported = true;
-          const nativeMode = typeof native.permissionMode === "string" ? native.permissionMode : undefined;
-          const effective = nativeMode === "plan" ? "plan" : nativeMode && ["default", "auto", "bypassPermissions", "acceptEdits", "dontAsk"].includes(nativeMode) ? "default" : null;
-          yield actmodeEvidence({
-            requested: requestedMode,
-            effective,
-            status: effective === requestedMode ? "applied" : "unknown",
-            ...(nativeMode ? { nativeMode } : {}),
-            ...(effective !== requestedMode ? { effective: null, reason: "provider_unconfirmed" as const } : {})
-          }, context?.protocolMode);
+          const nativeMode =
+            typeof native.permissionMode === "string" ? native.permissionMode : undefined;
+          const effective =
+            nativeMode === "plan"
+              ? "plan"
+              : nativeMode &&
+                  ["default", "auto", "bypassPermissions", "acceptEdits", "dontAsk"].includes(
+                    nativeMode
+                  )
+                ? "default"
+                : null;
+          yield actmodeEvidence(
+            {
+              requested: requestedMode,
+              effective,
+              status: effective === requestedMode ? "applied" : "unknown",
+              ...(nativeMode ? { nativeMode } : {}),
+              ...(effective !== requestedMode
+                ? { effective: null, reason: "provider_unconfirmed" as const }
+                : {})
+            },
+            context?.protocolMode
+          );
         }
         if (native.type === "system" && native.subtype === "init")
           context?.reportActivity?.({ kind: "turn_started", method: "turn_start" });

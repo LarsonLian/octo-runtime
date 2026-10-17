@@ -567,18 +567,38 @@ test("Channel public input keeps automatic material budget fallback without drop
   const context = {
     schema: "octo.context-envelope/v3",
     items: [
-      ...Array.from({ length: 28 }, (_, i) => ({ namespace: "extra.business", name: `item-${i}`, payload: {} })),
+      ...Array.from({ length: 28 }, (_, i) => ({
+        namespace: "extra.business",
+        name: `item-${i}`,
+        payload: {}
+      })),
       { namespace: "extra.im", name: "history", payload: { automatic: true, text: "history" } },
-      { namespace: "extra.im", name: "mention-instructions", payload: { automatic: true, text: "guidance" } }
+      {
+        namespace: "extra.im",
+        name: "mention-instructions",
+        payload: { automatic: true, text: "guidance" }
+      }
     ]
   };
-  const create = () => createChannelInput(config(),
-    { messageId: "budget", senderId: "actor", conversationId: "channel", text: "request" },
-    context, "key", { id: "session", generation: 1 }, new AbortController().signal);
+  const create = () =>
+    createChannelInput(
+      config(),
+      { messageId: "budget", senderId: "actor", conversationId: "channel", text: "request" },
+      context,
+      "key",
+      { id: "session", generation: 1 },
+      new AbortController().signal
+    );
   const { request } = create();
   assert.equal(request.contexts.items.length, 32);
-  assert.equal(request.contexts.items.filter((item) => item.namespace === "extra.business").length, 28);
-  assert.equal(request.contexts.items.some((item) => item.namespace === "extra.im"), false);
+  assert.equal(
+    request.contexts.items.filter((item) => item.namespace === "extra.business").length,
+    28
+  );
+  assert.equal(
+    request.contexts.items.some((item) => item.namespace === "extra.im"),
+    false
+  );
   assert.equal(context.items.length, 30);
   context.items.at(-2).payload.automatic = false;
   assert.throws(create, /CONTEXT_BUDGET_EXCEEDED/);

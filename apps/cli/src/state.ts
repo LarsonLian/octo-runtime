@@ -34,7 +34,10 @@ export interface ProfileConfiguration {
   runtime_name: string;
   agent_identity?: string;
   agent_name?: string;
-  adapters?: Record<string, { execution: { provider_options: Record<string, string>; credential_ref?: string } }>;
+  adapters?: Record<
+    string,
+    { execution: { provider_options: Record<string, string>; credential_ref?: string } }
+  >;
 }
 
 export interface RuntimeIdentity {
@@ -100,9 +103,10 @@ export function runtimePaths(home: string, profile: string): RuntimePaths {
     openclawRoot: join(profileRoot, "adapters", "openclaw"),
     setupLock: join(absoluteHome, "run", "setup.lock"),
     pid: join(absoluteHome, "octo-daemon.pid"),
-    socket: process.platform === "win32"
-      ? `\\\\.\\pipe\\octo-runtime-${portableHomeId(absoluteHome)}`
-      : join(absoluteHome, "sockets", "octo-runtime-daemon.sock"),
+    socket:
+      process.platform === "win32"
+        ? `\\\\.\\pipe\\octo-runtime-${portableHomeId(absoluteHome)}`
+        : join(absoluteHome, "sockets", "octo-runtime-daemon.sock"),
     logs: join(absoluteHome, "logs")
   };
 }
@@ -111,7 +115,11 @@ export function runtimePaths(home: string, profile: string): RuntimePaths {
 export async function ensureMachineIdentity(paths: RuntimePaths): Promise<MachineIdentity> {
   const existing = await readJsonFile<MachineIdentity>(paths.machine);
   if (existing !== undefined) {
-    if (!existing || existing.schema_version !== 1 || !/^machine_[0-9a-f-]{36}$/.test(existing.machine_id)) {
+    if (
+      !existing ||
+      existing.schema_version !== 1 ||
+      !/^machine_[0-9a-f-]{36}$/.test(existing.machine_id)
+    ) {
       throw new Error(`invalid machine identity: ${paths.machine}`);
     }
     return existing;
@@ -123,7 +131,9 @@ export async function ensureMachineIdentity(paths: RuntimePaths): Promise<Machin
 
 export function assertProfileName(profile: string): void {
   if (typeof profile !== "string" || !PROFILE_NAME.test(profile)) {
-    throw new Error("--profile must start with a letter or digit and contain only letters, digits, dot, underscore, or hyphen (maximum 128 characters)");
+    throw new Error(
+      "--profile must start with a letter or digit and contain only letters, digits, dot, underscore, or hyphen (maximum 128 characters)"
+    );
   }
   if (RESERVED_PROFILE_NAMES.has(profile.toLowerCase())) {
     throw new Error(`--profile conflicts with Runtime Home infrastructure: ${profile}`);
@@ -144,20 +154,31 @@ export async function prepareRuntimeDirectories(paths: RuntimePaths): Promise<vo
 }
 
 /** Upgrade the former Home-global Runtime files and profiles/<name> layout. */
-export async function migrateLegacyProfileLayout(paths: RuntimePaths, daemonRunning = false): Promise<boolean> {
+export async function migrateLegacyProfileLayout(
+  paths: RuntimePaths,
+  daemonRunning = false
+): Promise<boolean> {
   const legacyProfileRoot = join(paths.home, "profiles", basename(paths.profileRoot));
-  const legacyGlobalFiles = basename(paths.profileRoot) === "default"
-    ? [
-      [join(paths.home, "identity", "runtime.json"), paths.identity],
-      [join(paths.home, "credentials", "runtime-token.json"), paths.credential],
-    ]
-    : [];
+  const legacyGlobalFiles =
+    basename(paths.profileRoot) === "default"
+      ? [
+          [join(paths.home, "identity", "runtime.json"), paths.identity],
+          [join(paths.home, "credentials", "runtime-token.json"), paths.credential]
+        ]
+      : [];
   const hasLegacyProfile = await pathExists(legacyProfileRoot);
-  const hasLegacyGlobal = (await Promise.all(legacyGlobalFiles.map(([source]) => pathExists(source)))).some(Boolean);
+  const hasLegacyGlobal = (
+    await Promise.all(legacyGlobalFiles.map(([source]) => pathExists(source)))
+  ).some(Boolean);
   if (!hasLegacyProfile && !hasLegacyGlobal) return false;
   if (daemonRunning) throw new Error("stop the daemon before migrating the legacy profile layout");
 
-  const backupRoot = join(paths.home, "run", "profile-layout-v1-backup", basename(paths.profileRoot));
+  const backupRoot = join(
+    paths.home,
+    "run",
+    "profile-layout-v1-backup",
+    basename(paths.profileRoot)
+  );
   await secureDirectory(dirname(paths.profileRoot));
   if (hasLegacyProfile) {
     if (await pathExists(paths.profileRoot)) {
@@ -168,14 +189,22 @@ export async function migrateLegacyProfileLayout(paths: RuntimePaths, daemonRunn
   }
   await secureDirectory(paths.profileRoot);
   for (const [source, target] of legacyGlobalFiles) {
-    if (!await pathExists(source)) continue;
+    if (!(await pathExists(source))) continue;
     if (await pathExists(target)) {
-      await moveToBackup(target, join(backupRoot, "overridden", target.slice(paths.profileRoot.length + 1)));
+      await moveToBackup(
+        target,
+        join(backupRoot, "overridden", target.slice(paths.profileRoot.length + 1))
+      );
     }
     await secureDirectory(dirname(target));
     await rename(source, target);
   }
-  for (const directory of [join(paths.home, "identity"), join(paths.home, "credentials"), join(paths.home, "setup"), join(paths.home, "profiles")]) {
+  for (const directory of [
+    join(paths.home, "identity"),
+    join(paths.home, "credentials"),
+    join(paths.home, "setup"),
+    join(paths.home, "profiles")
+  ]) {
     await removeEmptyDirectory(directory);
   }
   await writeJsonAtomic(join(paths.home, "run", "profile-layout-v1.json"), {
@@ -192,7 +221,8 @@ export async function readJsonFile<T>(path: string): Promise<T | undefined> {
     return JSON.parse(await readFile(path, "utf8")) as T;
   } catch (error) {
     if (isNodeError(error, "ENOENT")) return undefined;
-    if (error instanceof SyntaxError) throw new Error(`invalid JSON file: ${path}`, { cause: error });
+    if (error instanceof SyntaxError)
+      throw new Error(`invalid JSON file: ${path}`, { cause: error });
     throw error;
   }
 }
@@ -229,21 +259,18 @@ export async function reconcileHomeConfiguration(
   const value: RuntimeHomeConfiguration = {
     schema_version: 1,
     default_profile: existing?.default_profile ?? profile,
-    channel,
+    channel
   };
   await writeJsonAtomic(paths.rootConfig, value);
   return value;
 }
 
-export function assertHomeConfiguration(
-  configuration: RuntimeHomeConfiguration | undefined
-): void {
+export function assertHomeConfiguration(configuration: RuntimeHomeConfiguration | undefined): void {
   if (!configuration) return;
   if (configuration.schema_version !== 1) {
     throw new Error("unsupported Runtime Home config schema");
   }
   assertProfileName(configuration.default_profile);
-
 }
 
 async function secureDirectory(path: string): Promise<void> {
@@ -252,7 +279,8 @@ async function secureDirectory(path: string): Promise<void> {
 }
 
 async function moveToBackup(source: string, target: string): Promise<void> {
-  if (await pathExists(target)) throw new Error(`profile migration backup already exists: ${target}`);
+  if (await pathExists(target))
+    throw new Error(`profile migration backup already exists: ${target}`);
   await secureDirectory(dirname(target));
   await rename(source, target);
 }
@@ -298,7 +326,10 @@ async function acquireProcessLock(path: string): Promise<() => Promise<void>> {
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const handle = await open(path, "wx", 0o600);
-      await handle.writeFile(`${JSON.stringify({ pid: process.pid, created_at: new Date().toISOString() })}\n`, "utf8");
+      await handle.writeFile(
+        `${JSON.stringify({ pid: process.pid, created_at: new Date().toISOString() })}\n`,
+        "utf8"
+      );
       await handle.close();
       return async () => {
         const owner = await readLockOwner(path);
@@ -346,5 +377,7 @@ function portableHomeId(home: string): string {
 }
 
 function isNodeError(error: unknown, code: string): boolean {
-  return error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code;
+  return (
+    error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code
+  );
 }

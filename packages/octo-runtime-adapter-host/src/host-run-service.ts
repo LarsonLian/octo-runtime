@@ -140,9 +140,7 @@ export class HostRunService implements AdapterHostRpc {
     const run = await this.#begin(identifyInvokeInput(input), environment);
     yield* this.#execute(run);
   }
-  async *#execute(
-    run: Run
-  ): AsyncGenerator<HostFrame> {
+  async *#execute(run: Run): AsyncGenerator<HostFrame> {
     try {
       this.#append(run, run.first);
       yield run.first;
@@ -187,10 +185,7 @@ export class HostRunService implements AdapterHostRpc {
       }
     }
   }
-  async submit(
-    input: InvokeInput,
-    environment: InvokeEnvironment = {}
-  ): Promise<HostRunReceipt> {
+  async submit(input: InvokeInput, environment: InvokeEnvironment = {}): Promise<HostRunReceipt> {
     const run = await this.#begin(identifyInvokeInput(input), environment);
     const task = (async (): Promise<void> => {
       for await (const event of this.#execute(run)) void event;
@@ -320,7 +315,7 @@ export class HostRunService implements AdapterHostRpc {
     const deadline = Date.now() + timeoutMs;
     while (this.#starting.size || this.status.activeRuns || this.#tasks.size) {
       if (Date.now() >= deadline) throw new Error("HOST_DRAIN_TIMEOUT");
-      await new Promise(resolve => setTimeout(resolve, 10));
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
     return { drained: true };
   }

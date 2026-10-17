@@ -47,7 +47,10 @@ try {
   );
   const metadata = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
   assert.ok(Object.hasOwn(metadata.dependencies, "@mininglamp-oss/octo-runtime-extra-webui"));
-  await assert.rejects(access(join(installed, "node_modules/@mininglamp-oss/octo-runtime-webui-extra")), { code: "ENOENT" });
+  await assert.rejects(
+    access(join(installed, "node_modules/@mininglamp-oss/octo-runtime-webui-extra")),
+    { code: "ENOENT" }
+  );
   assert.equal(metadata.license, "Apache-2.0");
   assert.equal(
     await readFile(join(installed, "LICENSE"), "utf8"),
@@ -58,8 +61,15 @@ try {
   await assert.rejects(access(join(installed, "config/adapters.json")), { code: "ENOENT" });
   // 隔离安装的 SDK 必须在没有复制 JSON 的情况下启动自己的直接 import 入口。
   const installedSdk = join(installed, "node_modules/@mininglamp-oss/octo-runtime-daemon");
-  await assert.rejects(access(join(installedSdk, "dist/runtime/config/adapters.json")), { code: "ENOENT" });
-  await execute(process.execPath, ["--input-type=module", "--eval", `
+  await assert.rejects(access(join(installedSdk, "dist/runtime/config/adapters.json")), {
+    code: "ENOENT"
+  });
+  await execute(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      `
     import assert from "node:assert/strict";
     const { createDaemonRuntime } = await import(process.env.OCTO_VERIFY_SDK_MODULE);
     const runtime = createDaemonRuntime({ appId: "release-sdk-check", home: process.env.OCTO_VERIFY_SDK_HOME });
@@ -75,19 +85,28 @@ try {
     } finally {
       await runtime.stop("quit");
     }
-  `], {
-    cwd: directory,
-    timeout: 30_000,
-    env: {
-      ...process.env,
-      OCTO_VERIFY_SDK_MODULE: pathToFileURL(join(installedSdk, "dist/index.js")).href,
-      OCTO_VERIFY_SDK_HOME: join(directory, "sdk-home")
+  `
+    ],
+    {
+      cwd: directory,
+      timeout: 30_000,
+      env: {
+        ...process.env,
+        OCTO_VERIFY_SDK_MODULE: pathToFileURL(join(installedSdk, "dist/index.js")).href,
+        OCTO_VERIFY_SDK_HOME: join(directory, "sdk-home")
+      }
     }
-  });
+  );
   await access(
     join(installed, "node_modules/@mininglamp-oss/octo-runtime-adapter-host/dist/runner.js")
   );
-  assert.deepEqual(Object.keys(metadata.exports).sort(), ["./extra", "./extras/channel-gateway/config-schema.json", "./extras/channel-wecom/config-schema.json", "./extras/webui/config-schema.json", "./protocol"]);
+  assert.deepEqual(Object.keys(metadata.exports).sort(), [
+    "./extra",
+    "./extras/channel-gateway/config-schema.json",
+    "./extras/channel-wecom/config-schema.json",
+    "./extras/webui/config-schema.json",
+    "./protocol"
+  ]);
   assert.equal(metadata.scripts, undefined);
   for (const [name, version] of Object.entries(metadata.dependencies)) {
     assert.doesNotMatch(version, /workspace:|link:|file:/);
@@ -206,18 +225,65 @@ try {
   );
   assert.equal((await saved)[0], 0);
   const probe = createServer();
-  await new Promise(resolve => probe.listen(0, "127.0.0.1", resolve));
+  await new Promise((resolve) => probe.listen(0, "127.0.0.1", resolve));
   const port = probe.address().port;
-  await new Promise(resolve => probe.close(resolve));
-  const context = { schema: "octo.context-envelope/v3", items: [{ namespace: "octo.control", name: "instructions", payload: { entries: [{ text: "我是明略科技的Octo助理" }] } }] };
+  await new Promise((resolve) => probe.close(resolve));
+  const context = {
+    schema: "octo.context-envelope/v3",
+    items: [
+      {
+        namespace: "octo.control",
+        name: "instructions",
+        payload: { entries: [{ text: "我是明略科技的Octo助理" }] }
+      }
+    ]
+  };
   for (const [name, config] of [
-    ["channel-gateway", { bots: [{ bot_id: "release-qa", api_url: "https://im-test.deepminer.com.cn/api", enabled: false, adapter: {}, context }] }],
-    ["channel-wecom", { bots: [{ bot_id: "release-qa", enabled: false, adapter: { adapter_type: "codex", workdir: home }, context }] }],
-    ["webui", { port, sessionStorePath: join(home, "webui-sessions.json"), defaultProjectPath: home, context }]
+    [
+      "channel-gateway",
+      {
+        bots: [
+          {
+            bot_id: "release-qa",
+            api_url: "https://im-test.deepminer.com.cn/api",
+            enabled: false,
+            adapter: {},
+            context
+          }
+        ]
+      }
+    ],
+    [
+      "channel-wecom",
+      {
+        bots: [
+          {
+            bot_id: "release-qa",
+            enabled: false,
+            adapter: { adapter_type: "codex", workdir: home },
+            context
+          }
+        ]
+      }
+    ],
+    [
+      "webui",
+      {
+        port,
+        sessionStorePath: join(home, "webui-sessions.json"),
+        defaultProjectPath: home,
+        context
+      }
+    ]
   ]) {
-    const save = spawn(process.execPath, [cli, "--home", home, "extraset", name], { cwd: directory, stdio: ["pipe", "ignore", "pipe"] });
+    const save = spawn(process.execPath, [cli, "--home", home, "extraset", name], {
+      cwd: directory,
+      stdio: ["pipe", "ignore", "pipe"]
+    });
     const saved = once(save, "exit");
-    save.stdin.end(JSON.stringify({ module: `@mininglamp-oss/octo-runtime-extra-${name}`, config }));
+    save.stdin.end(
+      JSON.stringify({ module: `@mininglamp-oss/octo-runtime-extra-${name}`, config })
+    );
     assert.equal((await saved)[0], 0, name);
   }
   for (const [specifier, code] of [
@@ -265,8 +331,13 @@ try {
   let state;
   for (let attempt = 0; attempt < 100; attempt++) {
     state = JSON.parse((await run(["status"])).stdout);
-    if (["channel-gateway", "channel-wecom", "webui"].every(name => state.extras[name]?.phase === "loaded")) break;
-    await new Promise(resolve => setTimeout(resolve, 50));
+    if (
+      ["channel-gateway", "channel-wecom", "webui"].every(
+        (name) => state.extras[name]?.phase === "loaded"
+      )
+    )
+      break;
+    await new Promise((resolve) => setTimeout(resolve, 50));
   }
   for (const name of ["channel-gateway", "channel-wecom", "webui"]) {
     assert.equal(state.extras[name]?.phase, "loaded", name);

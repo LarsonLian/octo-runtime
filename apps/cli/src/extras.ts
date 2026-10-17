@@ -1,5 +1,11 @@
 import { join } from "node:path";
-import { assertExtraName, assertStoredExtra, readExtraDirectory, type ExtraDescriptor, type StoredExtra } from "@mininglamp-oss/octo-runtime-daemon";
+import {
+  assertExtraName,
+  assertStoredExtra,
+  readExtraDirectory,
+  type ExtraDescriptor,
+  type StoredExtra
+} from "@mininglamp-oss/octo-runtime-daemon";
 import { withSetupLock, writeJsonAtomic, type RuntimePaths } from "./state.js";
 
 /** Generic full replacement: no platform-specific CLI fields or validation. */
@@ -36,7 +42,7 @@ export async function setExtra(
 export async function readExtra(paths: RuntimePaths, name: string): Promise<ExtraDescriptor> {
   assertExtraName(name);
   const entries = await readExtraDirectory(join(paths.home, "extras"));
-  const entry = entries.find(item => item.name === name);
+  const entry = entries.find((item) => item.name === name);
   if (!entry) throw new Error("EXTRA_NOT_REGISTERED");
   // Invalid stored declarations carry a controlled read error through their loader.
   if (!entry.module) await entry.load();
@@ -46,8 +52,12 @@ export async function readExtra(paths: RuntimePaths, name: string): Promise<Extr
 export async function getExtra(paths: RuntimePaths, name: string): Promise<StoredExtra> {
   assertExtraName(name);
   const entries = await readExtraDirectory(join(paths.home, "extras"));
-  const entry = entries.find(item => item.name === name);
+  const entry = entries.find((item) => item.name === name);
   if (!entry) throw new Error("EXTRA_NOT_REGISTERED");
   if (!entry.module) await entry.load();
-  return { module: entry.module!, ...(entry.enabled === undefined ? {} : { enabled: entry.enabled }), config: entry.config };
+  return {
+    module: entry.module!,
+    ...(entry.enabled === undefined ? {} : { enabled: entry.enabled }),
+    config: entry.config
+  };
 }

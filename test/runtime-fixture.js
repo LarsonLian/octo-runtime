@@ -1,6 +1,10 @@
 import { EventEmitter } from "node:events";
 import { PassThrough, Writable } from "node:stream";
-import { invocationInput, canonicalEvents, assertInvokeRequest } from "@mininglamp-oss/octo-runtime-protocol";
+import {
+  invocationInput,
+  canonicalEvents,
+  assertInvokeRequest
+} from "@mininglamp-oss/octo-runtime-protocol";
 
 export function preparedFrames(host, type, request, options = {}) {
   assertInvokeRequest(request);
@@ -25,19 +29,30 @@ export function preparedTestInvoke(source) {
   };
 }
 
-export function codexAppServerFixture({ method = "item/commandExecution/requestApproval", holdResponseWrites = false, turnStartError, skills = [], config = {} } = {}) {
+export function codexAppServerFixture({
+  method = "item/commandExecution/requestApproval",
+  holdResponseWrites = false,
+  turnStartError,
+  skills = [],
+  config = {}
+} = {}) {
   const child = new EventEmitter();
   const writes = [];
   const pendingWrites = [];
-  const send = message => child.stdout.write(`${JSON.stringify(message)}\n`);
-  const requestInteraction = () => send({
-    id: "native-request-1",
-    method,
-    params: {
-      threadId: "thread-fixture", turnId: "turn-fixture", itemId: "tool-fixture",
-      command: "pnpm test", cwd: "/workspace", permissions: { network: { enabled: true } }
-    }
-  });
+  const send = (message) => child.stdout.write(`${JSON.stringify(message)}\n`);
+  const requestInteraction = () =>
+    send({
+      id: "native-request-1",
+      method,
+      params: {
+        threadId: "thread-fixture",
+        turnId: "turn-fixture",
+        itemId: "tool-fixture",
+        command: "pnpm test",
+        cwd: "/workspace",
+        permissions: { network: { enabled: true } }
+      }
+    });
   const close = (code = 1, signal = null) => {
     if (child.exitCode !== null || child.signalCode !== null) return;
     child.exitCode = code;
@@ -56,18 +71,23 @@ export function codexAppServerFixture({ method = "item/commandExecution/requestA
       writes.push(message);
       if (message.method === "initialize") send({ id: message.id, result: {} });
       if (message.method === "config/read") send({ id: message.id, result: { config } });
-      if (["thread/start", "thread/resume"].includes(message.method)) send({ id: message.id, result: { thread: { id: "thread-fixture" } } });
-      if (["skills/extraRoots/set", "skills/config/write"].includes(message.method)) send({ id: message.id, result: {} });
-      if (message.method === "skills/list") send({ id: message.id, result: { data: [{ skills }] } });
+      if (["thread/start", "thread/resume"].includes(message.method))
+        send({ id: message.id, result: { thread: { id: "thread-fixture" } } });
+      if (["skills/extraRoots/set", "skills/config/write"].includes(message.method))
+        send({ id: message.id, result: {} });
+      if (message.method === "skills/list")
+        send({ id: message.id, result: { data: [{ skills }] } });
       if (message.method === "turn/start") {
-        if (turnStartError) send({ id: message.id, error: { code: -32000, message: turnStartError } });
+        if (turnStartError)
+          send({ id: message.id, error: { code: -32000, message: turnStartError } });
         else {
           send({ id: message.id, result: { turn: { id: "turn-fixture" } } });
           setImmediate(requestInteraction);
         }
       }
       if (message.method === "turn/interrupt") send({ id: message.id, result: {} });
-      if (holdResponseWrites && message.id === "native-request-1" && !message.method) pendingWrites.push(callback);
+      if (holdResponseWrites && message.id === "native-request-1" && !message.method)
+        pendingWrites.push(callback);
       else callback();
     },
     final(callback) {
@@ -75,16 +95,27 @@ export function codexAppServerFixture({ method = "item/commandExecution/requestA
       callback();
     }
   });
-  child.kill = signal => { close(null, signal); return true; };
+  child.kill = (signal) => {
+    close(null, signal);
+    return true;
+  };
   return {
     spawnFn: () => child,
     writes,
     close,
     requestInteraction,
-    flushResponseWrites: () => { for (const callback of pendingWrites.splice(0)) callback(); },
-    complete: () => send({ method: "turn/completed", params: {
-      threadId: "thread-fixture", turnId: "turn-fixture", turn: { id: "turn-fixture", status: "completed" }
-    } })
+    flushResponseWrites: () => {
+      for (const callback of pendingWrites.splice(0)) callback();
+    },
+    complete: () =>
+      send({
+        method: "turn/completed",
+        params: {
+          threadId: "thread-fixture",
+          turnId: "turn-fixture",
+          turn: { id: "turn-fixture", status: "completed" }
+        }
+      })
   };
 }
 
@@ -97,7 +128,9 @@ export function resolvedRuntimeSelection(runtimeId = "runtime-1") {
     schema: "octo.runtime-selection/v2",
     selection_mode: "explicit",
     explicit_runtime_id: runtimeId,
-    authorized_candidates: [{ runtime_id: runtimeId, priority: 1, owner_subject_type: "user", owner_subject_id: "user-1" }],
+    authorized_candidates: [
+      { runtime_id: runtimeId, priority: 1, owner_subject_type: "user", owner_subject_id: "user-1" }
+    ],
     offline_behavior: "wait",
     failover: "none"
   };
@@ -105,20 +138,42 @@ export function resolvedRuntimeSelection(runtimeId = "runtime-1") {
 
 export function executionContext(plan, items = []) {
   return contextEnvelope([
-    { namespace: "octo.execution", name: "adapter", payload: { type: plan.adapter_type, ...(plan.provider_agent_id ? {provider_agent_id: plan.provider_agent_id} : {}) } },
-    { namespace: "octo.execution", name: "workspace", payload: plan.workspace ?? { mode: "fixed", path: plan.workdir } },
-    { namespace: "octo.execution", name: "model", payload: {
-      selection: plan.model === undefined ? { use_provider_default: true } : { id: plan.model },
-      reasoning: plan.effort === undefined ? { use_provider_default: true } : { effort: plan.effort }
-    } },
+    {
+      namespace: "octo.execution",
+      name: "adapter",
+      payload: {
+        type: plan.adapter_type,
+        ...(plan.provider_agent_id ? { provider_agent_id: plan.provider_agent_id } : {})
+      }
+    },
+    {
+      namespace: "octo.execution",
+      name: "workspace",
+      payload: plan.workspace ?? { mode: "fixed", path: plan.workdir }
+    },
+    {
+      namespace: "octo.execution",
+      name: "model",
+      payload: {
+        selection: plan.model === undefined ? { use_provider_default: true } : { id: plan.model },
+        reasoning:
+          plan.effort === undefined ? { use_provider_default: true } : { effort: plan.effort }
+      }
+    },
     { namespace: "octo.security", name: "approval_policy", payload: { mode: plan.approval_mode } },
-    ...(plan.runtime_limits === undefined ? [] : [{namespace:"octo.execution", name:"limits", payload:plan.runtime_limits}]), ...items
+    ...(plan.runtime_limits === undefined
+      ? []
+      : [{ namespace: "octo.execution", name: "limits", payload: plan.runtime_limits }]),
+    ...items
   ]);
 }
 
 export function withExecutionPlan(envelope, plan) {
-  const items = envelope.effective_context.items.filter(item =>
-    item.namespace !== "octo.execution" && !(item.namespace === "octo.security" && item.name === "approval_policy"));
+  const items = envelope.effective_context.items.filter(
+    (item) =>
+      item.namespace !== "octo.execution" &&
+      !(item.namespace === "octo.security" && item.name === "approval_policy")
+  );
   return {
     ...envelope,
     resolved_execution_plan: structuredClone(plan),
@@ -126,14 +181,22 @@ export function withExecutionPlan(envelope, plan) {
   };
 }
 
-export function continuityItem({ sessionGeneration = 7, triggerMessageId = "message-current", triggerSeq = 2 } = {}) {
+export function continuityItem({
+  sessionGeneration = 7,
+  triggerMessageId = "message-current",
+  triggerSeq = 2
+} = {}) {
   return {
     namespace: "octo.content",
     name: "continuity",
     payload: {
       scope: {
-        tenant_id: "tenant-1", endpoint_id: "endpoint-1", channel: "discord",
-        account_id: null, bot_id: "bot-1", conversation_id: "conversation-1"
+        tenant_id: "tenant-1",
+        endpoint_id: "endpoint-1",
+        channel: "discord",
+        account_id: null,
+        bot_id: "bot-1",
+        conversation_id: "conversation-1"
       },
       consumer_key: "consumer-1",
       session_generation: sessionGeneration,
@@ -163,7 +226,8 @@ export function invokeRequest(overrides = {}) {
     runMetadata: { namespace: "test", triggerOccurrenceId: "test/invoke" },
     approvalMode: "ask",
     workdir: process.cwd(),
-    agentSource: "provisioned", agentConfig: {},
+    agentSource: "provisioned",
+    agentConfig: {},
     ...overrides
   };
 }
@@ -177,7 +241,11 @@ export function approvalPayload(invocationId, interactionId = "approval-1") {
     request: {
       schema: "octo.approval-request/v1",
       policy: { mode: "ask", hash: `sha256:${"a".repeat(64)}` },
-      operation: { kind: "command_execution", summary: "Run tests", details: { command: "pnpm test" } },
+      operation: {
+        kind: "command_execution",
+        summary: "Run tests",
+        details: { command: "pnpm test" }
+      },
       requestedPermissions: [],
       allowedOutcomes: ["accepted", "declined", "cancelled"],
       grantScope: "request"
@@ -205,14 +273,19 @@ export function terminalGrant(event) {
 
 export function deferred() {
   let resolve;
-  return { promise: new Promise(done => { resolve = done; }), resolve };
+  return {
+    promise: new Promise((done) => {
+      resolve = done;
+    }),
+    resolve
+  };
 }
 
 export async function waitFor(predicate, timeoutMs = 2_000) {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("condition timeout");
-    await new Promise(resolve => setTimeout(resolve, 10));
+    await new Promise((resolve) => setTimeout(resolve, 10));
   }
 }
 
@@ -221,7 +294,9 @@ export async function withTimeout(promise, timeoutMs, message) {
   try {
     return await Promise.race([
       promise,
-      new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), timeoutMs); })
+      new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error(message)), timeoutMs);
+      })
     ]);
   } finally {
     clearTimeout(timer);

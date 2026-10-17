@@ -22,13 +22,18 @@ test("invocation manifest persists only process and invocation metadata", async 
     assert.equal(persisted.schemaVersion, 1);
     assert.equal(persisted.daemonPid, process.pid);
     assert.equal(persisted.adapterHost.pid, process.pid);
-    assert.deepEqual(Object.keys(persisted.invocations[0]).sort(), ["adapterType", "invocationId", "runId", "startedAt"]);
+    assert.deepEqual(Object.keys(persisted.invocations[0]).sort(), [
+      "adapterType",
+      "invocationId",
+      "runId",
+      "startedAt"
+    ]);
     assert.doesNotMatch(JSON.stringify(persisted), /prompt|token|secret|providerOptions/);
     await manifest.end("invoke-1");
     assert.deepEqual(JSON.parse(await readFile(path, "utf8")).invocations, []);
   } finally {
     await manifest.close();
-    await assert.rejects(readFile(path, "utf8"), error => error.code === "ENOENT");
+    await assert.rejects(readFile(path, "utf8"), (error) => error.code === "ENOENT");
     await rm(directory, { recursive: true, force: true });
   }
 });
@@ -44,20 +49,34 @@ test("orphan reaper requires matching process start identity before killing the 
   try {
     const started = await processStartIdentity(child.pid);
     assert.ok(started);
-    await writeFile(path, JSON.stringify({
-      schemaVersion: 1,
-      daemonPid: 2_147_483_646,
-      updatedAt: new Date().toISOString(),
-      adapterHost: { pid: child.pid, started, entrypoint: "/test/adapter-host.js" },
-      invocations: [{ invocationId: "invoke-orphan", runId: "run-orphan", adapterType: "codex", startedAt: new Date().toISOString() }]
-    }));
+    await writeFile(
+      path,
+      JSON.stringify({
+        schemaVersion: 1,
+        daemonPid: 2_147_483_646,
+        updatedAt: new Date().toISOString(),
+        adapterHost: { pid: child.pid, started, entrypoint: "/test/adapter-host.js" },
+        invocations: [
+          {
+            invocationId: "invoke-orphan",
+            runId: "run-orphan",
+            adapterType: "codex",
+            startedAt: new Date().toISOString()
+          }
+        ]
+      })
+    );
     const result = await reapOrphanedInvocationManifest(path);
     assert.deepEqual(result, { found: true, reaped: true, pid: child.pid });
     if (child.exitCode === null && child.signalCode === null) {
-      await new Promise(resolve => child.once("exit", resolve));
+      await new Promise((resolve) => child.once("exit", resolve));
     }
   } finally {
-    try { process.kill(-child.pid, "SIGKILL"); } catch { /* Already reaped. */ }
+    try {
+      process.kill(-child.pid, "SIGKILL");
+    } catch {
+      /* Already reaped. */
+    }
     await rm(directory, { recursive: true, force: true });
   }
 });

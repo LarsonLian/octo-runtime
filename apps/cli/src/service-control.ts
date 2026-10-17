@@ -49,7 +49,7 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
         environment: {
           ...(environment.PATH || environment.Path
             ? { PATH: environment.PATH ?? environment.Path ?? "" }
-            : {}),
+            : {})
         },
         enabled,
         restart: { policy: "on-failure", delaySeconds: 5, maxBurst: 5 },
@@ -67,5 +67,5 @@ export function resolveServiceControl(options: ServiceControlOptions = {}): {
 export async function verifyServiceProgram(spec: ServiceSpec): Promise<void> {
   await Promise.all([access(spec.command), access(spec.args?.[0] ?? "")]);
   await mkdir(spec.workingDirectory, { recursive: true, mode: 0o700 });
-  if (spec.stdoutPath) await mkdir(dirname(spec.stdoutPath), {recursive:true,mode:0o700});
+  if (spec.stdoutPath) await mkdir(dirname(spec.stdoutPath), { recursive: true, mode: 0o700 });
 }

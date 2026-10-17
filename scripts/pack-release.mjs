@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 import { execFileSync } from "node:child_process";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
-const readManifest = async directory => JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
+const readManifest = async (directory) =>
+  JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
 const manifest = await readManifest(root);
 const workspaces = new Map();
 for (const directory of ["apps", "packages"]) {
@@ -60,21 +61,36 @@ try {
         await cp(join(path, "config-schema.json"), join(target, "config-schema.json"));
       }
       const { scripts, devDependencies, packageManager, ...metadata } = source;
-      const dependencies = Object.fromEntries(Object.keys(source.dependencies ?? {}).map(name => [
-        name, workspaces.has(name) ? manifest.version : packages.get(name).source.version
-      ]));
-      await writeFile(join(target, "package.json"), JSON.stringify({
-        ...metadata, private: true, version: manifest.version, dependencies
-      }, null, 2) + "\n");
+      const dependencies = Object.fromEntries(
+        Object.keys(source.dependencies ?? {}).map((name) => [
+          name,
+          workspaces.has(name) ? manifest.version : packages.get(name).source.version
+        ])
+      );
+      await writeFile(
+        join(target, "package.json"),
+        JSON.stringify(
+          {
+            ...metadata,
+            private: true,
+            version: manifest.version,
+            dependencies
+          },
+          null,
+          2
+        ) + "\n"
+      );
     } else {
       await cp(path, target, {
         recursive: true,
-        filter: path => path.split(/[\\/]/).at(-1) !== "node_modules"
+        filter: (path) => path.split(/[\\/]/).at(-1) !== "node_modules"
       });
     }
   }
   for (const app of ["cli", "daemon"]) {
-    await cp(join(root, "apps", app, "dist"), join(temporary, "apps", app, "dist"), { recursive: true });
+    await cp(join(root, "apps", app, "dist"), join(temporary, "apps", app, "dist"), {
+      recursive: true
+    });
   }
   await cp(join(root, "dist/public"), join(temporary, "dist/public"), { recursive: true });
   // 将公开的原始 schema 原样交付，接入方自行选择校验或类型生成工具。
@@ -86,39 +102,57 @@ try {
   await cp(join(root, "apps/cli/README.md"), join(temporary, "apps/cli/README.md"));
   for (const file of ["LICENSE", "NOTICE"]) {
     await mkdir(dirname(join(temporary, file)), { recursive: true });
-    await cp(join(root, file), join(temporary, file)).catch(error => {
+    await cp(join(root, file), join(temporary, file)).catch((error) => {
       if (file === "LICENSE" || error.code !== "ENOENT") throw error;
     });
   }
   await cp(join(root, "release/README.md"), join(temporary, "README.md"));
-  const dependencies = Object.fromEntries([...packages].map(([name, { source }]) => [
-    name, workspaces.has(name) ? manifest.version : source.version
-  ]));
-  await writeFile(join(temporary, "package.json"), JSON.stringify({
-    name: manifest.name,
-    version: manifest.version,
-    description: manifest.description,
-    repository: manifest.repository,
-    homepage: manifest.homepage,
-    bugs: manifest.bugs,
-    ...(manifest.license ? { license: manifest.license } : {}),
-    type: "module",
-    bin: manifest.bin,
-    exports: manifest.exports,
-    engines: { node: manifest.engines.node },
-    files: ["apps", "dist/public", "packages/*/config-schema.json", "LICENSE", "NOTICE"],
-    publishConfig: { access: "public" },
-    dependencies,
-    bundleDependencies: Object.keys(dependencies)
-  }, null, 2) + "\n");
+  const dependencies = Object.fromEntries(
+    [...packages].map(([name, { source }]) => [
+      name,
+      workspaces.has(name) ? manifest.version : source.version
+    ])
+  );
+  await writeFile(
+    join(temporary, "package.json"),
+    JSON.stringify(
+      {
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description,
+        repository: manifest.repository,
+        homepage: manifest.homepage,
+        bugs: manifest.bugs,
+        ...(manifest.license ? { license: manifest.license } : {}),
+        type: "module",
+        bin: manifest.bin,
+        exports: manifest.exports,
+        engines: { node: manifest.engines.node },
+        files: ["apps", "dist/public", "packages/*/config-schema.json", "LICENSE", "NOTICE"],
+        publishConfig: { access: "public" },
+        dependencies,
+        bundleDependencies: Object.keys(dependencies)
+      },
+      null,
+      2
+    ) + "\n"
+  );
   await mkdir(output, { recursive: true });
   const npm = process.env.npm_execpath?.endsWith("npm-cli.js")
     ? process.env.npm_execpath
-    : join(dirname(process.execPath), process.platform === "win32"
-      ? "node_modules/npm/bin/npm-cli.js" : "../lib/node_modules/npm/bin/npm-cli.js");
-  const result = JSON.parse(execFileSync(process.execPath, [
-    npm, "pack", "--json", "--ignore-scripts", "--pack-destination", output
-  ], { cwd: temporary, encoding: "utf8" }))[0];
+    : join(
+        dirname(process.execPath),
+        process.platform === "win32"
+          ? "node_modules/npm/bin/npm-cli.js"
+          : "../lib/node_modules/npm/bin/npm-cli.js"
+      );
+  const result = JSON.parse(
+    execFileSync(
+      process.execPath,
+      [npm, "pack", "--json", "--ignore-scripts", "--pack-destination", output],
+      { cwd: temporary, encoding: "utf8" }
+    )
+  )[0];
   if (result.bundled.length !== packages.size) throw new Error("npm 未完整打包生产依赖，禁止发布");
   console.log(join(output, result.filename));
 } finally {

@@ -11,7 +11,12 @@ import { startDaemonServer } from "@mininglamp-oss/octo-runtime-daemon";
 import { callDaemon } from "@mininglamp-oss/octo-runtime-daemon/runtime/runtime-contract";
 import { once } from "node:events";
 import { WebSocketServer } from "ws";
-import { assertHostFrame, isHostTerminal, assertCanonicalEvent, isTerminal } from "@mininglamp-oss/octo-runtime-protocol";
+import {
+  assertHostFrame,
+  isHostTerminal,
+  assertCanonicalEvent,
+  isTerminal
+} from "@mininglamp-oss/octo-runtime-protocol";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const cli = join(root, "apps/cli/dist/index.js");
@@ -64,7 +69,11 @@ async function fixture(t) {
   return { directory, manifest };
 }
 
-function execute({ directory, manifest }, value, { args = [], signalOnFrame = false, env = {} } = {}) {
+function execute(
+  { directory, manifest },
+  value,
+  { args = [], signalOnFrame = false, env = {} } = {}
+) {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [cli, "playboard", "--manifest", manifest, ...args], {
       cwd: directory,
@@ -112,17 +121,22 @@ function execute({ directory, manifest }, value, { args = [], signalOnFrame = fa
 }
 
 function terminal(result, state) {
-  result.frames.forEach(frame => 'kind' in frame ? assertHostFrame(frame) : assertCanonicalEvent(frame));
-  assert.equal(result.frames.filter(frame => 'kind' in frame ? isHostTerminal(frame) : isTerminal(frame)).length, 1);
+  result.frames.forEach((frame) =>
+    "kind" in frame ? assertHostFrame(frame) : assertCanonicalEvent(frame)
+  );
+  assert.equal(
+    result.frames.filter((frame) => ("kind" in frame ? isHostTerminal(frame) : isTerminal(frame)))
+      .length,
+    1
+  );
   const last = result.frames.at(-1);
-  assert.equal('kind' in last ? last.control.state : last.type, 'kind' in last ? state : `run.${state}`);
+  assert.equal(
+    "kind" in last ? last.control.state : last.type,
+    "kind" in last ? state : `run.${state}`
+  );
 }
 function observed(result) {
-  return JSON.parse(
-    result.frames.find(
-      (frame) => frame.type === "message.delta"
-    ).payload.text
-  );
+  return JSON.parse(result.frames.find((frame) => frame.type === "message.delta").payload.text);
 }
 
 test("playboard maps one snapshot and never invents provider continuity", () => {
@@ -246,8 +260,16 @@ for (const protocolMode of ["native", "canonical"]) {
     const result = await execute(settings, input("normal", { protocol_mode: protocolMode }));
     assert.equal(result.code, 0, result.stderr);
     terminal(result, "completed");
-    assert.ok(result.frames.some((frame) => protocolMode === "native" ? frame.kind === "native" : frame.type === "run.completed"));
-    assert.ok(result.frames.every((frame) => protocolMode === "native" ? frame.protocol_mode === "native" : !('kind' in frame)));
+    assert.ok(
+      result.frames.some((frame) =>
+        protocolMode === "native" ? frame.kind === "native" : frame.type === "run.completed"
+      )
+    );
+    assert.ok(
+      result.frames.every((frame) =>
+        protocolMode === "native" ? frame.protocol_mode === "native" : !("kind" in frame)
+      )
+    );
     if (protocolMode === "native") {
       assert.deepEqual(
         result.frames.find((frame) => frame.kind === "native").payload.result.future,
@@ -262,7 +284,11 @@ for (const protocolMode of ["native", "canonical"]) {
     assert.match(result.stderr, /PLAYBOARD_INTERACTION_REQUIRED/);
     assert.ok(result.frames.length > 0);
     assert.ok(
-      !result.frames.some((frame) => 'kind' in frame ? isHostTerminal(frame) && frame.control.state === "completed" : frame.type === "run.completed")
+      !result.frames.some((frame) =>
+        "kind" in frame
+          ? isHostTerminal(frame) && frame.control.state === "completed"
+          : frame.type === "run.completed"
+      )
     );
   });
 }
@@ -285,9 +311,7 @@ test("Ctrl+C cancels execution and reaps the temporary daemon and Host", async (
   const settings = await fixture(t);
   const result = await execute(settings, echoInput("hang"), { signalOnFrame: true });
   assert.equal(result.code, 130, result.stderr);
-  const frame = result.frames.find(
-    (frame) => frame.type === "message.delta"
-  );
+  const frame = result.frames.find((frame) => frame.type === "message.delta");
   if (frame) {
     assert.throws(() => process.kill(JSON.parse(frame.payload.text).hostPid, 0), {
       code: "ESRCH"
@@ -373,8 +397,15 @@ test("temporary IPC and parallel playboards preserve a resident daemon and persi
     const ledger = join(home, "run/invocations.json");
     const before = await readFile(ledger, "utf8");
     const temporary = await startTemporaryDaemon({
-      home, profile: "work", manifest: settings.manifest,
-      env: { ...process.env, OPENCLAW_HOME: join(settings.directory, "absent-openclaw"), OPENCLAW_GATEWAY_URL: undefined, OPENCLAW_GATEWAY_TOKEN: undefined },
+      home,
+      profile: "work",
+      manifest: settings.manifest,
+      env: {
+        ...process.env,
+        OPENCLAW_HOME: join(settings.directory, "absent-openclaw"),
+        OPENCLAW_GATEWAY_URL: undefined,
+        OPENCLAW_GATEWAY_TOKEN: undefined
+      },
       signal: new AbortController().signal
     });
     const status = await callDaemon(temporary.socket, { method: "status" });
@@ -384,7 +415,8 @@ test("temporary IPC and parallel playboards preserve a resident daemon and persi
     await temporary.close();
     assert.throws(() => process.kill(status.pid, 0), { code: "ESRCH" });
     assert.throws(() => process.kill(status.adapterHost.pid, 0), { code: "ESRCH" });
-    if (process.platform !== "win32") await assert.rejects(stat(temporary.socket), { code: "ENOENT" });
+    if (process.platform !== "win32")
+      await assert.rejects(stat(temporary.socket), { code: "ENOENT" });
     const runs = await Promise.all([
       execute(settings, echoInput(), { args: ["--profile", "work"] }),
       execute(settings, echoInput(), { args: ["--profile", "work"] })
@@ -418,7 +450,13 @@ test("OpenClaw uses daemon startup configuration, refreshes its source and retai
   const authenticated = [];
   const methods = [];
   gateway.on("connection", (socket) => {
-    socket.send(JSON.stringify({ type: "event", event: "connect.challenge", payload: { nonce: "playboard", ts: Date.now() } }));
+    socket.send(
+      JSON.stringify({
+        type: "event",
+        event: "connect.challenge",
+        payload: { nonce: "playboard", ts: Date.now() }
+      })
+    );
     socket.on("message", (data) => {
       const frame = JSON.parse(data.toString());
       methods.push(frame.method);
@@ -426,15 +464,38 @@ test("OpenClaw uses daemon startup configuration, refreshes its source and retai
       if (frame.method === "connect") {
         authenticated.push(frame.params.auth.token);
         const ok = frame.params.auth.token === token;
-        socket.send(JSON.stringify({ type: "res", id: frame.id, ok, ...(ok ? { payload: {
-          type: "hello-ok", protocol: 4,
-          features: { methods: ["agents.list", "sessions.create", "sessions.messages.subscribe", "agent", "agent.wait", "sessions.abort"], events: ["agent"] }
-        } } : { error: { message: "test authentication failed" } }) }));
+        socket.send(
+          JSON.stringify({
+            type: "res",
+            id: frame.id,
+            ok,
+            ...(ok
+              ? {
+                  payload: {
+                    type: "hello-ok",
+                    protocol: 4,
+                    features: {
+                      methods: [
+                        "agents.list",
+                        "sessions.create",
+                        "sessions.messages.subscribe",
+                        "agent",
+                        "agent.wait",
+                        "sessions.abort"
+                      ],
+                      events: ["agent"]
+                    }
+                  }
+                }
+              : { error: { message: "test authentication failed" } })
+          })
+        );
         return;
       }
       if (frame.method === "agents.list") payload = { agents: [{ id: "main" }] };
       if (frame.method === "sessions.create") payload = { key: frame.params.key };
-      if (frame.method === "agent") payload = { status: "ok", result: { payloads: [{ text: "gateway-result" }] } };
+      if (frame.method === "agent")
+        payload = { status: "ok", result: { payloads: [{ text: "gateway-result" }] } };
       if (frame.method === "agent.wait") payload = { status: "ok" };
       socket.send(JSON.stringify({ type: "res", id: frame.id, ok: true, payload }));
     });
@@ -442,7 +503,11 @@ test("OpenClaw uses daemon startup configuration, refreshes its source and retai
   const source = join(settings.directory, "provider");
   await mkdir(source);
   const config = join(source, "openclaw.json");
-  const save = () => writeFile(config, JSON.stringify({ gateway: { port: gateway.address().port, auth: { token } } }));
+  const save = () =>
+    writeFile(
+      config,
+      JSON.stringify({ gateway: { port: gateway.address().port, auth: { token } } })
+    );
   await save();
   const request = input("hello", {
     protocol_mode: "canonical",
@@ -452,7 +517,8 @@ test("OpenClaw uses daemon startup configuration, refreshes its source and retai
     ])
   });
   const profile = join(settings.directory, "unconfigured-home/work");
-  const run = () => execute(settings, request, { args: ["--profile", "work"], env: { OPENCLAW_HOME: source } });
+  const run = () =>
+    execute(settings, request, { args: ["--profile", "work"], env: { OPENCLAW_HOME: source } });
   const first = await run();
   assert.equal(first.code, 0, first.stderr);
   terminal(first, "completed");
@@ -478,11 +544,17 @@ test("OpenClaw uses daemon startup configuration, refreshes its source and retai
 
 test("daemon startup failure removes temporary process state and keeps stdout empty", async (t) => {
   const settings = await fixture(t);
-  const isolated = await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "op-state-"));
+  const isolated = await mkdtemp(
+    join(process.platform === "darwin" ? "/tmp" : tmpdir(), "op-state-")
+  );
   t.after(() => rm(isolated, { recursive: true, force: true }));
-  const result = await execute({ ...settings, manifest: join(settings.directory, "missing-manifest.json") }, echoInput(), {
-    env: { TMPDIR: isolated, TEMP: isolated, TMP: isolated }
-  });
+  const result = await execute(
+    { ...settings, manifest: join(settings.directory, "missing-manifest.json") },
+    echoInput(),
+    {
+      env: { TMPDIR: isolated, TEMP: isolated, TMP: isolated }
+    }
+  );
   assert.equal(result.code, 1);
   assert.equal(result.stdout, "");
   assert.match(result.stderr, /ENOENT/);
@@ -501,22 +573,29 @@ test("cancelling daemon startup waits for resource cleanup and preserves prepare
   // Hold the Provider probe at its authentication handshake, then cancel startup.
   gateway.once("connection", () => controller.abort());
   const home = join(settings.directory, "runtime");
-  const isolated = await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "op-state-"));
+  const isolated = await mkdtemp(
+    join(process.platform === "darwin" ? "/tmp" : tmpdir(), "op-state-")
+  );
   t.after(() => rm(isolated, { recursive: true, force: true }));
   const temporaryVariable = process.platform === "win32" ? "TEMP" : "TMPDIR";
   const previous = process.env[temporaryVariable];
   process.env[temporaryVariable] = isolated;
   try {
-    await assert.rejects(startTemporaryDaemon({
-    home, profile: "work", manifest: settings.manifest,
-    env: {
-      ...process.env,
-      OPENCLAW_HOME: undefined,
-      OPENCLAW_GATEWAY_URL: `ws://127.0.0.1:${gateway.address().port}`,
-      OPENCLAW_GATEWAY_TOKEN: "test-startup-token"
-    },
-    signal: controller.signal
-    }), /startup cancelled/);
+    await assert.rejects(
+      startTemporaryDaemon({
+        home,
+        profile: "work",
+        manifest: settings.manifest,
+        env: {
+          ...process.env,
+          OPENCLAW_HOME: undefined,
+          OPENCLAW_GATEWAY_URL: `ws://127.0.0.1:${gateway.address().port}`,
+          OPENCLAW_GATEWAY_TOKEN: "test-startup-token"
+        },
+        signal: controller.signal
+      }),
+      /startup cancelled/
+    );
   } finally {
     if (previous === undefined) delete process.env[temporaryVariable];
     else process.env[temporaryVariable] = previous;

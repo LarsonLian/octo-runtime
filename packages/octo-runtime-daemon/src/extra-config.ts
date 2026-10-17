@@ -80,8 +80,10 @@ export async function readExtraDirectory(directory: string): Promise<ExtraRegist
       assertStoredExtra(stored);
       registrations.push(extraRegistration({ name: entry.name, ...stored }));
     } catch (error) {
-      const code = error instanceof Error && /^EXTRA_[A-Z_]+$/.test(error.message)
-        ? error.message : "EXTRA_CONFIG_READ_FAILED";
+      const code =
+        error instanceof Error && /^EXTRA_[A-Z_]+$/.test(error.message)
+          ? error.message
+          : "EXTRA_CONFIG_READ_FAILED";
       registrations.push({
         name: entry.name,
         config: {},

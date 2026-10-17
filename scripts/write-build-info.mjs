@@ -4,9 +4,11 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = resolve(process.argv[2] ?? fileURLToPath(new URL("..", import.meta.url)));
-const git = args => execFileSync("git", ["-C", root, ...args], {
-  encoding: "utf8", stdio: ["ignore", "pipe", "ignore"]
-}).trim();
+const git = (args) =>
+  execFileSync("git", ["-C", root, ...args], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"]
+  }).trim();
 let commit = null;
 let dirty = null;
 try {
@@ -18,4 +20,7 @@ try {
 }
 const directory = join(root, "apps/cli/dist");
 await mkdir(directory, { recursive: true });
-await writeFile(join(directory, "build-info.json"), JSON.stringify({ commit, dirty }, null, 2) + "\n");
+await writeFile(
+  join(directory, "build-info.json"),
+  JSON.stringify({ commit, dirty }, null, 2) + "\n"
+);

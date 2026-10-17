@@ -61,11 +61,17 @@ export interface BusinessState {
   module?: ExtraPluginModule;
 }
 
-export function checkAssembly(loader: ExtraPlugins, module: ExtraPluginModule<ChannelDependencies>, config: JsonObject) {
-  void loader.load(module, config, { loadContexts: (_config, { signal }) => {
-    signal.throwIfAborted();
-    return [];
-  } });
+export function checkAssembly(
+  loader: ExtraPlugins,
+  module: ExtraPluginModule<ChannelDependencies>,
+  config: JsonObject
+) {
+  void loader.load(module, config, {
+    loadContexts: (_config, { signal }) => {
+      signal.throwIfAborted();
+      return [];
+    }
+  });
   // @ts-expect-error Dynamic callbacks must return ContextItem arrays, not strings.
   void loader.load(module, config, { loadContexts: async () => "invalid" });
 }

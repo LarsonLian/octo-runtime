@@ -1,10 +1,10 @@
 name: Workflow Sanity
 on:
   pull_request:
-    paths: ['.github/workflows/**', '.github/actions/**']
+    paths: [".github/workflows/**", ".github/actions/**"]
   push:
     branches: [main]
-    paths: ['.github/workflows/**', '.github/actions/**']
+    paths: [".github/workflows/**", ".github/actions/**"]
 permissions: {}
 jobs:
   sanity:

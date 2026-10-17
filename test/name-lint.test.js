@@ -25,7 +25,10 @@ test("name lint accepts current names and rejects case variants without echoing 
   const { root, run } = await fixture(t);
   await writeFile(join(root, "package.json"), '{"name":"octo-runtime-adapter-codex"}');
   assert.equal(run().code, 0);
-  await writeFile(join(root, "source.ts"), `const secret = "DO_NOT_ECHO_${previous.toUpperCase()}";`);
+  await writeFile(
+    join(root, "source.ts"),
+    `const secret = "DO_NOT_ECHO_${previous.toUpperCase()}";`
+  );
   const result = run();
   assert.equal(result.code, 1);
   assert.equal(result.report.findings.length, 1);

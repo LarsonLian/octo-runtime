@@ -126,14 +126,21 @@ test("Host renders each run independently without deduplicating resumed context"
       context,
       approvalMode: "full_access"
     });
-    for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))("fixture", request, { protocolMode: "canonical" }))
+    for await (const event of preparedTestInvoke((...args) => preparedFrames(host, ...args))(
+      "fixture",
+      request,
+      { protocolMode: "canonical" }
+    ))
       void event;
     const rendered = renderModelContexts(context);
     assert.equal(
       received[index].modelInput,
       [rendered, request.modelInput].filter(Boolean).join("\n\n")
     );
-    assert.deepEqual(received[index].context.items.filter(item => item.namespace !== "octo.execution"), context.items);
+    assert.deepEqual(
+      received[index].context.items.filter((item) => item.namespace !== "octo.execution"),
+      context.items
+    );
   }
   assert.equal(received.length, 4);
 });
@@ -168,8 +175,7 @@ test("Host freezes contexts and injects once for both modes and image input", as
       /EXECUTION_IDENTITY_CONFLICT/
     );
     request.context = snapshot;
-    for await (const frame of stream)
-      void frame;
+    for await (const frame of stream) void frame;
     assert.equal(received.modelInput, renderModelContexts(snapshot) + "\n\n" + request.modelInput);
     assert.deepEqual(received.modelInputParts, [
       { type: "text", text: renderModelContexts(snapshot) },

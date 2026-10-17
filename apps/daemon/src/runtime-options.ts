@@ -4,29 +4,57 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { StartDaemonServerOptions } from "./server.js";
 
-export function resolveDaemonRuntimePaths(args = process.argv.slice(2), env: NodeJS.ProcessEnv = process.env): StartDaemonServerOptions & { executionOnly: boolean; profile: string } {
-  const defaultHome = process.platform === "win32" && env.LOCALAPPDATA?.trim()
-    ? join(env.LOCALAPPDATA.trim(), "OctoRuntime") : join(env.HOME?.trim() || homedir(), ".octo-runtime");
+export function resolveDaemonRuntimePaths(
+  args = process.argv.slice(2),
+  env: NodeJS.ProcessEnv = process.env
+): StartDaemonServerOptions & { executionOnly: boolean; profile: string } {
+  const defaultHome =
+    process.platform === "win32" && env.LOCALAPPDATA?.trim()
+      ? join(env.LOCALAPPDATA.trim(), "OctoRuntime")
+      : join(env.HOME?.trim() || homedir(), ".octo-runtime");
   const home = resolve(option(args, ["--home"], env.OCTO_RUNTIME_HOME ?? defaultHome));
-  const socket = process.platform === "win32"
-    ? `\\\\.\\pipe\\octo-runtime-${createHash("sha256").update(home.toLowerCase()).digest("hex").slice(0, 16)}`
-    : join(home, "sockets", "octo-runtime-daemon.sock");
+  const socket =
+    process.platform === "win32"
+      ? `\\\\.\\pipe\\octo-runtime-${createHash("sha256").update(home.toLowerCase()).digest("hex").slice(0, 16)}`
+      : join(home, "sockets", "octo-runtime-daemon.sock");
   return {
     executionOnly: args.includes("--execution-only"),
     profile: option(args, ["--profile"], "default"),
-    ...(args.includes("--state-directory") ? { stateDirectory: resolve(option(args, ["--state-directory"], "")) } : {}),
+    ...(args.includes("--state-directory")
+      ? { stateDirectory: resolve(option(args, ["--state-directory"], "")) }
+      : {}),
     homePath: home,
-    pidPath: resolve(option(args, ["--pid-file"], env.OCTO_RUNTIME_PID_FILE ?? join(home, "octo-daemon.pid"))),
+    pidPath: resolve(
+      option(args, ["--pid-file"], env.OCTO_RUNTIME_PID_FILE ?? join(home, "octo-daemon.pid"))
+    ),
     consoleOutput: args.includes("--console"),
-    ...(args.includes("--logs-dir") ? {logging:{directory: resolve(option(args, ["--logs-dir"], ""))}} : {}),
+    ...(args.includes("--logs-dir")
+      ? { logging: { directory: resolve(option(args, ["--logs-dir"], "")) } }
+      : {}),
     socketPath: option(args, ["--socket"], env.OCTO_RUNTIME_SOCKET ?? socket),
     // 这是 CLI 模式的 daemon 默认值；SDK 使用自己的代码装配入口，不读取此资源。
-    manifestPath: resolve(option(args, ["--manifest"], env.OCTO_RUNTIME_MANIFEST ?? fileURLToPath(new URL("../../cli/dist/default_adapters.json", import.meta.url)))),
-    hostEntrypoint: resolve(option(args, ["--adapter-host", "--host-entrypoint"], env.OCTO_RUNTIME_ADAPTER_HOST ?? fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-runtime-adapter-host/runner"))))
+    manifestPath: resolve(
+      option(
+        args,
+        ["--manifest"],
+        env.OCTO_RUNTIME_MANIFEST ??
+          fileURLToPath(new URL("../../cli/dist/default_adapters.json", import.meta.url))
+      )
+    ),
+    hostEntrypoint: resolve(
+      option(
+        args,
+        ["--adapter-host", "--host-entrypoint"],
+        env.OCTO_RUNTIME_ADAPTER_HOST ??
+          fileURLToPath(import.meta.resolve("@mininglamp-oss/octo-runtime-adapter-host/runner"))
+      )
+    )
   };
 }
 
-export function daemonRuntimeArguments(paths: StartDaemonServerOptions & { executionOnly?: boolean; profile?: string }): string[] {
+export function daemonRuntimeArguments(
+  paths: StartDaemonServerOptions & { executionOnly?: boolean; profile?: string }
+): string[] {
   return [
     ...(paths.executionOnly ? ["--execution-only"] : []),
     ...(paths.profile ? ["--profile", paths.profile] : []),
@@ -35,9 +63,11 @@ export function daemonRuntimeArguments(paths: StartDaemonServerOptions & { execu
     ...(paths.pidPath ? ["--pid-file", paths.pidPath] : []),
     ...(paths.consoleOutput ? ["--console"] : []),
     ...(paths.logging ? ["--logs-dir", paths.logging.directory] : []),
-    "--socket", paths.socketPath,
+    "--socket",
+    paths.socketPath,
     ...(paths.manifestPath ? ["--manifest", paths.manifestPath] : []),
-    "--adapter-host", paths.hostEntrypoint
+    "--adapter-host",
+    paths.hostEntrypoint
   ];
 }
 

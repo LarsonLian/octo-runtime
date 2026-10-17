@@ -3,7 +3,13 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { startTemporaryDaemon } from "./temporary-daemon.js";
 import { invokeDaemonRun } from "@mininglamp-oss/octo-runtime-daemon/runtime/run-stream";
-import { type InvokeInput, identifyInvokeInput, createInputInvoke, isHostTerminal, isTerminal } from "@mininglamp-oss/octo-runtime-protocol";
+import {
+  type InvokeInput,
+  identifyInvokeInput,
+  createInputInvoke,
+  isHostTerminal,
+  isTerminal
+} from "@mininglamp-oss/octo-runtime-protocol";
 
 import { INVOKE_REQUEST_MAX_BYTES } from "@mininglamp-oss/octo-runtime-protocol";
 
@@ -29,7 +35,9 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
     const nextSize = size + bytes.length;
     if (nextSize > INVOKE_REQUEST_MAX_BYTES) throw new TypeError("INVOKE_REQUEST_TOO_LARGE");
     if (nextSize > body.length) {
-      const expanded = Buffer.allocUnsafe(Math.min(INVOKE_REQUEST_MAX_BYTES, Math.max(65536, body.length * 2, nextSize)));
+      const expanded = Buffer.allocUnsafe(
+        Math.min(INVOKE_REQUEST_MAX_BYTES, Math.max(65536, body.length * 2, nextSize))
+      );
       body.copy(expanded, 0, 0, size);
       body = expanded;
     }
@@ -85,10 +93,7 @@ export async function runPlayboard(options: PlayboardOptions): Promise<number> {
       invokeDaemonRun(socket, input, environment)
     );
     let exitCode = 1;
-    for await (const frame of invoke(
-      input,
-      { signal: controller.signal }
-    )) {
+    for await (const frame of invoke(input, { signal: controller.signal })) {
       await output(JSON.stringify(frame));
       if (
         ("kind" in frame &&

@@ -84,7 +84,8 @@ export async function buildOpenCodeCommand(req: InvokeRequest, command = "openco
     ? inline.instructions.filter((value): value is string => typeof value === "string")
     : [];
   // Inject harness context via a temporary instructions file, without rewriting the user's existing OpenCode config.
-  if (initialControlInstructions(req)) inline.instructions = [...configuredInstructions, instructions];
+  if (initialControlInstructions(req))
+    inline.instructions = [...configuredInstructions, instructions];
   if (Object.keys(servers).length) {
     inline.mcp = {
       ...(isRecord(inline.mcp) ? inline.mcp : {}),

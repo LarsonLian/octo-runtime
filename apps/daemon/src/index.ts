@@ -20,13 +20,19 @@ let closing: Promise<void> | undefined;
 const stop = (): void => {
   stopRequested = true;
   if (starting || closing) return;
-  closing = (app?.close() ?? Promise.resolve()).then(
-    () => { process.exitCode ??= 0; },
-    () => {
-      console.error("daemon shutdown failed");
-      process.exitCode = 1;
-    }
-  ).finally(() => { if (process.connected) process.disconnect(); });
+  closing = (app?.close() ?? Promise.resolve())
+    .then(
+      () => {
+        process.exitCode ??= 0;
+      },
+      () => {
+        console.error("daemon shutdown failed");
+        process.exitCode = 1;
+      }
+    )
+    .finally(() => {
+      if (process.connected) process.disconnect();
+    });
 };
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
@@ -35,14 +41,24 @@ process.on("SIGHUP", stop);
 if (process.connected) process.once("disconnect", stop);
 try {
   const home = runtimePaths.homePath!;
-  if (runtimePaths.profile.toLowerCase() === "extras" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(runtimePaths.profile))
+  if (
+    runtimePaths.profile.toLowerCase() === "extras" ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(runtimePaths.profile)
+  )
     throw new Error("invalid runtime profile");
   const profiles = new Set([runtimePaths.executionOnly ? runtimePaths.profile : "default"]);
-  for (const entry of runtimePaths.executionOnly ? [] : await readdir(home, { withFileTypes: true }).catch((error) => {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
-    throw error;
-  })) {
-    if (!entry.isDirectory() || entry.name.toLowerCase() === "extras" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(entry.name)) continue;
+  for (const entry of runtimePaths.executionOnly
+    ? []
+    : await readdir(home, { withFileTypes: true }).catch((error) => {
+        if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
+        throw error;
+      })) {
+    if (
+      !entry.isDirectory() ||
+      entry.name.toLowerCase() === "extras" ||
+      !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(entry.name)
+    )
+      continue;
     try {
       const config: unknown = JSON.parse(
         await readFile(join(home, entry.name, "config.json"), "utf8")
@@ -104,7 +120,9 @@ try {
     });
   app = await startDaemonServer({ ...runtimePaths, localRuntimes, extras });
   if (!stopRequested && process.connected)
-    process.send?.({ type: "daemon.ready" }, (error: Error | null) => { if (error) stop(); });
+    process.send?.({ type: "daemon.ready" }, (error: Error | null) => {
+      if (error) stop();
+    });
 } catch (error) {
   const verbose = process.argv.includes("--verbose");
   const message = error instanceof Error ? error.message : String(error);

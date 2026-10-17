@@ -159,8 +159,7 @@ function assertBoundedJson(value: unknown): asserts value is readonly ContextIte
       (!Array.isArray(item) && Object.getPrototypeOf(item) !== Object.prototype)
     )
       throw new Error("IM_CONTEXT_RESULT_INVALID");
-    if (Array.isArray(item) && item.length > budget)
-      throw new Error("IM_CONTEXT_RESULT_TOO_LARGE");
+    if (Array.isArray(item) && item.length > budget) throw new Error("IM_CONTEXT_RESULT_TOO_LARGE");
     // 不执行业务 getter/toJSON；否则一次普通校验也可能触发副作用或生成更大的对象。
     const toJson = Object.getOwnPropertyDescriptor(item, "toJSON");
     if (toJson && (!Object.hasOwn(toJson, "value") || typeof toJson.value === "function"))

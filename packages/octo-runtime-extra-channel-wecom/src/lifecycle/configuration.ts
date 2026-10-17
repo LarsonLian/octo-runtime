@@ -96,7 +96,11 @@ export function validateImConfig(config: ImBotConfig): void {
 
 /** Stable local lookup key, not a caller-supplied identity or authorization token. */
 export function imBotIdentity(config: ImBotConfig): string {
-  const identity = ["wecom", new URL(config.ws_url ?? "wss://openws.work.weixin.qq.com").href, config.bot_id];
+  const identity = [
+    "wecom",
+    new URL(config.ws_url ?? "wss://openws.work.weixin.qq.com").href,
+    config.bot_id
+  ];
   return createHash("sha256").update(JSON.stringify(identity)).digest("hex");
 }
 

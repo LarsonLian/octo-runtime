@@ -1,5 +1,7 @@
 import {
-  initialControlInstructions, invocationEnvironment } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+  initialControlInstructions,
+  invocationEnvironment
+} from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   canonicalTerminalStatus,
   hasImageInput,

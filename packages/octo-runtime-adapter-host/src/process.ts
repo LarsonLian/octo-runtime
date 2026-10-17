@@ -43,12 +43,16 @@ export async function spawnAdapterHost({
     throw new Error("adapter-host readyTimeoutMs must be positive");
   }
   // 跨进程只传程序入口及可选文件路径，不序列化 Adapter 实例或工厂函数。
-  const child = spawn(process.execPath, [entrypoint, ...(manifest ? ["--manifest", manifest] : [])], {
-    argv0: "octo-runtime-adapter-host",
-    env,
-    stdio: ["pipe", "pipe", "pipe"],
-    detached: process.platform !== "win32"
-  });
+  const child = spawn(
+    process.execPath,
+    [entrypoint, ...(manifest ? ["--manifest", manifest] : [])],
+    {
+      argv0: "octo-runtime-adapter-host",
+      env,
+      stdio: ["pipe", "pipe", "pipe"],
+      detached: process.platform !== "win32"
+    }
+  );
   let stderr = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (value: string | Buffer) => {

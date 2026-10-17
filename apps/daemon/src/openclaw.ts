@@ -77,7 +77,10 @@ export async function configureCliOpenClaw(
   const home = expand(
     input.openclawHome ??
       env.OPENCLAW_STATE_DIR ??
-      join(env.HOME || homedir(), env.OPENCLAW_PROFILE ? `.openclaw-${env.OPENCLAW_PROFILE}` : ".openclaw")
+      join(
+        env.HOME || homedir(),
+        env.OPENCLAW_PROFILE ? `.openclaw-${env.OPENCLAW_PROFILE}` : ".openclaw"
+      )
   );
   const activeConfig =
     savedConfigFile ??

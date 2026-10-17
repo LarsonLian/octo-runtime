@@ -23,18 +23,24 @@ function chunk(type, data) {
 // Shape answers appear only in pixels; native requests contain no filenames or labels.
 export function visualInputImages() {
   const size = 256;
-  return [0, 1, 2].map(index => {
+  return [0, 1, 2].map((index) => {
     const scanlines = Buffer.alloc(size * (1 + size * 3), 255);
     for (let y = 0; y < size; y++) {
       scanlines[y * (1 + size * 3)] = 0;
       for (let x = 0; x < size; x++) {
-        const inside = index === 0
-          ? (x - 128) ** 2 + (y - 128) ** 2 <= 72 ** 2
-          : index === 1 ? x >= 56 && x < 200 && y >= 56 && y < 200
-            : y >= 48 && y <= 208 && Math.abs(x - 128) <= (y - 48) / 2;
+        const inside =
+          index === 0
+            ? (x - 128) ** 2 + (y - 128) ** 2 <= 72 ** 2
+            : index === 1
+              ? x >= 56 && x < 200 && y >= 56 && y < 200
+              : y >= 48 && y <= 208 && Math.abs(x - 128) <= (y - 48) / 2;
         if (!inside) continue;
         const offset = y * (1 + size * 3) + 1 + x * 3;
-        const color = [[230, 30, 40], [25, 170, 60], [30, 70, 230]][index];
+        const color = [
+          [230, 30, 40],
+          [25, 170, 60],
+          [30, 70, 230]
+        ][index];
         for (let channel = 0; channel < 3; channel++) scanlines[offset + channel] = color[channel];
       }
     }
@@ -43,7 +49,18 @@ export function visualInputImages() {
     header.writeUInt32BE(size, 4);
     header[8] = 8;
     header[9] = 2;
-    const bytes = Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk("IHDR", header), chunk("IDAT", deflateSync(scanlines)), chunk("IEND", Buffer.alloc(0))]);
-    return { type: "image", mimeType: "image/png", data: bytes.toString("base64"), byteSize: bytes.length, sha256: createHash("sha256").update(bytes).digest("hex") };
+    const bytes = Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      chunk("IHDR", header),
+      chunk("IDAT", deflateSync(scanlines)),
+      chunk("IEND", Buffer.alloc(0))
+    ]);
+    return {
+      type: "image",
+      mimeType: "image/png",
+      data: bytes.toString("base64"),
+      byteSize: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex")
+    };
   });
 }

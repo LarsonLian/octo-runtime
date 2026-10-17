@@ -19,7 +19,16 @@ import { antigravityAdapter } from "@mininglamp-oss/octo-runtime-adapter-antigra
 // 宿主必须自行准备模块依赖与 Provider；此处不安装依赖，不表示 Provider 已可用。
 // 重复类型会在就绪前报错，空数组则提供一个没有 Adapter 的控制服务。
 serveAdapterHost([
-  codexAdapter, claudeCodeAdapter, codebuddyAdapter, hermesAdapter,
-  kimiCodeAdapter, mcodeAdapter, opencodeAdapter, openclawAdapter,
-  qoderCliAdapter, qoderCliCnAdapter, zcodeGuiAdapter, antigravityAdapter
+  codexAdapter,
+  claudeCodeAdapter,
+  codebuddyAdapter,
+  hermesAdapter,
+  kimiCodeAdapter,
+  mcodeAdapter,
+  opencodeAdapter,
+  openclawAdapter,
+  qoderCliAdapter,
+  qoderCliCnAdapter,
+  zcodeGuiAdapter,
+  antigravityAdapter
 ]);

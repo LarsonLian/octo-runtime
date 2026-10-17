@@ -30,20 +30,13 @@
     },
     "ProtocolMode": {
       "title": "ProtocolMode",
-      "enum": [
-        "native",
-        "canonical"
-      ]
+      "enum": ["native", "canonical"]
     },
     "CanonicalEventWire": {
       "title": "CanonicalEventWire",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "protocolVersion",
-        "type",
-        "payload"
-      ],
+      "required": ["protocolVersion", "type", "payload"],
       "properties": {
         "protocolVersion": {
           "const": 2
@@ -150,11 +143,7 @@
       "title": "AdapterProtocolSupport",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "protocol",
-        "modes",
-        "nativeMethods"
-      ],
+      "required": ["protocol", "modes", "nativeMethods"],
       "properties": {
         "protocol": {
           "type": "string",
@@ -202,10 +191,7 @@
       "title": "NativeInteractionResponse",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "requestId",
-        "payload"
-      ],
+      "required": ["requestId", "payload"],
       "properties": {
         "requestId": {
           "oneOf": [
@@ -243,19 +229,13 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "name",
-            "payload"
-          ],
+          "required": ["type", "name", "payload"],
           "properties": {
             "type": {
               "const": "evidence"
             },
             "name": {
-              "enum": [
-                "session"
-              ]
+              "enum": ["session"]
             },
             "payload": {
               "type": "object",
@@ -266,33 +246,20 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "state"
-          ],
+          "required": ["type", "state"],
           "properties": {
             "type": {
               "const": "state"
             },
             "state": {
-              "enum": [
-                "running",
-                "completed",
-                "failed",
-                "cancelled",
-                "lost"
-              ]
+              "enum": ["running", "completed", "failed", "cancelled", "lost"]
             }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "code",
-            "message"
-          ],
+          "required": ["type", "code", "message"],
           "properties": {
             "type": {
               "const": "error"
@@ -308,11 +275,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "requestId",
-            "status"
-          ],
+          "required": ["type", "requestId", "status"],
           "properties": {
             "type": {
               "const": "interaction"
@@ -332,12 +295,7 @@
               ]
             },
             "status": {
-              "enum": [
-                "pending",
-                "resolved",
-                "expired",
-                "invalidated"
-              ]
+              "enum": ["pending", "resolved", "expired", "invalidated"]
             },
             "expiresAt": {
               "type": "integer",
@@ -353,20 +311,13 @@
             }
           },
           "then": {
-            "required": [
-              "expiresAt"
-            ]
+            "required": ["expiresAt"]
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "requested_after_seq",
-            "oldest_seq",
-            "latest_seq"
-          ],
+          "required": ["type", "requested_after_seq", "oldest_seq", "latest_seq"],
           "properties": {
             "type": {
               "const": "gap"
@@ -464,12 +415,7 @@
           "const": "native"
         },
         "messageKind": {
-          "enum": [
-            "response",
-            "notification",
-            "request",
-            "message"
-          ]
+          "enum": ["response", "notification", "request", "message"]
         },
         "payload": {
           "type": "object",
@@ -628,12 +574,7 @@
           "maxLength": 256
         },
         "event": {
-          "enum": [
-            "task.event",
-            "execution.succeeded",
-            "execution.failed",
-            "notification.test"
-          ]
+          "enum": ["task.event", "execution.succeeded", "execution.failed", "notification.test"]
         },
         "occurredAt": {
           "type": "string",
@@ -666,13 +607,7 @@
         "task": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "title",
-            "status",
-            "row_version",
-            "handler_epoch"
-          ],
+          "required": ["id", "title", "status", "row_version", "handler_epoch"],
           "properties": {
             "id": {
               "type": "string",
@@ -682,13 +617,7 @@
               "type": "string"
             },
             "status": {
-              "enum": [
-                "backlog",
-                "todo",
-                "in_progress",
-                "done",
-                "cancelled"
-              ]
+              "enum": ["backlog", "todo", "in_progress", "done", "cancelled"]
             },
             "row_version": {
               "type": "integer",
@@ -699,30 +628,17 @@
               "minimum": 1
             },
             "responsible_party": {
-              "type": [
-                "object",
-                "null"
-              ]
+              "type": ["object", "null"]
             },
             "current_handler": {
-              "type": [
-                "object",
-                "null"
-              ]
+              "type": ["object", "null"]
             }
           }
         },
         "taskEvent": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "id",
-            "sequence",
-            "evt_type",
-            "actor",
-            "summary",
-            "payload"
-          ],
+          "required": ["id", "sequence", "evt_type", "actor", "summary", "payload"],
           "properties": {
             "id": {
               "type": "string"
@@ -759,12 +675,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "eventId",
-              "sequence",
-              "evt_type",
-              "summary"
-            ],
+            "required": ["eventId", "sequence", "evt_type", "summary"],
             "properties": {
               "eventId": {
                 "type": "string"
@@ -802,46 +713,28 @@
             }
           },
           "then": {
-            "required": [
-              "evt_type",
-              "task",
-              "taskEvent",
-              "timeline",
-              "timelineThroughSequence"
-            ]
+            "required": ["evt_type", "task", "taskEvent", "timeline", "timelineThroughSequence"]
           },
           "else": {
             "not": {
               "anyOf": [
                 {
-                  "required": [
-                    "evt_type"
-                  ]
+                  "required": ["evt_type"]
                 },
                 {
-                  "required": [
-                    "task"
-                  ]
+                  "required": ["task"]
                 },
                 {
-                  "required": [
-                    "taskEvent"
-                  ]
+                  "required": ["taskEvent"]
                 },
                 {
-                  "required": [
-                    "timeline"
-                  ]
+                  "required": ["timeline"]
                 },
                 {
-                  "required": [
-                    "timelineThroughSequence"
-                  ]
+                  "required": ["timelineThroughSequence"]
                 },
                 {
-                  "required": [
-                    "timelineTruncated"
-                  ]
+                  "required": ["timelineTruncated"]
                 }
               ]
             }
@@ -852,11 +745,7 @@
     "ApprovalMode": {
       "title": "ApprovalMode",
       "type": "string",
-      "enum": [
-        "ask",
-        "assisted",
-        "full_access"
-      ]
+      "enum": ["ask", "assisted", "full_access"]
     },
     "ContextItem": {
       "title": "ContextItem",
@@ -864,11 +753,7 @@
       "tsType": "{ namespace: string; name: string; guidance?: string; payload: Record<string, unknown> }",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "namespace",
-        "name",
-        "payload"
-      ],
+      "required": ["namespace", "name", "payload"],
       "properties": {
         "namespace": {
           "type": "string",
@@ -1096,20 +981,13 @@
           "if": {
             "properties": {
               "namespace": {
-                "enum": [
-                  "octo.execution",
-                  "octo.runtime",
-                  "octo.security",
-                  "octo.control"
-                ]
+                "enum": ["octo.execution", "octo.runtime", "octo.security", "octo.control"]
               }
             }
           },
           "then": {
             "not": {
-              "required": [
-                "guidance"
-              ]
+              "required": ["guidance"]
             }
           }
         },
@@ -1139,9 +1017,7 @@
             "const": "octo.resources"
           }
         },
-        "required": [
-          "namespace"
-        ]
+        "required": ["namespace"]
       }
     },
     "ContextEnvelope": {
@@ -1153,10 +1029,7 @@
       "x-octo-max-json-bytes": 65536,
       "x-octo-max-json-depth": 32,
       "x-octo-unicode-scalar-strings": true,
-      "required": [
-        "schema",
-        "items"
-      ],
+      "required": ["schema", "items"],
       "properties": {
         "schema": {
           "const": "octo.context-envelope/v3"
@@ -1175,10 +1048,7 @@
       "description": "Agent defaults and mandatory constraints, stored under one external configuration version. Authorized configuration writers may persist system instructions in mandatory with text-only entries. Ephemeral business content and default-layer instructions are forbidden; callers cannot submit trusted control instructions.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "defaults",
-        "mandatory"
-      ],
+      "required": ["defaults", "mandatory"],
       "properties": {
         "defaults": {
           "allOf": [
@@ -1237,16 +1107,10 @@
           "minLength": 1
         },
         "preparation_status": {
-          "enum": [
-            "unknown",
-            "prepared"
-          ]
+          "enum": ["unknown", "prepared"]
         },
         "application_status": {
-          "enum": [
-            "unknown",
-            "applied"
-          ]
+          "enum": ["unknown", "applied"]
         },
         "invocation_status": {
           "const": "unknown"
@@ -1268,11 +1132,7 @@
         "execution": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "adapter_type",
-            "approval_mode",
-            "workspace_mode"
-          ],
+          "required": ["adapter_type", "approval_mode", "workspace_mode"],
           "properties": {
             "adapter_type": {
               "type": "string",
@@ -1287,18 +1147,10 @@
               "minLength": 1
             },
             "approval_mode": {
-              "enum": [
-                "ask",
-                "assisted",
-                "full_access"
-              ]
+              "enum": ["ask", "assisted", "full_access"]
             },
             "workspace_mode": {
-              "enum": [
-                "fixed",
-                "random",
-                "none"
-              ]
+              "enum": ["fixed", "random", "none"]
             }
           }
         }
@@ -1307,13 +1159,7 @@
     "PublicObjectMaterial": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "resource_ref",
-        "object_type",
-        "origin",
-        "byte_size",
-        "digest"
-      ],
+      "required": ["resource_ref", "object_type", "origin", "byte_size", "digest"],
       "properties": {
         "resource_ref": {
           "type": "string",
@@ -1334,12 +1180,7 @@
           "pattern": "^[a-zA-Z0-9][a-zA-Z0-9_.:@-]{0,190}$"
         },
         "origin": {
-          "enum": [
-            "mention",
-            "attachment",
-            "object_action",
-            "source_entity"
-          ]
+          "enum": ["mention", "attachment", "object_action", "source_entity"]
         },
         "revision": {
           "type": "string",
@@ -1357,16 +1198,10 @@
         "object_scope": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "id"
-          ],
+          "required": ["type", "id"],
           "properties": {
             "type": {
-              "enum": [
-                "user",
-                "teamspace"
-              ]
+              "enum": ["user", "teamspace"]
             },
             "id": {
               "type": "string",
@@ -1377,18 +1212,10 @@
         "selector": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "mode"
-          ],
+          "required": ["mode"],
           "properties": {
             "mode": {
-              "enum": [
-                "core",
-                "content",
-                "history",
-                "chain",
-                "metadata"
-              ]
+              "enum": ["core", "content", "history", "chain", "metadata"]
             },
             "start": {
               "type": "integer",
@@ -1414,15 +1241,11 @@
           },
           "then": {
             "not": {
-              "required": [
-                "object_id"
-              ]
+              "required": ["object_id"]
             }
           },
           "else": {
-            "required": [
-              "object_id"
-            ]
+            "required": ["object_id"]
           }
         }
       ]
@@ -1461,11 +1284,7 @@
           "maximum": 9007199254740991
         },
         "workspace_mode": {
-          "enum": [
-            "fixed",
-            "random",
-            "none"
-          ]
+          "enum": ["fixed", "random", "none"]
         },
         "workspace_path": {
           "type": "string"
@@ -1610,9 +1429,7 @@
     "ContextAdapterPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type"
-      ],
+      "required": ["type"],
       "properties": {
         "type": {
           "type": "string",
@@ -1631,15 +1448,11 @@
         }
       },
       "then": {
-        "required": [
-          "provider_agent_id"
-        ]
+        "required": ["provider_agent_id"]
       },
       "else": {
         "not": {
-          "required": [
-            "provider_agent_id"
-          ]
+          "required": ["provider_agent_id"]
         }
       }
     },
@@ -1665,7 +1478,9 @@
             "effective": { "enum": ["default", "plan", null] },
             "status": { "enum": ["applied", "fallback", "unknown"] },
             "nativeMode": { "type": "string", "minLength": 1 },
-            "reason": { "enum": ["provider_unsupported", "adapter_unmapped", "provider_unconfirmed"] }
+            "reason": {
+              "enum": ["provider_unsupported", "adapter_unmapped", "provider_unconfirmed"]
+            }
           }
         }
       }
@@ -1697,23 +1512,15 @@
       },
       "oneOf": [
         {
-          "required": [
-            "effort"
-          ],
+          "required": ["effort"],
           "not": {
-            "required": [
-              "use_provider_default"
-            ]
+            "required": ["use_provider_default"]
           }
         },
         {
-          "required": [
-            "use_provider_default"
-          ],
+          "required": ["use_provider_default"],
           "not": {
-            "required": [
-              "effort"
-            ]
+            "required": ["effort"]
           }
         }
       ]
@@ -1724,10 +1531,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "mode",
-            "path"
-          ],
+          "required": ["mode", "path"],
           "properties": {
             "mode": {
               "const": "fixed"
@@ -1741,9 +1545,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "mode"
-          ],
+          "required": ["mode"],
           "properties": {
             "mode": {
               "const": "random"
@@ -1752,9 +1554,7 @@
         },
         {
           "type": "object",
-          "required": [
-            "mode"
-          ],
+          "required": ["mode"],
           "additionalProperties": false,
           "properties": {
             "mode": {
@@ -1785,10 +1585,7 @@
           "maximum": 3600000
         },
         "model_idle_policy": {
-          "enum": [
-            "enforce",
-            "observe"
-          ]
+          "enum": ["enforce", "observe"]
         },
         "tool_timeout_ms": {
           "type": "integer",
@@ -1811,16 +1608,11 @@
           "maximum": 60000
         },
         "enforcement": {
-          "enum": [
-            "enforce",
-            "observe"
-          ]
+          "enum": ["enforce", "observe"]
         }
       },
       "if": {
-        "required": [
-          "enforcement"
-        ],
+        "required": ["enforcement"],
         "properties": {
           "enforcement": {
             "const": "observe"
@@ -1831,19 +1623,13 @@
         "not": {
           "anyOf": [
             {
-              "required": [
-                "model_idle_policy"
-              ]
+              "required": ["model_idle_policy"]
             },
             {
-              "required": [
-                "model_idle_warning_ms"
-              ]
+              "required": ["model_idle_warning_ms"]
             },
             {
-              "required": [
-                "tool_wall_timeout_ms"
-              ]
+              "required": ["tool_wall_timeout_ms"]
             }
           ]
         }
@@ -1852,15 +1638,10 @@
     "ContextRuntimeSelectionPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "mode"
-      ],
+      "required": ["mode"],
       "properties": {
         "mode": {
-          "enum": [
-            "candidates",
-            "explicit"
-          ]
+          "enum": ["candidates", "explicit"]
         },
         "runtime_id": {
           "type": "string",
@@ -1880,16 +1661,10 @@
           "const": "preferred_failover"
         },
         "offline_behavior": {
-          "enum": [
-            "wait",
-            "fail"
-          ]
+          "enum": ["wait", "fail"]
         },
         "failover": {
-          "enum": [
-            "candidates",
-            "none"
-          ]
+          "enum": ["candidates", "none"]
         }
       },
       "oneOf": [
@@ -1899,14 +1674,9 @@
               "const": "candidates"
             }
           },
-          "required": [
-            "runtime_ids",
-            "strategy"
-          ],
+          "required": ["runtime_ids", "strategy"],
           "not": {
-            "required": [
-              "runtime_id"
-            ]
+            "required": ["runtime_id"]
           }
         },
         {
@@ -1915,20 +1685,14 @@
               "const": "explicit"
             }
           },
-          "required": [
-            "runtime_id"
-          ],
+          "required": ["runtime_id"],
           "not": {
             "anyOf": [
               {
-                "required": [
-                  "runtime_ids"
-                ]
+                "required": ["runtime_ids"]
               },
               {
-                "required": [
-                  "strategy"
-                ]
+                "required": ["strategy"]
               }
             ]
           }
@@ -1938,9 +1702,7 @@
     "ContextApprovalPolicyPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "mode"
-      ],
+      "required": ["mode"],
       "properties": {
         "mode": {
           "$ref": "#/definitions/ApprovalMode"
@@ -1951,9 +1713,7 @@
       "description": "Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "text"
-      ],
+      "required": ["text"],
       "properties": {
         "text": {
           "type": "string",
@@ -1964,10 +1724,7 @@
           "minLength": 1
         },
         "source": {
-          "type": [
-            "object",
-            "string"
-          ],
+          "type": ["object", "string"],
           "additionalProperties": true
         },
         "summary": {
@@ -1979,11 +1736,7 @@
       "description": "Declarative MCP resource operation. Only deployed scoped operations may execute; schema validation does not authorize access.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "resource_ref",
-        "resolver",
-        "locator"
-      ],
+      "required": ["resource_ref", "resolver", "locator"],
       "properties": {
         "resource_ref": {
           "type": "string",
@@ -2023,10 +1776,7 @@
     "ContextMcpLocator": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "server_ref",
-        "tool"
-      ],
+      "required": ["server_ref", "tool"],
       "properties": {
         "server_ref": {
           "type": "string",
@@ -2042,9 +1792,7 @@
       "description": "Control instruction containing only non-empty text. Authorization belongs to the authenticated upstream boundary, not to a caller-supplied source label.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "text"
-      ],
+      "required": ["text"],
       "properties": {
         "text": {
           "type": "string",
@@ -2055,9 +1803,7 @@
     "ContextInstructionsPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "entries"
-      ],
+      "required": ["entries"],
       "properties": {
         "entries": {
           "type": "array",
@@ -2115,10 +1861,7 @@
           "const": "octo.runtime-selection/v2"
         },
         "selection_mode": {
-          "enum": [
-            "explicit",
-            "candidates"
-          ]
+          "enum": ["explicit", "candidates"]
         },
         "explicit_runtime_id": {
           "type": "string",
@@ -2132,12 +1875,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "runtime_id",
-              "priority",
-              "owner_subject_type",
-              "owner_subject_id"
-            ],
+            "required": ["runtime_id", "priority", "owner_subject_type", "owner_subject_id"],
             "properties": {
               "runtime_id": {
                 "type": "string",
@@ -2150,10 +1888,7 @@
                 "maximum": 9007199254740991
               },
               "owner_subject_type": {
-                "enum": [
-                  "user",
-                  "teamspace"
-                ]
+                "enum": ["user", "teamspace"]
               },
               "owner_subject_id": {
                 "type": "string",
@@ -2164,16 +1899,10 @@
           }
         },
         "offline_behavior": {
-          "enum": [
-            "wait",
-            "fail"
-          ]
+          "enum": ["wait", "fail"]
         },
         "failover": {
-          "enum": [
-            "candidates",
-            "none"
-          ]
+          "enum": ["candidates", "none"]
         }
       },
       "allOf": [
@@ -2186,9 +1915,7 @@
             }
           },
           "then": {
-            "required": [
-              "explicit_runtime_id"
-            ],
+            "required": ["explicit_runtime_id"],
             "properties": {
               "authorized_candidates": {
                 "maxItems": 1
@@ -2200,9 +1927,7 @@
           },
           "else": {
             "not": {
-              "required": [
-                "explicit_runtime_id"
-              ]
+              "required": ["explicit_runtime_id"]
             }
           }
         }
@@ -2213,12 +1938,7 @@
       "x-octo-unicode-scalar-strings": true,
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "agent_source",
-        "adapter_type",
-        "workdir",
-        "approval_mode"
-      ],
+      "required": ["agent_source", "adapter_type", "workdir", "approval_mode"],
       "properties": {
         "actmode": { "enum": ["default", "plan"] },
         "adapter_type": {
@@ -2268,15 +1988,10 @@
             "const": ""
           }
         },
-        "required": [
-          "agent_source",
-          "workdir"
-        ]
+        "required": ["agent_source", "workdir"]
       },
       "then": {
-        "required": [
-          "workspace"
-        ],
+        "required": ["workspace"],
         "properties": {
           "workspace": {
             "properties": {
@@ -2297,15 +2012,11 @@
             }
           },
           "then": {
-            "required": [
-              "provider_agent_id"
-            ]
+            "required": ["provider_agent_id"]
           },
           "else": {
             "not": {
-              "required": [
-                "provider_agent_id"
-              ]
+              "required": ["provider_agent_id"]
             }
           }
         },
@@ -2316,14 +2027,10 @@
                 "const": "preset"
               }
             },
-            "required": [
-              "agent_source"
-            ]
+            "required": ["agent_source"]
           },
           "then": {
-            "required": [
-              "provider_agent_id"
-            ]
+            "required": ["provider_agent_id"]
           }
         }
       ]
@@ -2332,33 +2039,20 @@
       "title": "MessageChannel",
       "description": "Provider-neutral assistant output channel. analysis is reasoning-class content gated by exposure; commentary is public in-run progress; final is answer content delivered only after the Run reaches a completed terminal state.",
       "type": "string",
-      "enum": [
-        "analysis",
-        "commentary",
-        "final"
-      ]
+      "enum": ["analysis", "commentary", "final"]
     },
     "MessageExposure": {
       "title": "MessageExposure",
       "description": "Adapter-authenticated classification of analysis content. public_reasoning, public_summary, and public_plan may enter a public Presentation; missing values are unknown.",
       "type": "string",
-      "enum": [
-        "public_reasoning",
-        "public_summary",
-        "public_plan",
-        "private_reasoning",
-        "unknown"
-      ]
+      "enum": ["public_reasoning", "public_summary", "public_plan", "private_reasoning", "unknown"]
     },
     "MessageProvenance": {
       "title": "MessageProvenance",
       "description": "Provider-native provenance written by the adapter. Audience projectors use it to audit public exposure and clients cannot override it.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "provider",
-        "nativeEvent"
-      ],
+      "required": ["provider", "nativeEvent"],
       "properties": {
         "provider": {
           "description": "Adapter or provider type that produced the message.",
@@ -2375,10 +2069,7 @@
       "description": "A catalog-controlled recovery action. Clients render labelKey and must not execute arbitrary commands from this object.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "labelKey"
-      ],
+      "required": ["type", "labelKey"],
       "properties": {
         "type": {
           "type": "string",
@@ -2404,16 +2095,11 @@
       "description": "Low-cardinality component identity. It intentionally excludes hostnames, paths, accounts, and tenant data.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "component"
-      ],
+      "required": ["component"],
       "properties": {
         "component": {
           "type": "string",
-          "enum": [
-            "octo-runtime",
-            "octo-agent-worker"
-          ]
+          "enum": ["octo-runtime", "octo-agent-worker"]
         },
         "adapter": {
           "type": "string",
@@ -2427,9 +2113,7 @@
       "description": "Sanitized machine-readable root cause. Raw stderr, response bodies, paths, and credentials are forbidden.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "reasonCode"
-      ],
+      "required": ["reasonCode"],
       "properties": {
         "reasonCode": {
           "type": "string",
@@ -2495,11 +2179,7 @@
           "type": "object",
           "description": "Catalog-allowlisted presentation parameters only.",
           "additionalProperties": {
-            "type": [
-              "string",
-              "number",
-              "boolean"
-            ]
+            "type": ["string", "number", "boolean"]
           }
         },
         "retryable": {
@@ -2533,9 +2213,7 @@
       "description": "Provider-owned session resume data. Core treats sessionId and adapter extension fields as opaque.",
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "sessionId"
-      ],
+      "required": ["sessionId"],
       "properties": {
         "sessionId": {
           "description": "Opaque provider session identifier.",
@@ -2548,12 +2226,7 @@
         "resumeOutcome": {
           "description": "Continuity outcome for this session update. Compaction applies to the next turn; fresh fallback applies to the current turn.",
           "type": "string",
-          "enum": [
-            "new",
-            "resumed",
-            "fresh_fallback",
-            "compacted"
-          ]
+          "enum": ["new", "resumed", "fresh_fallback", "compacted"]
         },
         "resumeFallback": {
           "description": "Low-cardinality reason for a fresh resume fallback.",
@@ -2562,10 +2235,7 @@
         "contextInputVariant": {
           "description": "Frozen context input variant actually selected for the current provider turn.",
           "type": "string",
-          "enum": [
-            "primary",
-            "recovery"
-          ]
+          "enum": ["primary", "recovery"]
         }
       }
     },
@@ -2592,10 +2262,7 @@
         },
         "modelIdlePolicy": {
           "type": "string",
-          "enum": [
-            "observe",
-            "enforce"
-          ]
+          "enum": ["observe", "enforce"]
         },
         "toolTimeoutMs": {
           "type": "integer",
@@ -2619,10 +2286,7 @@
         },
         "enforcement": {
           "type": "string",
-          "enum": [
-            "observe",
-            "enforce"
-          ]
+          "enum": ["observe", "enforce"]
         }
       }
     },
@@ -2634,24 +2298,16 @@
       "not": {
         "anyOf": [
           {
-            "required": [
-              "permissionMode"
-            ]
+            "required": ["permissionMode"]
           },
           {
-            "required": [
-              "autoApprove"
-            ]
+            "required": ["autoApprove"]
           },
           {
-            "required": [
-              "dangerouslyBypassPermissions"
-            ]
+            "required": ["dangerouslyBypassPermissions"]
           },
           {
-            "required": [
-              "thinking"
-            ]
+            "required": ["thinking"]
           }
         ]
       },
@@ -2752,13 +2408,7 @@
       "description": "Provider-neutral request that pauses one active invocation until an interaction response is returned through the Adapter Host.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "interactionId",
-        "kind",
-        "request",
-        "executionInstanceId",
-        "expiresAt"
-      ],
+      "required": ["interactionId", "kind", "request", "executionInstanceId", "expiresAt"],
       "properties": {
         "executionInstanceId": {
           "type": "string",
@@ -2777,11 +2427,7 @@
         },
         "kind": {
           "type": "string",
-          "enum": [
-            "approval",
-            "question",
-            "elicitation"
-          ]
+          "enum": ["approval", "question", "elicitation"]
         },
         "request": {
           "description": "Display-safe provider request projected for the responding product.",
@@ -2796,9 +2442,7 @@
             "const": "approval"
           }
         },
-        "required": [
-          "kind"
-        ]
+        "required": ["kind"]
       },
       "then": {
         "properties": {
@@ -2829,10 +2473,7 @@
         "policy": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "mode",
-            "hash"
-          ],
+          "required": ["mode", "hash"],
           "properties": {
             "mode": {
               "$ref": "#/definitions/ApprovalMode"
@@ -2859,18 +2500,11 @@
           "minItems": 1,
           "uniqueItems": true,
           "items": {
-            "enum": [
-              "accepted",
-              "declined",
-              "cancelled"
-            ]
+            "enum": ["accepted", "declined", "cancelled"]
           }
         },
         "grantScope": {
-          "enum": [
-            "request",
-            "provider"
-          ]
+          "enum": ["request", "provider"]
         },
         "providerDetails": {
           "$ref": "#/definitions/ApprovalDisplayDetails"
@@ -2880,10 +2514,7 @@
     "ApprovalOperation": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "kind",
-        "summary"
-      ],
+      "required": ["kind", "summary"],
       "properties": {
         "kind": {
           "enum": [
@@ -2933,11 +2564,7 @@
     "InteractionResolvedPayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "interactionId",
-        "executionInstanceId",
-        "status"
-      ],
+      "required": ["interactionId", "executionInstanceId", "status"],
       "properties": {
         "interactionId": {
           "type": "string",
@@ -2950,19 +2577,10 @@
           "maxLength": 191
         },
         "status": {
-          "enum": [
-            "resolved",
-            "expired",
-            "invalidated"
-          ]
+          "enum": ["resolved", "expired", "invalidated"]
         },
         "outcome": {
-          "enum": [
-            "accepted",
-            "declined",
-            "cancelled",
-            "answered"
-          ]
+          "enum": ["accepted", "declined", "cancelled", "answered"]
         },
         "reasonCode": {
           "type": "string",
@@ -2975,19 +2593,13 @@
             "const": "resolved"
           }
         },
-        "required": [
-          "status"
-        ]
+        "required": ["status"]
       },
       "then": {
-        "required": [
-          "outcome"
-        ]
+        "required": ["outcome"]
       },
       "else": {
-        "required": [
-          "reasonCode"
-        ]
+        "required": ["reasonCode"]
       }
     },
     "ModelStepStartedPayload": {
@@ -2995,9 +2607,7 @@
       "description": "Starts one provider model round. A round may contain public reasoning, tool calls, and text output.",
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "stepId"
-      ],
+      "required": ["stepId"],
       "properties": {
         "stepId": {
           "description": "Stable identifier reused by model_step.finished and child events.",
@@ -3015,21 +2625,14 @@
       "description": "Finishes one provider model round and records why control returned to the harness.",
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "stepId",
-        "status"
-      ],
+      "required": ["stepId", "status"],
       "properties": {
         "stepId": {
           "description": "Stable identifier from model_step.started.",
           "type": "string"
         },
         "status": {
-          "enum": [
-            "completed",
-            "failed",
-            "cancelled"
-          ]
+          "enum": ["completed", "failed", "cancelled"]
         },
         "finishReason": {
           "description": "Provider-normalized reason such as tool-calls or stop.",
@@ -3047,12 +2650,7 @@
       "description": "Formal tool_call.create payload. args preserves the original structured input, including args.command for shell tools.",
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "id",
-        "name",
-        "args",
-        "status"
-      ],
+      "required": ["id", "name", "args", "status"],
       "properties": {
         "id": {
           "description": "Stable tool call identifier reused by later delta and update events.",
@@ -3078,10 +2676,7 @@
       "description": "Formal tool_call.delta payload. argsDelta is an ordered raw JSON fragment and must be concatenated before parsing.",
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "id",
-        "kind"
-      ],
+      "required": ["id", "kind"],
       "properties": {
         "id": {
           "description": "Stable identifier from the corresponding tool_call.create event.",
@@ -3106,21 +2701,14 @@
       "description": "Formal tool_call.update payload that closes the tool lifecycle and carries its final result.",
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "id",
-        "status"
-      ],
+      "required": ["id", "status"],
       "properties": {
         "id": {
           "description": "Stable identifier from the corresponding tool_call.create event.",
           "type": "string"
         },
         "status": {
-          "enum": [
-            "completed",
-            "failed",
-            "cancelled"
-          ]
+          "enum": ["completed", "failed", "cancelled"]
         },
         "output": {
           "description": "Final tool output as text or structured JSON.",
@@ -3148,10 +2736,7 @@
       "description": "Stable run identity used by envelopes without requiring the complete domain object.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "agentSessionId"
-      ],
+      "required": ["id", "agentSessionId"],
       "properties": {
         "id": {
           "description": "Run identifier.",
@@ -3190,10 +2775,7 @@
           "minLength": 1
         },
         "account_id": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         },
         "bot_id": {
           "type": "string",
@@ -3204,10 +2786,7 @@
           "minLength": 1
         },
         "thread_id": {
-          "type": [
-            "string",
-            "null"
-          ]
+          "type": ["string", "null"]
         }
       }
     },
@@ -3216,9 +2795,7 @@
       "description": "Normalized platform message part. type and text are common fields; connector extensions remain untrusted external data.",
       "type": "object",
       "additionalProperties": true,
-      "required": [
-        "type"
-      ],
+      "required": ["type"],
       "properties": {
         "type": {
           "type": "string",
@@ -3234,10 +2811,7 @@
       "description": "Normalized sender fact without platform credentials.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "kind"
-      ],
+      "required": ["id", "kind"],
       "properties": {
         "id": {
           "type": "string",
@@ -3271,12 +2845,7 @@
       "description": "A platform-neutral message fact in the rebuildable channel journal. Message content is always untrusted external input.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "message_id",
-        "sender",
-        "occurred_at_ms",
-        "parts"
-      ],
+      "required": ["message_id", "sender", "occurred_at_ms", "parts"],
       "properties": {
         "message_id": {
           "type": "string",
@@ -3310,11 +2879,7 @@
       "description": "Idempotent context-only batch appended by agent-worker to its bound daemon.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "agent_id",
-        "scope",
-        "facts"
-      ],
+      "required": ["agent_id", "scope", "facts"],
       "properties": {
         "agent_id": {
           "type": "string",
@@ -3343,13 +2908,7 @@
       "description": "Bounded backfill requested by the daemon after cold start or gap detection. It never carries platform tokens.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "request_id",
-        "run_id",
-        "scope",
-        "trigger_message_id",
-        "limit"
-      ],
+      "required": ["request_id", "run_id", "scope", "trigger_message_id", "limit"],
       "properties": {
         "request_id": {
           "type": "string",
@@ -3386,12 +2945,7 @@
       "description": "Bounded history result. complete means only that the requested window was returned, not that the local journal is authoritative.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "request_id",
-        "scope",
-        "facts",
-        "completeness"
-      ],
+      "required": ["request_id", "scope", "facts", "completeness"],
       "properties": {
         "request_id": {
           "type": "string",
@@ -3409,11 +2963,7 @@
         },
         "completeness": {
           "type": "string",
-          "enum": [
-            "complete",
-            "partial",
-            "unavailable"
-          ]
+          "enum": ["complete", "partial", "unavailable"]
         },
         "through_seq": {
           "type": "integer",
@@ -3481,10 +3031,7 @@
       "description": "Result of advancing the consumer cursor with version CAS after terminal durability.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "snapshot_id",
-        "committed"
-      ],
+      "required": ["snapshot_id", "committed"],
       "properties": {
         "snapshot_id": {
           "type": "string",
@@ -3510,10 +3057,7 @@
       "description": "A per-invocation MCP server launched as a child process by the provider.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "command"
-      ],
+      "required": ["type", "command"],
       "properties": {
         "type": {
           "const": "stdio"
@@ -3565,10 +3109,7 @@
       "description": "A per-invocation Streamable HTTP MCP endpoint. Header values are sensitive and must never enter logs or canonical events.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "type",
-        "url"
-      ],
+      "required": ["type", "url"],
       "properties": {
         "type": {
           "const": "streamable_http"
@@ -3648,10 +3189,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "text"
-          ],
+          "required": ["type", "text"],
           "properties": {
             "id": {
               "type": "string",
@@ -3668,13 +3206,7 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "mimeType",
-            "data",
-            "byteSize",
-            "sha256"
-          ],
+          "required": ["type", "mimeType", "data", "byteSize", "sha256"],
           "properties": {
             "id": {
               "type": "string",
@@ -3684,11 +3216,7 @@
               "const": "image"
             },
             "mimeType": {
-              "enum": [
-                "image/png",
-                "image/jpeg",
-                "image/webp"
-              ]
+              "enum": ["image/png", "image/jpeg", "image/webp"]
             },
             "data": {
               "type": "string",
@@ -3757,10 +3285,7 @@
         "continuityMode": {
           "description": "Caller continuity intent. Fresh invocations must not carry providerSession.",
           "type": "string",
-          "enum": [
-            "continue",
-            "fresh"
-          ]
+          "enum": ["continue", "fresh"]
         },
         "prompt": {
           "description": "Display-safe current request or task description. It excludes hidden channel context and provider control parameters.",
@@ -3844,11 +3369,7 @@
         "params": {
           "type": "object",
           "additionalProperties": {
-            "type": [
-              "string",
-              "number",
-              "boolean"
-            ]
+            "type": ["string", "number", "boolean"]
           }
         },
         "attempt": {
@@ -3874,9 +3395,7 @@
               "const": "run"
             }
           },
-          "required": [
-            "type"
-          ]
+          "required": ["type"]
         },
         {
           "type": "object",
@@ -3891,10 +3410,7 @@
               "maxLength": 191
             }
           },
-          "required": [
-            "type",
-            "id"
-          ]
+          "required": ["type", "id"]
         },
         {
           "type": "object",
@@ -3909,10 +3425,7 @@
               "maxLength": 191
             }
           },
-          "required": [
-            "type",
-            "id"
-          ]
+          "required": ["type", "id"]
         },
         {
           "type": "object",
@@ -3927,10 +3440,7 @@
               "maxLength": 191
             }
           },
-          "required": [
-            "type",
-            "id"
-          ]
+          "required": ["type", "id"]
         }
       ]
     },
@@ -3960,10 +3470,7 @@
           "$ref": "#/definitions/ActivitySubject"
         },
         "source": {
-          "enum": [
-            "provider",
-            "harness"
-          ]
+          "enum": ["provider", "harness"]
         },
         "info": {
           "$ref": "#/definitions/ActivityInfo"
@@ -3974,13 +3481,7 @@
           "maximum": 9007199254740991
         }
       },
-      "required": [
-        "activityId",
-        "kind",
-        "subject",
-        "source",
-        "info"
-      ]
+      "required": ["activityId", "kind", "subject", "source", "info"]
     },
     "ActivityUpdatedPayload": {
       "type": "object",
@@ -3995,10 +3496,7 @@
           "$ref": "#/definitions/ActivityInfo"
         }
       },
-      "required": [
-        "activityId",
-        "info"
-      ]
+      "required": ["activityId", "info"]
     },
     "ActivityFinishedPayload": {
       "type": "object",
@@ -4010,12 +3508,7 @@
           "maxLength": 191
         },
         "status": {
-          "enum": [
-            "completed",
-            "failed",
-            "cancelled",
-            "superseded"
-          ]
+          "enum": ["completed", "failed", "cancelled", "superseded"]
         },
         "endedAtMs": {
           "type": "integer",
@@ -4023,10 +3516,7 @@
           "maximum": 9007199254740991
         }
       },
-      "required": [
-        "activityId",
-        "status"
-      ]
+      "required": ["activityId", "status"]
     },
     "PlanUpdatedPayload": {
       "type": "object",
@@ -4043,10 +3533,7 @@
           "maximum": 9007199254740991
         },
         "explanation": {
-          "type": [
-            "string",
-            "null"
-          ],
+          "type": ["string", "null"],
           "maxLength": 4096
         },
         "steps": {
@@ -4062,28 +3549,14 @@
                 "maxLength": 4096
               },
               "status": {
-                "enum": [
-                  "pending",
-                  "in_progress",
-                  "completed",
-                  "blocked",
-                  "cancelled"
-                ]
+                "enum": ["pending", "in_progress", "completed", "blocked", "cancelled"]
               }
             },
-            "required": [
-              "text",
-              "status"
-            ]
+            "required": ["text", "status"]
           }
         }
       },
-      "required": [
-        "planId",
-        "revision",
-        "explanation",
-        "steps"
-      ]
+      "required": ["planId", "revision", "explanation", "steps"]
     },
     "ToolProgressPayload": {
       "type": "object",
@@ -4113,20 +3586,13 @@
               "maximum": 9007199254740991
             },
             "unit": {
-              "enum": [
-                "items",
-                "bytes",
-                "steps"
-              ]
+              "enum": ["items", "bytes", "steps"]
             }
           },
           "required": []
         }
       },
-      "required": [
-        "id",
-        "progress"
-      ]
+      "required": ["id", "progress"]
     },
     "RunNoticePayload": {
       "type": "object",
@@ -4147,19 +3613,12 @@
           ]
         },
         "severity": {
-          "enum": [
-            "info",
-            "warning"
-          ]
+          "enum": ["info", "warning"]
         },
         "params": {
           "type": "object",
           "additionalProperties": {
-            "type": [
-              "string",
-              "number",
-              "boolean"
-            ]
+            "type": ["string", "number", "boolean"]
           }
         },
         "relatedActivityId": {
@@ -4173,20 +3632,12 @@
           "maxLength": 191
         }
       },
-      "required": [
-        "noticeId",
-        "code",
-        "severity",
-        "params"
-      ]
+      "required": ["noticeId", "code", "severity", "params"]
     },
     "AgentSource": {
       "title": "AgentSource",
       "type": "string",
-      "enum": [
-        "preset",
-        "provisioned"
-      ]
+      "enum": ["preset", "provisioned"]
     },
     "ContextModelSelectionPayload": {
       "type": "object",
@@ -4202,23 +3653,15 @@
       },
       "oneOf": [
         {
-          "required": [
-            "id"
-          ],
+          "required": ["id"],
           "not": {
-            "required": [
-              "use_provider_default"
-            ]
+            "required": ["use_provider_default"]
           }
         },
         {
-          "required": [
-            "use_provider_default"
-          ],
+          "required": ["use_provider_default"],
           "not": {
-            "required": [
-              "id"
-            ]
+            "required": ["id"]
           }
         }
       ]
@@ -4227,9 +3670,7 @@
       "description": "Untrusted inline selection text with optional resource reference, source metadata and summary. Source metadata is not an authorization claim.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "text"
-      ],
+      "required": ["text"],
       "properties": {
         "text": {
           "type": "string",
@@ -4240,10 +3681,7 @@
           "minLength": 1
         },
         "source": {
-          "type": [
-            "object",
-            "string"
-          ],
+          "type": ["object", "string"],
           "additionalProperties": true
         },
         "summary": {
@@ -4255,11 +3693,7 @@
       "description": "Declarative MCP resource operation. Only deployed scoped operations may execute; schema validation does not authorize access.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "resource_ref",
-        "resolver",
-        "locator"
-      ],
+      "required": ["resource_ref", "resolver", "locator"],
       "properties": {
         "resource_ref": {
           "type": "string",
@@ -4299,9 +3733,7 @@
     "ContextInlinePayload": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "entries"
-      ],
+      "required": ["entries"],
       "properties": {
         "entries": {
           "type": "array",
@@ -4316,9 +3748,7 @@
       "type": "object",
       "x-octo-unique-resource-refs": true,
       "additionalProperties": false,
-      "required": [
-        "entries"
-      ],
+      "required": ["entries"],
       "properties": {
         "entries": {
           "type": "array",
@@ -4335,11 +3765,7 @@
       "description": "Business authorization intent; never a tool installation definition.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "service_subject_id",
-        "allowed_tools",
-        "resource_refs"
-      ],
+      "required": ["service_subject_id", "allowed_tools", "resource_refs"],
       "properties": {
         "service_subject_id": {
           "type": "string",
@@ -4438,9 +3864,7 @@
       "description": "Run 级环境变量列表；以 key 标识变量，按 key 合并，不进入模型输入。",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "env_variables"
-      ],
+      "required": ["env_variables"],
       "properties": {
         "env_variables": {
           "type": "array",
@@ -4448,10 +3872,7 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "key",
-              "value"
-            ],
+            "required": ["key", "value"],
             "properties": {
               "key": {
                 "type": "string",
@@ -4472,9 +3893,7 @@
       "description": "Run-scoped MCP connection templates. Server names are dynamic keys; values are validated by transport. Variables resolve only in the execution environment, never in the model context.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "mcpServers"
-      ],
+      "required": ["mcpServers"],
       "properties": {
         "mcpServers": {
           "$ref": "#/definitions/McpServers"

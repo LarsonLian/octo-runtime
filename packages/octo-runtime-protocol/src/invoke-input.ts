@@ -128,7 +128,11 @@ export interface InputInvoke {
 }
 
 export function assertInvokeInput(value: unknown): asserts value is InvokeInput {
-  assertJsonByteLimit(value instanceof InvokeInput ? { ...value } : value, INVOKE_REQUEST_MAX_BYTES, "INVOKE_REQUEST_TOO_LARGE");
+  assertJsonByteLimit(
+    value instanceof InvokeInput ? { ...value } : value,
+    INVOKE_REQUEST_MAX_BYTES,
+    "INVOKE_REQUEST_TOO_LARGE"
+  );
   assertJsonValue(value);
   if (!value || typeof value !== "object" || Array.isArray(value))
     throw new TypeError("InvokeInput must be a JSON object");

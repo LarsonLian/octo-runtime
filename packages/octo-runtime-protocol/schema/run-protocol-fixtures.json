@@ -34,27 +34,17 @@
     "AdapterProtocolSupport": [
       {
         "protocol": "codex.app-server",
-        "modes": [
-          "native",
-          "canonical"
-        ],
-        "nativeMethods": [
-          "item/commandExecution/requestApproval",
-          "item/tool/requestUserInput"
-        ]
+        "modes": ["native", "canonical"],
+        "nativeMethods": ["item/commandExecution/requestApproval", "item/tool/requestUserInput"]
       },
       {
         "protocol": "acp",
-        "modes": [
-          "canonical"
-        ],
+        "modes": ["canonical"],
         "nativeMethods": []
       },
       {
         "protocol": "example.native",
-        "modes": [
-          "native"
-        ],
+        "modes": ["native"],
         "nativeMethods": []
       }
     ],
@@ -195,9 +185,7 @@
               "text": "answer"
             }
           },
-          "extension": [
-            "preserved"
-          ]
+          "extension": ["preserved"]
         }
       },
       {
@@ -363,27 +351,18 @@
       },
       {
         "protocol": "codex",
-        "modes": [
-          "native",
-          "native"
-        ],
+        "modes": ["native", "native"],
         "nativeMethods": []
       },
       {
         "protocol": "codex",
-        "modes": [
-          "auto"
-        ],
+        "modes": ["auto"],
         "nativeMethods": []
       },
       {
         "protocol": "acp",
-        "modes": [
-          "canonical"
-        ],
-        "nativeMethods": [
-          "fake"
-        ]
+        "modes": ["canonical"],
+        "nativeMethods": ["fake"]
       }
     ],
     "NativeInteractionResponse": [

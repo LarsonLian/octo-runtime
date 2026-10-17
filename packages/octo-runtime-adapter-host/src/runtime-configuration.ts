@@ -1,8 +1,14 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { AdapterProbeOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
-interface AdapterExecutionManifest { provider_options?: unknown; credential_ref?: unknown; }
-interface AdapterCredentialManifest { schema_version?: unknown; provider_options?: unknown; }
+interface AdapterExecutionManifest {
+  provider_options?: unknown;
+  credential_ref?: unknown;
+}
+interface AdapterCredentialManifest {
+  schema_version?: unknown;
+  provider_options?: unknown;
+}
 export function readAdapterConfigurations(
   profileRoot: string,
   adaptersValue: unknown
@@ -119,4 +125,3 @@ function isNodeError(error: unknown, code: string): boolean {
     error instanceof Error && "code" in error && (error as NodeJS.ErrnoException).code === code
   );
 }
-

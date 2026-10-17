@@ -5,7 +5,8 @@ import { assertInvokeRequest, assertMcpServers } from "@mininglamp-oss/octo-runt
 import * as protocol from "@mininglamp-oss/octo-runtime-protocol";
 import * as browserProtocol from "../packages/octo-runtime-protocol/dist/browser.js";
 
-const baseRequest = { protocolVersion: 2,
+const baseRequest = {
+  protocolVersion: 2,
   invocationId: "invoke-1",
   agentSessionId: "session-1",
   runId: "run-1",
@@ -15,7 +16,8 @@ const baseRequest = { protocolVersion: 2,
   controlInstructions: "",
   context: { schema: "octo.context-envelope/v3", items: [] },
   approvalMode: "full_access",
-  agentSource: "provisioned", agentConfig: {}
+  agentSource: "provisioned",
+  agentConfig: {}
 };
 
 test("local transports validate while remote execution cannot configure MCP", () => {
@@ -38,9 +40,19 @@ test("local transports validate while remote execution cannot configure MCP", ()
   };
 
   assert.doesNotThrow(() => assertMcpServers(mcpServers));
-  assert.throws(() => assertInvokeRequest({ ...baseRequest, mcpServers }), /LOCAL_PLUGIN_CONFIGURATION_REQUIRED/);
-  for (const [key, value] of [["skills", []], ["skillRoots", []], ["providerStateDir", "/tmp"]]) {
-    assert.throws(() => assertInvokeRequest({ ...baseRequest, [key]: value }), /LOCAL_PLUGIN_CONFIGURATION_REQUIRED/);
+  assert.throws(
+    () => assertInvokeRequest({ ...baseRequest, mcpServers }),
+    /LOCAL_PLUGIN_CONFIGURATION_REQUIRED/
+  );
+  for (const [key, value] of [
+    ["skills", []],
+    ["skillRoots", []],
+    ["providerStateDir", "/tmp"]
+  ]) {
+    assert.throws(
+      () => assertInvokeRequest({ ...baseRequest, [key]: value }),
+      /LOCAL_PLUGIN_CONFIGURATION_REQUIRED/
+    );
   }
 });
 
@@ -70,8 +82,14 @@ test("InvokeRequest accepts the mandatory new contract when dynamic MCP is absen
 });
 
 test("InvokeRequest without dynamic MCP rejects legacy contracts and missing mandatory inputs", () => {
-  assert.throws(() => assertInvokeRequest({ ...baseRequest, appendInstructions: "" }), /LEGACY_RUN_CONTRACT_REJECTED/);
-  assert.throws(() => assertInvokeRequest({ ...baseRequest, context: {} }), /CONTEXT_SCHEMA_INVALID/);
+  assert.throws(
+    () => assertInvokeRequest({ ...baseRequest, appendInstructions: "" }),
+    /LEGACY_RUN_CONTRACT_REJECTED/
+  );
+  assert.throws(
+    () => assertInvokeRequest({ ...baseRequest, context: {} }),
+    /CONTEXT_SCHEMA_INVALID/
+  );
   for (const [field, reason] of [
     ["context", /CONTEXT_REQUIRED/],
     ["modelInput", /modelInput must be a non-empty string/],

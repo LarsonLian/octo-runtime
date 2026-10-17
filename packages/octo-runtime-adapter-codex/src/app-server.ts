@@ -1,4 +1,8 @@
-import { actmodeEvidence, invocationEnvs, mapReasoningEffort } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import {
+  actmodeEvidence,
+  invocationEnvs,
+  mapReasoningEffort
+} from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   canonicalTerminalStatus,
   classifyFailure,
@@ -243,10 +247,14 @@ export async function* runCodexAppServerTurn({
       try {
         threadResult = await client.request(
           "thread/resume",
-          threadParams(request, {
-            threadId: requestedSessionId,
-            ...(context?.protocolMode !== "native" ? { excludeTurns: true } : {})
-          }, environmentConfig)
+          threadParams(
+            request,
+            {
+              threadId: requestedSessionId,
+              ...(context?.protocolMode !== "native" ? { excludeTurns: true } : {})
+            },
+            environmentConfig
+          )
         );
         resumed = true;
       } catch (error) {
@@ -271,9 +279,13 @@ export async function* runCodexAppServerTurn({
     if (requestedMode !== undefined) {
       const modes = recordValue(await client.request("collaborationMode/list", {}));
       const available = Array.isArray(modes?.data) ? modes.data.map(recordValue) : [];
-      effectiveMode = available.some(mode => mode?.mode === requestedMode) ? requestedMode : "default";
-      if (!available.some(mode => mode?.mode === effectiveMode))
-        throw new Error("ACTMODE_UNSUPPORTED: Codex did not advertise a default collaboration mode");
+      effectiveMode = available.some((mode) => mode?.mode === requestedMode)
+        ? requestedMode
+        : "default";
+      if (!available.some((mode) => mode?.mode === effectiveMode))
+        throw new Error(
+          "ACTMODE_UNSUPPORTED: Codex did not advertise a default collaboration mode"
+        );
       const thread = recordValue(threadResult);
       const model = request.agentConfig.model ?? stringValue(thread?.model);
       if (!model) throw new Error("ACTMODE_UNCONFIRMED: Codex omitted its effective model");
@@ -281,17 +293,20 @@ export async function* runCodexAppServerTurn({
         mode: effectiveMode,
         settings: {
           model,
-          reasoning_effort: mapReasoningEffort("codex", request.agentConfig.effort) ?? thread?.reasoningEffort ?? null,
+          reasoning_effort:
+            mapReasoningEffort("codex", request.agentConfig.effort) ??
+            thread?.reasoningEffort ??
+            null,
           developer_instructions: null
         }
       };
     }
     let turnResult: unknown;
     try {
-      turnResult = await client.request(
-        "turn/start",
-        { ...turnParams(request, threadId, resumeFallback !== undefined), ...(collaborationMode ? { collaborationMode } : {}) }
-      );
+      turnResult = await client.request("turn/start", {
+        ...turnParams(request, threadId, resumeFallback !== undefined),
+        ...(collaborationMode ? { collaborationMode } : {})
+      });
     } catch (error) {
       // Some corrupt sessions pass thread/resume but only reveal the missing rollout at turn/start.
       if (!resumed || !isThreadNotFound(error)) throw error;
@@ -316,13 +331,16 @@ export async function* runCodexAppServerTurn({
     if (turnId) client.setActiveTurn(turnId);
     context?.reportActivity?.({ kind: "turn_started", method: "turn_start" });
     if (requestedMode !== undefined && effectiveMode !== undefined)
-      yield actmodeEvidence({
-        requested: requestedMode,
-        effective: effectiveMode,
-        status: effectiveMode === requestedMode ? "applied" : "fallback",
-        nativeMode: effectiveMode,
-        ...(effectiveMode !== requestedMode ? { reason: "provider_unsupported" as const } : {})
-      }, context?.protocolMode);
+      yield actmodeEvidence(
+        {
+          requested: requestedMode,
+          effective: effectiveMode,
+          status: effectiveMode === requestedMode ? "applied" : "fallback",
+          nativeMode: effectiveMode,
+          ...(effectiveMode !== requestedMode ? { reason: "provider_unsupported" as const } : {})
+        },
+        context?.protocolMode
+      );
 
     // Must come after turn/start: otherwise the Core would persist a provider session that cannot be executed.
     const session: CanonicalEvent = {
@@ -1313,8 +1331,8 @@ class CodexAppServerClient {
     this.#child = spawnFn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env });
 
     // The app-server protocol requires one JSON-RPC frame per line; readline handles chunk boundaries.
-    const transportLimit = !this.#native && hasImageInput(invocation)
-      ? INVOKE_REQUEST_MAX_BYTES : 256 * 1024;
+    const transportLimit =
+      !this.#native && hasImageInput(invocation) ? INVOKE_REQUEST_MAX_BYTES : 256 * 1024;
     this.#removeLineGuard = watchLineLimit(this.#child.stdout, transportLimit, (error) => {
       this.#reader.close();
       this.#child.stdout.destroy();
@@ -1679,14 +1697,18 @@ class CodexAppServerClient {
     const pending = id === undefined ? undefined : this.#pending.get(id);
     const item = recordValue(recordValue(message.params)?.item);
     const carrier =
-      ((method === "item/started" || method === "item/completed") && item?.type === "userMessage") ||
+      ((method === "item/started" || method === "item/completed") &&
+        item?.type === "userMessage") ||
       ["turn/started", "turn/completed", "codex/event/user_message"].includes(method ?? "") ||
       (pending && ["thread/start", "thread/resume", "turn/start"].includes(pending.method));
     if (!carrier) return false;
     const images = new Set(
-      [...(this.invocation.modelInputParts ?? []), ...(this.invocation.freshFallbackModelInputParts ?? [])]
-        .filter(part => part.type === "image")
-        .map(part => `data:${part.mimeType};base64,${part.data}`)
+      [
+        ...(this.invocation.modelInputParts ?? []),
+        ...(this.invocation.freshFallbackModelInputParts ?? [])
+      ]
+        .filter((part) => part.type === "image")
+        .map((part) => `data:${part.mimeType};base64,${part.data}`)
     );
     let matched = false;
     // Only identical submitted image URLs are exempt from canonical event sizing.
@@ -1697,10 +1719,11 @@ class CodexAppServerClient {
         matched = true;
         return "[submitted image]";
       }
-      if (Array.isArray(value)) return value.map(item => withoutEcho(item, depth + 1));
-      if (value && typeof value === "object") return Object.fromEntries(
-        Object.entries(value).map(([key, item]) => [key, withoutEcho(item, depth + 1)])
-      );
+      if (Array.isArray(value)) return value.map((item) => withoutEcho(item, depth + 1));
+      if (value && typeof value === "object")
+        return Object.fromEntries(
+          Object.entries(value).map(([key, item]) => [key, withoutEcho(item, depth + 1)])
+        );
       return value;
     };
     try {
@@ -1945,7 +1968,8 @@ class CodexAppServerClient {
       this.context?.reportActivity?.({ kind: "turn_progress", method: "text_delta" });
     } else if (
       (((["item/commandExecution/outputDelta", "item/fileChange/outputDelta"].includes(method) ||
-        isToolArgsDeltaMethod(method)) && stringValue(params.delta)) ||
+        isToolArgsDeltaMethod(method)) &&
+        stringValue(params.delta)) ||
         (method === "item/mcpToolCall/progress" && stringValue(params.message))) &&
       itemId(params)
     ) {

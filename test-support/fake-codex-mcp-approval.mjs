@@ -1,10 +1,10 @@
 import { createInterface } from "node:readline";
 
 const reader = createInterface({ input: process.stdin });
-const send = message => process.stdout.write(`${JSON.stringify(message)}\n`);
+const send = (message) => process.stdout.write(`${JSON.stringify(message)}\n`);
 const reply = (id, result) => send({ id, result });
 
-reader.on("line", line => {
+reader.on("line", (line) => {
   const message = JSON.parse(line);
   if (message.method === "initialize") {
     reply(message.id, {});
@@ -12,7 +12,10 @@ reader.on("line", line => {
   }
   if (message.method === "thread/start") {
     if (message.params.approvalPolicy !== "untrusted") {
-      send({ id: message.id, error: { code: -32000, message: "MCP approval policy must be untrusted" } });
+      send({
+        id: message.id,
+        error: { code: -32000, message: "MCP approval policy must be untrusted" }
+      });
       return;
     }
     reply(message.id, { thread: { id: "thread-mcp-approval" } });

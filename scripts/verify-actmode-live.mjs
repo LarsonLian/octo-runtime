@@ -15,30 +15,67 @@ const host = new AdapterHost();
 for (const adapter of [codex, claude, kimi, opencode, mcode]) host.register(adapter);
 const workdir = await mkdtemp(join(tmpdir(), "octo-actmode-live-"));
 const results = [];
-for (const type of (process.env.OCTO_ACTMODE_PROVIDERS ?? "codex,claude-code,opencode").split(",")) {
+for (const type of (process.env.OCTO_ACTMODE_PROVIDERS ?? "codex,claude-code,opencode").split(
+  ","
+)) {
   let providerSession;
   for (const mode of ["plan", "default", undefined]) {
     const runId = `actmode_${randomUUID()}`;
-    const result = { type, mode: mode ?? "omitted", runId, resumed: Boolean(providerSession), evidence: [], text: "" };
+    const result = {
+      type,
+      mode: mode ?? "omitted",
+      runId,
+      resumed: Boolean(providerSession),
+      evidence: [],
+      text: ""
+    };
     try {
-      for await (const event of host.invoke({
-        inputs: [{ type: "text", text: "This is an execution protocol test. Reply exactly MODE_PASS. Do not use any tools, create a plan file, change files, or run commands." }],
-        contexts: { schema: "octo.context-envelope/v3", items: [
-          { namespace: "octo.execution", name: "adapter", payload: { type } },
-          { namespace: "octo.execution", name: "workspace", payload: { mode: "fixed", path: workdir } },
-          ...(type === "claude-code" && process.env.OCTO_ACTMODE_CC_MODEL ? [{ namespace: "octo.execution", name: "model", payload: { selection: { id: process.env.OCTO_ACTMODE_CC_MODEL } } }] : []),
-          ...(mode ? [{ namespace: "octo.execution", name: "actmode", payload: { mode } }] : [])
-        ] },
-        protocol_mode: "canonical", runId,
-        ...(providerSession ? { providerSession, continuityMode: "continue" } : {})
-      }, { signal: AbortSignal.timeout(120000) })) {
+      for await (const event of host.invoke(
+        {
+          inputs: [
+            {
+              type: "text",
+              text: "This is an execution protocol test. Reply exactly MODE_PASS. Do not use any tools, create a plan file, change files, or run commands."
+            }
+          ],
+          contexts: {
+            schema: "octo.context-envelope/v3",
+            items: [
+              { namespace: "octo.execution", name: "adapter", payload: { type } },
+              {
+                namespace: "octo.execution",
+                name: "workspace",
+                payload: { mode: "fixed", path: workdir }
+              },
+              ...(type === "claude-code" && process.env.OCTO_ACTMODE_CC_MODEL
+                ? [
+                    {
+                      namespace: "octo.execution",
+                      name: "model",
+                      payload: { selection: { id: process.env.OCTO_ACTMODE_CC_MODEL } }
+                    }
+                  ]
+                : []),
+              ...(mode ? [{ namespace: "octo.execution", name: "actmode", payload: { mode } }] : [])
+            ]
+          },
+          protocol_mode: "canonical",
+          runId,
+          ...(providerSession ? { providerSession, continuityMode: "continue" } : {})
+        },
+        { signal: AbortSignal.timeout(120000) }
+      )) {
         if (event.type === "execution.update") result.evidence.push(event.payload.actmode);
-        if (event.type === "session.update" && event.payload.providerSession) providerSession = event.payload.providerSession;
-        if (event.type === "message.delta" && event.payload.channel !== "analysis") result.text += event.payload.text ?? "";
-        if (event.type === "interaction.requested") throw new Error("Unexpected interaction in tool-free mode test");
+        if (event.type === "session.update" && event.payload.providerSession)
+          providerSession = event.payload.providerSession;
+        if (event.type === "message.delta" && event.payload.channel !== "analysis")
+          result.text += event.payload.text ?? "";
+        if (event.type === "interaction.requested")
+          throw new Error("Unexpected interaction in tool-free mode test");
         if (["run.completed", "run.failed", "run.cancelled"].includes(event.type)) {
           result.terminal = event.type;
-          if (event.type !== "run.completed") result.failure = { code: event.payload.code, message: event.payload.message };
+          if (event.type !== "run.completed")
+            result.failure = { code: event.payload.code, message: event.payload.message };
         }
       }
       result.providerSessionId = providerSession?.sessionId;
@@ -61,5 +98,8 @@ for (const type of (process.env.OCTO_ACTMODE_PROVIDERS ?? "codex,claude-code,ope
 }
 const output = resolve(".octospec/tasks/adapter-plan-interaction-exploration/live-results.json");
 await mkdir(resolve(output, ".."), { recursive: true });
-await writeFile(output, `${JSON.stringify({workdir,results}, null, 2)}\n`);
-assert.ok(results.every(result => result.passed), "One or more real Provider cases failed; inspect recorded results");
+await writeFile(output, `${JSON.stringify({ workdir, results }, null, 2)}\n`);
+assert.ok(
+  results.every((result) => result.passed),
+  "One or more real Provider cases failed; inspect recorded results"
+);

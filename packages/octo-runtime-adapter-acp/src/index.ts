@@ -70,17 +70,25 @@ export function acpActmodeSelectionRequest(
   nativeMode: string;
   unchanged: boolean;
 } {
-  const option = arrayField(session, "configOptions").map(recordValue).find(
-    value => stringField(value, "category") === "mode" || stringField(value, "id") === "mode"
-  );
+  const option = arrayField(session, "configOptions")
+    .map(recordValue)
+    .find(
+      (value) => stringField(value, "category") === "mode" || stringField(value, "id") === "mode"
+    );
   const modes = recordValue(session.modes);
   const available = option
-    ? arrayField(option, "options").flatMap(value => {
-        const entry = recordValue(value);
-        return Array.isArray(entry.options) ? entry.options.map(recordValue) : [entry];
-      }).map(value => stringField(value, "value"))
-    : arrayField(modes, "availableModes").map(value => stringField(recordValue(value), "id"));
-  const ordinary = available.includes("default") ? "default" : available.includes("build") ? "build" : undefined;
+    ? arrayField(option, "options")
+        .flatMap((value) => {
+          const entry = recordValue(value);
+          return Array.isArray(entry.options) ? entry.options.map(recordValue) : [entry];
+        })
+        .map((value) => stringField(value, "value"))
+    : arrayField(modes, "availableModes").map((value) => stringField(recordValue(value), "id"));
+  const ordinary = available.includes("default")
+    ? "default"
+    : available.includes("build")
+      ? "build"
+      : undefined;
   const nativeMode = requested === "plan" && available.includes("plan") ? "plan" : ordinary;
   if (!nativeMode) throw new Error("ACTMODE_UNSUPPORTED: ACP did not advertise an applicable mode");
   return {
@@ -90,7 +98,9 @@ export function acpActmodeSelectionRequest(
       : { sessionId, modeId: nativeMode },
     nativeMode,
     effective: nativeMode === "plan" ? "plan" : "default",
-    unchanged: (option ? stringField(option, "currentValue") : stringField(modes, "currentModeId")) === nativeMode
+    unchanged:
+      (option ? stringField(option, "currentValue") : stringField(modes, "currentModeId")) ===
+      nativeMode
   };
 }
 
@@ -363,14 +373,15 @@ export function createAcpAdapter(
       const requestedMode = contextActmode(request.context);
       if (requestedMode !== undefined) {
         const selection = acpActmodeSelectionRequest(sessionResult, sessionId, requestedMode);
-        if (!selection.unchanged)
-          await client.request(selection.method, selection.params);
+        if (!selection.unchanged) await client.request(selection.method, selection.params);
         yield actmodeEvidence({
           requested: requestedMode,
           effective: selection.effective,
           nativeMode: selection.nativeMode,
           status: selection.effective === requestedMode ? "applied" : "fallback",
-          ...(selection.effective !== requestedMode ? { reason: "provider_unsupported" as const } : {})
+          ...(selection.effective !== requestedMode
+            ? { reason: "provider_unsupported" as const }
+            : {})
         });
       }
       const requestedModel = nonEmptyString(request.agentConfig?.model);
@@ -417,8 +428,19 @@ export function createAcpAdapter(
           ? `${input[0].text}${initialControlInstructions(request, !requestedSessionId || resumeFallback !== undefined) ? `\n\n${initialControlInstructions(request, !requestedSessionId || resumeFallback !== undefined)}` : ""}`
           : [
               ...input,
-              ...(initialControlInstructions(request, !requestedSessionId || resumeFallback !== undefined)
-                ? [{ type: "text" as const, text: initialControlInstructions(request, !requestedSessionId || resumeFallback !== undefined) }]
+              ...(initialControlInstructions(
+                request,
+                !requestedSessionId || resumeFallback !== undefined
+              )
+                ? [
+                    {
+                      type: "text" as const,
+                      text: initialControlInstructions(
+                        request,
+                        !requestedSessionId || resumeFallback !== undefined
+                      )
+                    }
+                  ]
                 : [])
             ];
       const promptParams = acpPromptParams(sessionId, prompt);

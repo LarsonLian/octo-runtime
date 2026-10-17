@@ -30,17 +30,21 @@ test("IM reset keeps pending bindings within one process and retries do not clea
   }
 });
 
-test("IM mappings bound count, bytes and lifetime and disappear on close", t => {
+test("IM mappings bound count, bytes and lifetime and disappear on close", (t) => {
   const store = new MemoryImSessionStore();
   t.after(() => store.close());
   let now = Date.now();
   t.mock.method(Date, "now", () => now);
-  for (let index = 0; index <= 1024; index++) store.save(String(index), { id: String(index), generation: 1 });
+  for (let index = 0; index <= 1024; index++)
+    store.save(String(index), { id: String(index), generation: 1 });
   assert.equal(store.read("0"), undefined);
   assert.equal(store.read("1024").id, "1024");
-  for (let index = 0; index < 100; index++) store.remember("scope", String(index), {
-    text: "x".repeat(256 << 10), sessionId: "s", runId: "r"
-  });
+  for (let index = 0; index < 100; index++)
+    store.remember("scope", String(index), {
+      text: "x".repeat(256 << 10),
+      sessionId: "s",
+      runId: "r"
+    });
   assert.equal(store.occurrence("scope", "0"), undefined);
   const saved = store.occurrence("scope", "99");
   saved.text = "mutated";

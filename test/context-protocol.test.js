@@ -100,16 +100,20 @@ ajv.addKeyword("x-octo-unique-env-keys", {
 });
 ajv.addKeyword("x-octo-unique-header-names", {
   type: "object",
-  validate: (enabled, value) => !enabled || new Set(Object.keys(value).map(key => key.toLowerCase())).size === Object.keys(value).length
+  validate: (enabled, value) =>
+    !enabled ||
+    new Set(Object.keys(value).map((key) => key.toLowerCase())).size === Object.keys(value).length
 });
 ajv.addSchema(schema);
 const validateContextSchema = ajv.compile({ $ref: `${schema.$id}#/definitions/ContextEnvelope` });
 test("configuration schema permits system instructions only in mandatory with text-only entries", () => {
   const validate = ajv.compile({ $ref: `${schema.$id}#/definitions/ContextConfiguration` });
   const empty = { schema: "octo.context-envelope/v3", items: [] };
-  const item = { namespace: "octo.control", name: "instructions", payload: { entries: [
-    { text: "我是个人助理" }
-  ] } };
+  const item = {
+    namespace: "octo.control",
+    name: "instructions",
+    payload: { entries: [{ text: "我是个人助理" }] }
+  };
   const mandatory = { ...empty, items: [item] };
   assert.equal(validate({ defaults: empty, mandatory }), true, JSON.stringify(validate.errors));
   assert.equal(validate({ defaults: mandatory, mandatory: empty }), false);

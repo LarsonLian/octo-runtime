@@ -13,7 +13,7 @@ function event(type, payload = {}) {
   send({ method: "session/event", params: { sessionId, seq: ++seq, type, payload } });
 }
 
-createInterface({ input: process.stdin }).on("line", line => {
+createInterface({ input: process.stdin }).on("line", (line) => {
   const message = JSON.parse(line);
   if (message.id === 900 && message.result) {
     if (pendingCreate !== undefined) {
@@ -28,8 +28,18 @@ createInterface({ input: process.stdin }).on("line", line => {
       event("turn.started", { turnId: "turn-fixture" });
       event("model.streaming", { kind: "reasoning_delta", delta: "checking" });
       event("model.streaming", { kind: "text_delta", delta: `permission:${permissionRequestId}` });
-      event("model.streaming", { kind: "tool_call", toolCallId: "tool-1", toolName: "Write", input: { path: "zcode.html" } });
-      event("tool.updated", { kind: "scheduled", toolCallId: "tool-1", toolName: "Write", inputOmitted: true });
+      event("model.streaming", {
+        kind: "tool_call",
+        toolCallId: "tool-1",
+        toolName: "Write",
+        input: { path: "zcode.html" }
+      });
+      event("tool.updated", {
+        kind: "scheduled",
+        toolCallId: "tool-1",
+        toolName: "Write",
+        inputOmitted: true
+      });
       event("tool.updated", { kind: "started", toolCallId: "tool-1" });
       event("tool.updated", { kind: "result", toolCallId: "tool-1", result: { ok: true } });
       event("turn.completed", {

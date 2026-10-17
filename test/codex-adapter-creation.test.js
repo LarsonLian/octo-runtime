@@ -5,9 +5,15 @@ import { promisify } from "node:util";
 const execFileAsync = promisify(execFile);
 
 test("Codex import and adapter creation do not inspect Home for computer-use labels", async () => {
-  const moduleUrl = new URL("../packages/octo-runtime-adapter-codex/dist/index.js", import.meta.url).href;
+  const moduleUrl = new URL("../packages/octo-runtime-adapter-codex/dist/index.js", import.meta.url)
+    .href;
   // A subprocess isolates the built-in filesystem hook and the exported singleton.
-  await execFileAsync(process.execPath, ["--input-type=module", "--eval", `
+  await execFileAsync(
+    process.execPath,
+    [
+      "--input-type=module",
+      "--eval",
+      `
     import assert from "node:assert/strict";
     import fs from "node:fs";
     import { syncBuiltinESMExports } from "node:module";
@@ -36,5 +42,8 @@ test("Codex import and adapter creation do not inspect Home for computer-use lab
       assert.equal(Object.hasOwn(adapter.metadata, "executionFeatures"), false);
     }
     assert.equal(reads, 0, "import and creation must leave Provider configuration to Codex");
-  `], { timeout: 10000 });
+  `
+    ],
+    { timeout: 10000 }
+  );
 });
