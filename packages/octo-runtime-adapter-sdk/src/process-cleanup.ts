@@ -16,7 +16,7 @@ export function createProcessCleanup(
   const exists = (): boolean => {
     if (!grouped) return !exited() && child.pid !== undefined;
     try {
-      process.kill(-child.pid!, 0);
+      process.kill(-child.pid, 0);
       return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === "ESRCH") return false;
@@ -27,7 +27,7 @@ export function createProcessCleanup(
   };
   const signal = (value: NodeJS.Signals): void => {
     try {
-      if (grouped) process.kill(-child.pid!, value);
+      if (grouped) process.kill(-child.pid, value);
       else child.kill(value);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
