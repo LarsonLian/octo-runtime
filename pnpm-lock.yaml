@@ -65,12 +65,12 @@ importers:
       '@mininglamp-oss/octo-runtime-extra-channel-wecom':
         specifier: workspace:*
         version: link:packages/octo-runtime-extra-channel-wecom
-      '@mininglamp-oss/octo-runtime-protocol':
-        specifier: workspace:*
-        version: link:packages/octo-runtime-protocol
       '@mininglamp-oss/octo-runtime-extra-webui':
         specifier: workspace:*
         version: link:packages/octo-runtime-extra-webui
+      '@mininglamp-oss/octo-runtime-protocol':
+        specifier: workspace:*
+        version: link:packages/octo-runtime-protocol
       ws:
         specifier: ^8.18.3
         version: 8.21.3
@@ -437,12 +437,6 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
 
-  packages/octo-runtime-protocol:
-    devDependencies:
-      json-schema-to-typescript:
-        specifier: ^16.0.0
-        version: 16.0.0
-
   packages/octo-runtime-extra-webui:
     dependencies:
       '@mininglamp-oss/octo-runtime-protocol':
@@ -468,8 +462,8 @@ importers:
         specifier: ^3.1.1
         version: 3.1.1
       happy-dom:
-        specifier: ^18.0.1
-        version: 18.0.1
+        specifier: ^20.8.9
+        version: 20.14.6
       lucide-react:
         specifier: ^0.542.0
         version: 0.542.0(react@19.3.1)
@@ -496,7 +490,13 @@ importers:
         version: 8.3.4(@types/node@24.13.3)(jiti@2.7.0)(sass@1.105.1)(yaml@2.9.1)
       vitest:
         specifier: ^4.0.15
-        version: 4.1.11(@types/node@24.13.3)(happy-dom@18.0.1)(vite@8.3.4(@types/node@24.13.3)(jiti@2.7.0)(sass@1.105.1)(yaml@2.9.1))
+        version: 4.1.11(@types/node@24.13.3)(happy-dom@20.14.6)(vite@8.3.4(@types/node@24.13.3)(jiti@2.7.0)(sass@1.105.1)(yaml@2.9.1))
+
+  packages/octo-runtime-protocol:
+    devDependencies:
+      json-schema-to-typescript:
+        specifier: ^16.0.0
+        version: 16.0.0
 
 packages:
 
@@ -939,9 +939,13 @@ packages:
     resolution: {integrity: sha512-BLrgEcRTwX2o6gGxGOCNyMvGSp35YofuYzw9h1IMTRmKqttAZZVU67bdb9Pr2vUHA8+j3i2tJfjO6C6+4myGTA==}
     engines: {node: 18 || 20 || >=22}
 
-  brace-expansion@5.0.9:
-    resolution: {integrity: sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==}
+  brace-expansion@5.0.12:
+    resolution: {integrity: sha512-YovQ3rzhaLMIrDjNDMkNS01tea93qhEhG5xy8f6+R0l+dw3Ki+5sCoIoI942iuLZTHWogWktgwVDhU09iNEimQ==}
     engines: {node: 20 || >=22}
+
+  buffer-image-size@0.6.4:
+    resolution: {integrity: sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ==}
+    engines: {node: '>=4.0'}
 
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
@@ -1008,6 +1012,10 @@ packages:
 
   devlop@1.1.0:
     resolution: {integrity: sha512-RWmIqhcFf1lRYBvNmr7qTNuyCt/7/ns2jbpp1+PalgE/rDQcBT0fioSMUpJ93irlUhC5hrg4cYqe6U+0ImW0rA==}
+
+  entities@7.0.1:
+    resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==}
+    engines: {node: '>=0.12'}
 
   es-module-lexer@2.3.2:
     resolution: {integrity: sha512-poHGpORABojJJucnV9KbOavETW8lBVnphkW77ER5/BQ5Fz7oXSoCNek7IH3vR5nRjdsEz926ibFYX8KtLQmdyw==}
@@ -1124,8 +1132,8 @@ packages:
     resolution: {integrity: sha512-XxwI8EOhVQgWp6iDL+3b0r86f4d6AX6zSU55HfB4ydCEuXLXc5FcYeOu+nnGftS4TEju/11rt4KJPTMgbfmv4A==}
     engines: {node: '>=10.13.0'}
 
-  happy-dom@18.0.1:
-    resolution: {integrity: sha512-qn+rKOW7KWpVTtgIUi6RVmTBZJSe2k0Db0vh1f7CWrWclkkc7/Q+FrOfkZIb2eiErLyqu5AXEzE7XthO9JVxRA==}
+  happy-dom@20.14.6:
+    resolution: {integrity: sha512-5DDsf4QmEIlRL6NkCv/fxSjYHHkZceL/IaYQdJc2h3G7DRTEai++VTjbfL0LB9geW2VrA3+vrjF3Efx+OTtX0Q==}
     engines: {node: '>=20.0.0'}
 
   hast-util-to-jsx-runtime@2.3.6:
@@ -2213,9 +2221,13 @@ snapshots:
 
   balanced-match@4.0.4: {}
 
-  brace-expansion@5.0.9:
+  brace-expansion@5.0.12:
     dependencies:
       balanced-match: 4.0.4
+
+  buffer-image-size@0.6.4:
+    dependencies:
+      '@types/node': 24.13.3
 
   ccount@2.0.1: {}
 
@@ -2264,6 +2276,8 @@ snapshots:
   devlop@1.1.0:
     dependencies:
       dequal: 2.0.3
+
+  entities@7.0.1: {}
 
   es-module-lexer@2.3.2: {}
 
@@ -2384,11 +2398,18 @@ snapshots:
     dependencies:
       is-glob: 4.0.3
 
-  happy-dom@18.0.1:
+  happy-dom@20.14.6:
     dependencies:
-      '@types/node': 20.19.43
+      '@types/node': 24.13.3
       '@types/whatwg-mimetype': 3.0.2
+      '@types/ws': 8.18.1
+      buffer-image-size: 0.6.4
+      entities: 7.0.1
       whatwg-mimetype: 3.0.0
+      ws: 8.21.3
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   hast-util-to-jsx-runtime@2.3.6:
     dependencies:
@@ -2909,7 +2930,7 @@ snapshots:
 
   minimatch@10.2.6:
     dependencies:
-      brace-expansion: 5.0.9
+      brace-expansion: 5.0.12
 
   minimist@1.2.8: {}
 
@@ -3203,7 +3224,7 @@ snapshots:
       sass: 1.105.1
       yaml: 2.9.1
 
-  vitest@4.1.11(@types/node@24.13.3)(happy-dom@18.0.1)(vite@8.3.4(@types/node@24.13.3)(jiti@2.7.0)(sass@1.105.1)(yaml@2.9.1)):
+  vitest@4.1.11(@types/node@24.13.3)(happy-dom@20.14.6)(vite@8.3.4(@types/node@24.13.3)(jiti@2.7.0)(sass@1.105.1)(yaml@2.9.1)):
     dependencies:
       '@vitest/expect': 4.1.11
       '@vitest/mocker': 4.1.11(vite@8.3.4(@types/node@24.13.3)(jiti@2.7.0)(sass@1.105.1)(yaml@2.9.1))
@@ -3227,7 +3248,7 @@ snapshots:
       why-is-node-running: 2.3.0
     optionalDependencies:
       '@types/node': 24.13.3
-      happy-dom: 18.0.1
+      happy-dom: 20.14.6
     transitivePeerDependencies:
       - msw
 
