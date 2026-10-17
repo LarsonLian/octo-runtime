@@ -57,3 +57,5 @@ timestamp: 2026-10-17T00:00:00Z
 超限返回 STREAM_EVENT_TOO_LARGE 或 STREAM_BUFFER_OVERFLOW，释放积压、拒绝新输入、关闭 reader 并启动受管组回收；仅当前调用失败，不静默丢事件后报告成功。稳定错误码随错误对象返回。共 7 项新增容量回归覆盖条数、字节、无换行、图片原生 RPC 回显，以及真实 ZCode Provider 管道在消费者停读时主动关闭。相关 ACP、ZCode 与回收共 34 项通过；后续稳定错误码/确定性时序检查另与 native 回归一起验证。
 
 S04 补充：新增 ACP 与 ZCode 正常完成后消费者停读的时序回归，正常退出保留已接纳终态，超限才清空积压；ZCode 在 leader exit 启动清理、stdio close 后判断接收结束。9 项容量/终态专项与进程组回归通过。
+
+R06/S02 完整回归补充：macOS 在进程退出窗口可能短暂拒绝组信号。记录 EPERM 后继续在原期限内确认消失，只有确认 ESRCH 才成功；持续拒绝保留为超时 cause。Host 启动错误与清理错误同时发生时使用 AggregateError 保留两者，避免丢失 ENOENT 等真实原因。增加短暂/持续 EPERM 故障注入，与受影响的 Host 装配、Antigravity、playboard 和进程组共 49 项通过。

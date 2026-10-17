@@ -73,7 +73,15 @@ export async function spawnAdapterHost({
     adapters = await waitForReady(client.list(), readyTimeoutMs, signal);
   } catch (error) {
     client.close(error instanceof Error ? error : new Error(errorMessage(error)));
-    await cleanup();
+    try {
+      await cleanup();
+    } catch (cleanupError) {
+      throw new AggregateError(
+        [error, cleanupError],
+        `${errorMessage(error)}${stderr ? `: ${stderr}` : ""}; cleanup: ${errorMessage(cleanupError)}`,
+        { cause: cleanupError }
+      );
+    }
     throw new Error(`${errorMessage(error)}${stderr ? `: ${stderr}` : ""}`, { cause: error });
   }
   return {

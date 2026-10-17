@@ -11,6 +11,7 @@ export function createProcessCleanup(
   { processGroup = false, termGraceMs = 400, killGraceMs = 200 } = {}
 ): () => Promise<void> {
   let cleanup: Promise<void> | undefined;
+  let signalError: Error | undefined;
   const grouped = processGroup && process.platform !== "win32" && child.pid !== undefined;
   const exited = (): boolean => child.exitCode !== null || child.signalCode !== null;
   const exists = (): boolean => {
@@ -30,6 +31,11 @@ export function createProcessCleanup(
       if (grouped) process.kill(-child.pid, value);
       else child.kill(value);
     } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EPERM") {
+        // macOS 的退出窗口可能暂时拒绝组信号；仅在后续确认 ESRCH 后成功。
+        signalError ??= error as Error;
+        return;
+      }
       if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
     }
   };
@@ -53,7 +59,7 @@ export function createProcessCleanup(
       if (await wait(started + termGraceMs)) return;
       signal("SIGKILL");
       if (!(await wait(started + termGraceMs + killGraceMs))) {
-        throw Object.assign(new Error("PROCESS_CLEANUP_TIMEOUT"), {
+        throw Object.assign(new Error("PROCESS_CLEANUP_TIMEOUT", { cause: signalError }), {
           code: "PROCESS_CLEANUP_TIMEOUT"
         });
       }

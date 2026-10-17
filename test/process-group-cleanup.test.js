@@ -151,3 +151,38 @@ test(
     }
   }
 );
+
+for (const disappears of [true, false]) {
+  test(
+    `group signal EPERM only succeeds after confirmed disappearance: ${disappears}`,
+    { skip: process.platform === "win32" },
+    async (t) => {
+      const { createProcessCleanup } =
+        await import("../packages/octo-runtime-adapter-sdk/dist/process-cleanup.js");
+      let probes = 0,
+        signals = 0;
+      t.mock.method(process, "kill", (pid, signal) => {
+        assert.equal(pid, -12345);
+        if (signal === 0) {
+          probes++;
+          if (disappears && probes > 1) throw Object.assign(new Error("gone"), { code: "ESRCH" });
+          return true;
+        }
+        signals++;
+        throw Object.assign(new Error("permission"), { code: "EPERM" });
+      });
+      const close = createProcessCleanup(
+        { pid: 12345, exitCode: 0, signalCode: null },
+        { processGroup: true, termGraceMs: 5, killGraceMs: 5 }
+      );
+      if (disappears) await close();
+      else
+        await assert.rejects(
+          close(),
+          (error) => error.code === "PROCESS_CLEANUP_TIMEOUT" && error.cause.code === "EPERM"
+        );
+      assert.ok(probes > 1);
+      assert.equal(signals, disappears ? 1 : 2);
+    }
+  );
+}
