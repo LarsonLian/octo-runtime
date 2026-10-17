@@ -26,3 +26,5 @@ decisions:
   - 全局 concurrency 只能保护可重算的 promotion，不能依赖其 FIFO 或保证每个等待运行都执行。
   - 自动验收使用本地 npm 与 GitHub 状态 fixture，不操作真实 tag、registry 或 Release。
   - Windows 全局 daemon shim 验收必须显式回收进程树，不能只终止 cmd 包装进程。
+  - npm latest 与 GitHub Latest 均为单调下界；资产短暂缺失时 promotion 零写并有界重读。
+  - 每个 tag 的 Release 资产独立交付，不能放入会替换 pending 运行的全局 concurrency group。

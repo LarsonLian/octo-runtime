@@ -69,6 +69,11 @@ GitHub 的当前状态，选择已经完整交付的最高稳定版本，再同�
 Release。写入后必须重新读取两端状态；若期间出现更高完整版本，则按最新事实有界重试，而不是
 继续使用进入 job 前计算的 `dist_tag`。
 
+npm latest 与 GitHub Latest 两个现有指针共同构成不可回退下界。若当前 latest 的 Release 资产
+在修复期间短暂不可见，协调器不得把任一指针写向更旧的完整版本，而应保持零写、有界重读，
+资产仍未恢复时失败。对应 tag 的 Release 创建和资产替换保持独立执行；资产就绪后同一工作流
+会进入可重算的 promotion 协调器，因此中间状态不会造成回退，也不会丢失某个 tag 的资产交付。
+
 不能仅把现有 publish job 改成一个全局 GitHub concurrency group：该机制不承诺 FIFO，且新的
 等待项可能取代旧等待项。若使用全局 concurrency，它只能保护可重算的 promotion 协调器；每个
 协调器都必须收敛全局最高完整版本，而不是只处理触发自己的 tag。即使中间 promotion 被取代，
@@ -113,6 +118,7 @@ Release。写入后必须重新读取两端状态；若期间出现更高完整�
 | `1.1.0` 与 `1.2.0` 并发，旧版先完成 | 最终 `latest=1.2.0`         | 最终 `v1.2.0` 为 latest  |
 | `1.1.0` 与 `1.2.0` 并发，新版先完成 | 最终 `latest=1.2.0`         | 最终 `v1.2.0` 为 latest  |
 | promotion 等待项被更新版本取代      | 存活运行收敛最高完整版本    | 存活运行收敛对应 Release |
+| 当前 latest 资产替换中或替换失败    | 重读期间零写，latest 不回退 | Latest 不回退            |
 | 任一 dry-run                        | 版本、dist-tags 零变化      | Release 与资产零变化     |
 
 Windows 验收还必须证明真实 `octo-runtime-daemon.cmd` 启动后使用 `taskkill /T /F` 或等价机制回收

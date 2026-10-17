@@ -86,6 +86,9 @@ tag，例如自动运行在 npm 上传前被取消或失败时进行诊断；创
 则跳过而不是覆盖。新版本先使用版本专属 dist-tag 交付，GitHub Release 就绪后由包级
 promotion 协调器重新读取两端状态，把 npm 与 GitHub latest 收敛到已完整交付的最高稳定版。
 因此恢复当前或旧版本、不同 tag 并发完成以及 promotion 等待项被取代都不会回退 latest。
+npm 与 GitHub 的现有 latest 指针同时作为单调下界；每个 tag 的 Release 资产保持独立交付，
+不进入可能替换 pending 运行的全局 concurrency group。资产替换期间短暂缺失时，promotion
+保持零写并有界重读；替换失败也不会把任一指针降到旧版本。
 `dry-run` 读取同一份 npm 与 GitHub 状态，并把本次已验证版本作为只读候选执行相同决策；它只
 输出拟执行的 promotion，不创建版本、dist-tag、Release 或资产。dry-run 使用独立的运行级
 并发组，不能替换等待中的正式 promotion。

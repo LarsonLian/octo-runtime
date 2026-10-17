@@ -28,12 +28,14 @@ Release。手工 dry-run 与 Release 故障恢复统一从 `Release Publish` 进
 `dist.integrity` 与本次 tgz；一致时跳过不可变 npm 版本，不一致时拒绝把另一个产物归入该
 tag。不可变版本先使用版本专属 dist-tag，Release 资产完成后由包级协调器重新读取两端状态，
 只把最高完整稳定版提升为 npm 与 GitHub latest。历史版本恢复不会降级 latest，不同 tag 并发
-完成也会收敛到最高版本；`v0.0.0` 明确保留为源码占位版本，不能发布。
+完成也会收敛到最高版本。两个现有 latest 指针是不可回退下界；每个 tag 的 Release 资产独立
+交付，当前资产短暂缺失时协调器零写并有界重读，替换失败也不会回退；`v0.0.0` 明确保留为
+源码占位版本，不能发布。
 
 ## 验证证据
 
 - `pnpm typecheck`、`pnpm lint`、`pnpm lint:names`、`pnpm format:check` 通过。
-- `pnpm test` 通过：Node 测试 1125 项中 1116 通过、9 项按既有条件跳过、0 失败；WebUI
+- `pnpm test` 通过：Node 测试 1142 项中 1133 通过、9 项按既有条件跳过、0 失败；WebUI
   Vitest 35 项通过。
 - `node scripts/pack-release.mjs --version 1.0.0` 成功生成约 1.4 MiB 的 tgz；连续两次生成的
   SHA-512 相同。

@@ -34,6 +34,11 @@ export function selectHighestCompleteVersion(completeVersions) {
   return [...new Set(completeVersions)].sort(compareStableVersions).at(-1);
 }
 
+function selectLatestFloor(npmLatest, githubLatest) {
+  const versions = [npmLatest, githubLatest].filter((version) => version !== null);
+  return versions.length === 0 ? null : selectHighestCompleteVersion(versions);
+}
+
 function includeCandidate(state, candidate) {
   if (candidate === null) return state;
   if (candidate === "0.0.0" || !stableVersion.test(candidate)) {
@@ -47,13 +52,37 @@ function includeCandidate(state, candidate) {
 
 export async function reconcileLatest(
   client,
-  { maxAttempts = 5, dryRun = false, candidate = null } = {}
+  {
+    maxAttempts = 5,
+    dryRun = false,
+    candidate = null,
+    retryDelay = () => new Promise((resolve) => setTimeout(resolve, 2000))
+  } = {}
 ) {
   let observed;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const before = includeCandidate(await client.readState(), candidate);
+    const latestFloor = selectLatestFloor(before.npmLatest, before.githubLatest);
+    if (before.completeVersions.length === 0 && latestFloor !== null) {
+      if (!dryRun && attempt < maxAttempts) {
+        await retryDelay();
+        continue;
+      }
+      throw new Error(
+        `当前 latest ${latestFloor} 暂时没有完整 Release 资产：${JSON.stringify(before)}`
+      );
+    }
     const target = selectHighestCompleteVersion(before.completeVersions);
     const relation = classifyVersion(target, before.npmLatest);
+    if (latestFloor !== null && compareStableVersions(target, latestFloor) < 0) {
+      if (!dryRun && attempt < maxAttempts) {
+        await retryDelay();
+        continue;
+      }
+      throw new Error(
+        `拒绝把 latest 从 ${latestFloor} 回退到暂时完整的 ${target}：${JSON.stringify(before)}`
+      );
+    }
     const actions = [
       ...(before.npmLatest === target ? [] : [["npm", target]]),
       ...(before.githubLatest === target ? [] : [["github", target]])
@@ -65,6 +94,13 @@ export async function reconcileLatest(
     if (before.githubLatest !== target) await client.setGitHubLatest(target);
 
     observed = includeCandidate(await client.readState(), candidate);
+    if (observed.completeVersions.length === 0) {
+      if (attempt < maxAttempts) {
+        await retryDelay();
+        continue;
+      }
+      throw new Error(`写入后没有完整 Release 资产：${JSON.stringify(observed)}`);
+    }
     const expected = selectHighestCompleteVersion(observed.completeVersions);
     if (observed.npmLatest === expected && observed.githubLatest === expected) {
       return { target: expected, relation, attempts: attempt };

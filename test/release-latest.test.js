@@ -80,6 +80,109 @@ test("历史版本补发或恢复不改变共享 latest", async () => {
   assert.deepEqual(release.actions, []);
 });
 
+for (const current of [
+  { npmLatest: "1.2.0", githubLatest: "1.2.0" },
+  { npmLatest: "1.1.0", githubLatest: "1.2.0" }
+]) {
+  test(`当前 latest 资产短暂缺失时拒绝回退：${JSON.stringify(current)}`, async () => {
+    const release = fixture({ completeVersions: ["1.1.0"], ...current });
+    await assert.rejects(
+      () => reconcileLatest(release.client, { maxAttempts: 2, retryDelay: async () => {} }),
+      /拒绝把 latest 从 1\.2\.0 回退/
+    );
+    assert.deepEqual(release.actions, []);
+    assert.equal(release.state.npmLatest, current.npmLatest);
+    assert.equal(release.state.githubLatest, current.githubLatest);
+  });
+}
+
+test("当前 latest 资产替换完成后由有界重读恢复协调", async () => {
+  const release = fixture({
+    completeVersions: ["1.1.0"],
+    npmLatest: "1.2.0",
+    githubLatest: "1.2.0"
+  });
+  let retries = 0;
+  const result = await reconcileLatest(release.client, {
+    retryDelay: async () => {
+      retries += 1;
+      release.state.completeVersions.push("1.2.0");
+    }
+  });
+  assert.equal(retries, 1);
+  assert.equal(result.target, "1.2.0");
+  assert.equal(result.attempts, 2);
+  assert.deepEqual(release.actions, []);
+});
+
+test("唯一 latest 资产短暂消失后由有界重读恢复协调", async () => {
+  const release = fixture({
+    completeVersions: [],
+    npmLatest: "1.2.0",
+    githubLatest: "1.2.0"
+  });
+  let retries = 0;
+  const result = await reconcileLatest(release.client, {
+    retryDelay: async () => {
+      retries += 1;
+      release.state.completeVersions.push("1.2.0");
+    }
+  });
+  assert.equal(retries, 1);
+  assert.equal(result.target, "1.2.0");
+  assert.equal(result.attempts, 2);
+  assert.deepEqual(release.actions, []);
+});
+
+test("唯一 latest 资产持续缺失时有界失败且零写入", async () => {
+  const release = fixture({
+    completeVersions: [],
+    npmLatest: "1.2.0",
+    githubLatest: "1.2.0"
+  });
+  let retries = 0;
+  await assert.rejects(
+    () =>
+      reconcileLatest(release.client, {
+        maxAttempts: 2,
+        retryDelay: async () => {
+          retries += 1;
+        }
+      }),
+    /当前 latest 1\.2\.0 暂时没有完整 Release 资产/
+  );
+  assert.equal(retries, 1);
+  assert.deepEqual(release.actions, []);
+});
+
+test("写入后资产短暂消失时重读并复核最终状态", async () => {
+  const release = fixture({
+    completeVersions: ["1.2.0"],
+    npmLatest: "1.1.0",
+    githubLatest: "1.1.0"
+  });
+  let hidden = false;
+  const client = {
+    ...release.client,
+    async setGitHubLatest(version) {
+      await release.client.setGitHubLatest(version);
+      release.state.completeVersions = [];
+      hidden = true;
+    }
+  };
+  const result = await reconcileLatest(client, {
+    retryDelay: async () => {
+      if (hidden) release.state.completeVersions.push("1.2.0");
+    }
+  });
+  assert.equal(result.target, "1.2.0");
+  assert.equal(result.attempts, 2);
+  assert.deepEqual(release.actions, [
+    ["npm", "1.2.0"],
+    ["github", "1.2.0"]
+  ]);
+});
+
 test("dry-run 使用同一决策并保持 npm 与 GitHub 零写入", async () => {
   const release = fixture({
     completeVersions: ["1.0.0"],
@@ -203,19 +306,23 @@ test("workflow 将不可变发布、Release 修复和共享 promotion 分离", a
     resolve(root, ".github/workflows/release-publish.yml"),
     "utf8"
   );
+  const publishReleaseJob = releaseWorkflow
+    .split("\n  promote-latest:")[0]
+    .split("\n  publish-release:")[1];
   assert.match(npmWorkflow, /--tag "release-\$VERSION"/);
   assert.doesNotMatch(npmWorkflow, /npm publish[^\n]+--tag latest/);
   assert.match(npmWorkflow, /dist\.integrity --json/);
   assert.match(npmWorkflow, /registry_integrity=.*jq -er/);
   assert.match(releaseWorkflow, /'octo-runtime-latest-promotion'/);
   assert.match(releaseWorkflow, /octo-runtime-latest-dry-run-/);
+  assert.doesNotMatch(publishReleaseJob, /concurrency:/);
   assert.match(releaseWorkflow, /node scripts\/reconcile-release-latest\.mjs/);
   assert.match(releaseWorkflow, /--dry-run --candidate "\$VERSION"/);
   assert.doesNotMatch(releaseWorkflow, /release edit "\$TAG"[^\n]+--latest=false/);
 });
 
 test("Windows 发行验收通过 taskkill 回收全局 daemon shim 的进程树", async () => {
-  const verifier = await readFile(resolve(root, "scripts/verify-release.mjs"), "utf8");
+  const verifier = await readFile(resolve(root, "scripts/verify-windows-release.mjs"), "utf8");
   const workflow = await readFile(resolve(root, ".github/workflows/ci.yml"), "utf8");
   const cliManifest = JSON.parse(await readFile(resolve(root, "apps/cli/package.json"), "utf8"));
   const daemonManifest = JSON.parse(
@@ -225,7 +332,7 @@ test("Windows 发行验收通过 taskkill 回收全局 daemon shim 的进程树"
   assert.match(verifier, /await stopDaemon\(\)/);
   assert.match(workflow, /name: Verify release package \(windows-latest\)/);
   assert.match(workflow, /git config --global core\.autocrlf false/);
-  assert.match(workflow, /node scripts\/verify-release\.mjs/);
+  assert.match(workflow, /node scripts\/verify-windows-release\.mjs/);
   assert.match(workflow, /needs: \[check, verify-windows-release\]/);
   assert.doesNotMatch(cliManifest.scripts.build, /\bchmod\b/);
   assert.doesNotMatch(daemonManifest.scripts.build, /\bchmod\b/);

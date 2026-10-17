@@ -144,9 +144,7 @@ jobs:
         run: |
           set -euo pipefail
           EXPECTED_COMMIT=$(git rev-parse HEAD)
-          node scripts/verify-release.mjs "$ARCHIVE" \
-            --expected-commit "$EXPECTED_COMMIT" \
-            --require-clean
+          node scripts/verify-windows-release.mjs "$ARCHIVE" "$EXPECTED_COMMIT"
 
   gate:
     # Stable required-check name: matrix failures and skipped builds must fail it.
