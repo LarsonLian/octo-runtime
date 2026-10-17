@@ -1,9 +1,9 @@
-status: implementing
+status: implemented-local-validation-passed
 decisions:
-  R01: 删除 getGroupInfo 实现及公开导出；代码待实施。
-  R02a: 删除 getUploadPresign、uploadFileToPresignedUrl；代码待实施。
-  R02b: 随 R02a 清理，不建设 Channel 上传目的地策略；代码待实施。
-  R03: 系统账号是本地信任边界，同账号客户端互信；现有设计符合目标，架构与本地执行规则已同步，SDK 接入说明待同步；不新增 APP 鉴权、错误码或错误卡片。
+  R01: 删除 getGroupInfo 实现及公开导出；已实施并提交。
+  R02a: 删除 getUploadPresign、uploadFileToPresignedUrl；已实施并提交。
+  R02b: 随 R02a 清理，不建设 Channel 上传目的地策略；已实施并提交。
+  R03: 系统账号是本地信任边界，同账号客户端互信；现有设计符合目标，架构与本地执行规则已同步，两份 SDK 接入说明已同步；不新增 APP 鉴权、错误码或错误卡片。
   preserve: 保留 files.ts 中原生图片尺寸解析及必要依赖，不整文件删除。
   principle: 按职责、消费者及内置必要性判断；固定渠道逻辑可以调用 API，不以模型前后时点作绝对限制。
   evidence: 用户确认 octo-cli 支持对应能力且端到端验收通过，本轮未独立重跑。
@@ -113,3 +113,14 @@ validation:
 scope:
   - 用户已授权按问题修复并单独提交，提交正文注明 reviewer 与决策；本轮不推送、不合并。
   - 不在 GitHub 发送评审回复，不请求重新评审。
+
+implementation_validation:
+  node: v24.19.0
+  platform: macOS
+  typecheck_build: passed
+  lint_names_format: passed
+  node_tests: 1113 total, 1104 passed, 9 skipped, 0 failed
+  ui_tests: 35 passed
+  okf_diff: passed
+  remote_ci: 新提交未推送，尚未运行；不使用原 SHA 通过结果代替本次验证。
+  boundaries: 假 Provider 与真实 OS 管道/进程组；无真实模型或 im-test API 调用，Windows 未实测。

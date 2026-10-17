@@ -8,9 +8,9 @@ timestamp: 2026-10-17T00:00:00Z
 
 # PR 1 评分与同类问题
 
-属于[原评审计划](brief.md)，沿用基线 `0eb8b8d8fe8be5829da74ec6e686bfa39432f521`。本轮刷新 GitHub 意见，仍为 yujiawei 和 Jerry-Xin 两份 Changes Requested。本文件仅为分析，没有实施产品代码、提交或推送，也没有发送评审回复。
+属于[原评审计划](brief.md)，沿用基线 `0eb8b8d8fe8be5829da74ec6e686bfa39432f521`。原分析来自 yujiawei 和 Jerry-Xin 两份 Changes Requested，以下保留问题与决策依据。用户后续已授权实施；R01/R02a/R02b/R03/R05/R06 与 S01–S05 已处理并分别提交，具体检查与平台范围见[实施记录](implementation.md)。R04 不需要新增产品代码，按新修改记录 Node 24 本地检查；未推送、未发送评审回复、未合并。
 
-后续 [Channel API 消费者专项](channel-api-audit.md)已核实上传及查群 helper 无已知消费者，并记录用户最新澄清：按具体职责和必要性判断，固定 @ 身份校验等渠道逻辑可以调用 API，不以模型前后时点作绝对禁止条件。用户已确认删除 getGroupInfo 和两项上传 API，保留原生图片尺寸解析；[决策与判定原则](brief.md#已确认决策r01r02ar02b)为当前方案。代码待实施，本轮仅更新 OKF。
+[Channel API 消费者专项](channel-api-audit.md)确认无已知消费者，按用户决定删除三个 API 并保留图片解析。固定渠道逻辑仍可直接调用 API，不以模型执行前后时点判断越界。
 
 ## 评分口径
 
@@ -27,23 +27,21 @@ timestamp: 2026-10-17T00:00:00Z
 
 | 编号 | 缺失点及我的评审意见 | 建议级别 | 修改必要性 | 技术可执行性 | 是否需要修改 / 目标 |
 | --- | --- | --- | --- | --- | --- |
-| R05 | ACP 未监听进程及相关管道 error；缺失命令可终止共享 Host，坏任务无 run.failed，兄弟任务中断。已独立复现，是真实故障隔离缺陷 | P1 | 100 | 100 | 必须改代码；接受修复，不争辩 |
-| R06 | NDJSON、ACP 以父进程退出判断组已清理，后代拒绝 TERM 时继续工作。两条传输均复现，不是性能微优化 | P1 | 100 | 90 | 必须改代码；接受修复，对齐清理预算和平台范围 |
-| R01 | getGroupInfo 未编码群 ID，保留字符改变 URL 语义。局部错误成立；暂无内部调用，不足以证明越权或跨域泄露 Token | P2，原评审 P1 | 85 | 100 | 已确认删除 getGroupInfo；通过清理解决，代码待实施 |
-| R02a | 保留上传 helper 时未禁止重定向，存在字节被继续发送的条件性风险。当前无自动上传链，PUT 本身不带 Bot Authorization | P2，原评审 P1 | 85 | 100 | 已确认删除两项上传 API；通过清理解决，代码待实施 |
-| R02b | 初始上传目的地的可信合同未明确。仅禁跳转不能解决恶意初始地址；存储可合法跨域，且现有实现包含 HTTP/私有部署 | P2，条件性 | 85 | 100 | 已确认删除两项上传 API；本次不建设目的地策略，代码待实施 |
-| R03 | 用户确认系统账号是本地信任边界，同账号客户端互信；现有设计符合目标，只需说明合同 | 文档说明项，不构成当前鉴权缺陷 | 80（文档）/ 0（代码） | 100 | 决策已确认；仅补接入文档，不新增 APP 鉴权、错误码或错误卡片 |
+| R05 | ACP 未监听进程及相关管道 error；缺失命令可终止共享 Host，坏任务无 run.failed，兄弟任务中断。已独立复现，是真实故障隔离缺陷 | P1 | 100 | 100 | 已修复并提交；进程/管道错误仅终止本调用 |
+| R06 | NDJSON、ACP 以父进程退出判断组已清理，后代拒绝 TERM 时继续工作。两条传输均复现，不是性能微优化 | P1 | 100 | 100 | 已修复并提交；同次清理覆盖 TERM/KILL/确认，平台范围见实施记录 |
+| R01 | getGroupInfo 未编码群 ID，保留字符改变 URL 语义。局部错误成立；暂无内部调用，不足以证明越权或跨域泄露 Token | P2，原评审 P1 | 85 | 100 | 已删除并提交；通过清理解决 R01 |
+| R02a | 保留上传 helper 时未禁止重定向，存在字节被继续发送的条件性风险。当前无自动上传链，PUT 本身不带 Bot Authorization | P2，原评审 P1 | 85 | 100 | 已删除并提交；通过清理解决 R02a |
+| R02b | 初始上传目的地的可信合同未明确。仅禁跳转不能解决恶意初始地址；存储可合法跨域，且现有实现包含 HTTP/私有部署 | P2，条件性 | 85 | 100 | 已删除并提交；通过清理解决 R02b，不建设目的地策略 |
+| R03 | 用户确认系统账号是本地信任边界，同账号客户端互信；现有设计符合目标，只需说明合同 | 文档说明项，不构成当前鉴权缺陷 | 80（文档）/ 0（代码） | 100 | 已同步架构、本地执行及两份 SDK 指南并提交；不新增 APP 鉴权或错误卡片 |
 | R04 | Node 24 验证建议：同一 SHA 的 Linux/macOS 完整 CI 已成功，Node 22 失败没有被原评审认定为回归 | 不构成代码缺陷 | 0（新代码） | 100（证据回应） | 不改代码；提交已有 CI 证据，修复后正常跑新提交检查 |
 
 R01/R02a/R02b 的可执行性均为 100：删除范围、保留边界和验收方式已明确。修改必要性按无用途公开 API 的清理评为 85，不代表线上 P1；可执行性 100 不代表代码已完成。octo-cli 支持与端到端验收是用户确认的依据，本轮未重跑。
 
-### 低于 100 的可执行性差在哪里
+### 原可执行性缺口的处理
 
-| 项目 | 尚缺什么 | 建议补齐方式与验收完成条件 |
-| --- | --- | --- |
-| R06：90 | 现有 Host cancelGraceMs 默认约 1 秒，传输 TERM 宽限约 1 秒，ACP 另有 250 ms 延迟；Windows 未实测 | 先对齐本次所有权、取消预算与清理结果。Linux/macOS 覆盖父先退、子拒绝 TERM、重复关闭和超时；Windows 单列真实合同与验证。不能靠无限等待或扩大预算冒充完成 |
+R06 已明确预算：TERM 400 ms + KILL 后确认 200 ms 共用起点，ACP/ZCode 协议取消宽限 250 ms，总计约 850 ms，低于 Host 默认 1000 ms。更短 Host 宽限仍返回真实 cleanup_timeout，不扩大用户预算。同次清理 Promise 保存结果，EPERM 不记为目标消失。POSIX 实现方案可执行性调整为 100；本机 macOS 已验证，远端 Linux CI 与 Windows 实机验证不冒充已完成。Windows 保留既有受管 child 范围，不承诺 POSIX 组语义。
 
-其他必要性低于 100 的原因分别是：暂无内部业务调用、触发依赖错误签发/重定向，或仅缺文档。这不影响局部修复的技术可执行性。
+S03 已补真实 ZCode 协议 fixture，S04 已确定普通行、图片回显和队列各自上限；二者的原方案缺口已消除。当前实施细节、验证数量及平台边界以实施记录为准，历史低分描述不再代表待用户决策事项。
 
 ## 同类问题的定向检查
 
@@ -53,11 +51,11 @@ Jerry-Xin 的风格是核对资源所有权、错误是否越界、取消是否�
 
 | 编号 | 同类缺失及源码位置 | 证据状态 / 后果 | 建议级别 | 必要性 / 可执行性 | 是否修改 / 处理 |
 | --- | --- | --- | --- | --- | --- |
-| S01 | [Codex app-server](../../../packages/octo-runtime-adapter-codex/src/app-server.ts)的 stdin 未监听 error；write 回调不等于流错误处理 | 真实管道探针已复现未处理 EPIPE、执行所在 Node 进程退出码 1；未重复真实 Host RPC 兄弟流验证 | P1 | 100 / 100 | 必须修复；纳入 R05 同类传输隔离，补 Codex 正式回归 |
-| S02 | [Host launcher](../../../packages/octo-runtime-adapter-host/src/process.ts)的 terminateProcessTree 也在 leader 退出时提前返回 | public spawnAdapterHost 探针已复现：close 约 1 ms 返回，1.3 秒后工具仍工作，随后 150 ms 新写 6 字节 | P1 | 95 / 90 | 必须修复；纳入 R06 的受管组回收，不声称能清理其他独立进程组 |
-| S03 | [ZCode app-server](../../../packages/octo-runtime-adapter-zcode-gui/src/app-server.ts)的 close 同样由父进程退出决定是否升级 KILL | 源码确认同类条件，且以 detached 创建组；尚未走 ZCode 完整调用链复现，不能记成已测残留 | P2 暂定 | 90 / 90 | 建议先补同一 fixture 验证后局部修复；采用下述组回收方案，剩余为预算接线和平台边界 |
-| S04 | [ACP AsyncQueue/readline](../../../packages/octo-runtime-acp-client/src/index.ts)和 ZCode 的对应接收缓冲没有显式队列字节/条数上限及单行上限 | 源码确认；Provider 持续快发、下游慢消费或单行过大时存在内存增长条件。未做 RSS/吞吐实测，不声称已经 OOM | P2 | 85 / 90 | 建议补传输容量边界和仅本调用失败的回归；先核对合法帧大小，不能静默丢事件 |
-| S05 | Host launcher 给 stdio RPC 安装了流错误处理，但 spawn 的 ChildProcess 本身没有 error 监听 | 源码确认；固定 process.execPath 降低命令缺失概率，但资源不足等实际 spawn 失败仍可能发 error。未注入真实 OS 资源故障 | P2 暂定 | 85 / 100 | 建议在 readiness 边界补启动错误归属；不通过耗尽整机资源来验证 |
+| S01 | [Codex app-server](../../../packages/octo-runtime-adapter-codex/src/app-server.ts)的 stdin 未监听 error；write 回调不等于流错误处理 | 真实管道探针已复现未处理 EPIPE、执行所在 Node 进程退出码 1；未重复真实 Host RPC 兄弟流验证 | P1 | 100 / 100 | 已修复并提交，Codex 正式回归通过 |
+| S02 | [Host launcher](../../../packages/octo-runtime-adapter-host/src/process.ts)的 terminateProcessTree 也在 leader 退出时提前返回 | public spawnAdapterHost 探针已复现：close 约 1 ms 返回，1.3 秒后工具仍工作，随后 150 ms 新写 6 字节 | P1 | 95 / 100 | 已修复并提交；仅回收本次受管组 |
+| S03 | [ZCode app-server](../../../packages/octo-runtime-adapter-zcode-gui/src/app-server.ts)的 close 同样由父进程退出决定是否升级 KILL | 源码确认同类条件，且以 detached 创建组；后续已补真实 ZCode 协议 fixture，验证 leader 先退时工具仍被回收 | P2 暂定 | 90 / 100 | 已修复并提交，预算已明确；平台范围见实施记录 |
+| S04 | [ACP AsyncQueue/readline](../../../packages/octo-runtime-acp-client/src/index.ts)和 ZCode 的对应接收缓冲没有显式队列字节/条数上限及单行上限 | 源码确认；Provider 持续快发、下游慢消费或单行过大时存在内存增长条件。未做 RSS/吞吐实测，不声称已经 OOM | P2 | 85 / 100 | 已修复并提交；容量和正常终态保留回归通过 |
+| S05 | Host launcher 给 stdio RPC 安装了流错误处理，但 spawn 的 ChildProcess 本身没有 error 监听 | 源码确认；固定 process.execPath 降低命令缺失概率，但资源不足等实际 spawn 失败仍可能发 error。未注入真实 OS 资源故障 | P2 暂定 | 85 / 100 | 已修复并提交；真实 ENOENT 注入验证通过 |
 
 S02 不是 R06 Provider 泄漏的兜底方案：Provider 自己采用 detached 时属于另一个组。必须由各自创建者负责自己的资源，不能让宿主扫描全机杀进程。
 
@@ -65,7 +63,7 @@ R05 另须覆盖一个相邻状态缺口：ACP 的 failAll 只清当前 pending/
 
 ## 具体修复建议
 
-以下为建议方案，尚未实施。保持现有 Host、Adapter、Extra 职责；核心代码注释引用本计划中对应的问题编号和合同理由。
+以下保留实施前方案；已实施的具体代码、预算与验证以[实施记录](implementation.md)为准。保持现有 Host、Adapter、Extra 职责；核心代码注释引用本计划中对应的问题编号和合同理由。
 
 | 对应项 | 修改位置与具体动作 | 修复后的可观察结果 / 验收 |
 | --- | --- | --- |
@@ -97,15 +95,15 @@ POSIX 顺序为：向本次受管组发送 TERM → 在剩余宽限内检查组 
 
 正式回归除了单次容量边界，还应重复执行启动、取消、关闭和慢消费场景，确认受管组、队列计数、pending、监听器和定时器均回到可预期状态。RSS 可作为辅助趋势观测，受 GC 与系统缓存影响，不以固定运行次数后 RSS 完全相等作为唯一门禁，也不以整机 OOM 作为验收方法。
 
-### 分数修订说明
+### 实施前分数修订记录（当前结果见实施记录）
 
-R01、R02a、S05 的 85 分为修改必要性，其局部方案可执行性已经是 100 分。S04 的必要性为 85、可执行性为 90，建议纳入长期运行保护。S03 的可执行性由 85 调整为 90：具体组回收方案已写清，其尚未复现单独保留在证据列；剩余扣分来自取消预算接线及平台边界。R02b 原来的必要性 60 / 可执行性 65 针对保留上传并新增目的地约束的备选。用户确定删除后，当前清理方案调整为 85 / 100；部署策略不再是本次待决项，代码仍未实施。
+R01、R02a、S05 的 85 分为修改必要性，其局部方案可执行性已经是 100 分。S04 的必要性为 85、可执行性为 90，建议纳入长期运行保护。S03 的可执行性由 85 调整为 90：具体组回收方案已写清，其尚未复现单独保留在证据列；剩余扣分来自取消预算接线及平台边界。R02b 原来的必要性 60 / 可执行性 65 针对保留上传并新增目的地约束的备选。用户确定删除后，当前清理方案调整为 85 / 100；部署策略不再是本次待决项，代码现已实施，见实施记录。
 
 ## R01 / R02 的历史用途与当前归属
 
 旧插件核查目录为 `/Users/lvsijia/github.com/Mininglamp-OSS/openclaw-channel-octo`，源码基线 `2e710e903fa43ac9440723746f7395d2f7b4347e`。这里核实的是本地检出的版本及 Git 历史，不声称所有旧版本和线上部署均一致。
 
-| API | 旧 OpenClaw 插件的真实调用方 | 原来解决什么问题 | 当前 Runtime 状态 |
+| API | 旧 OpenClaw 插件的真实调用方 | 原来解决什么问题 | 评审基线的 Runtime 状态 |
 | --- | --- | --- | --- |
 | getGroupInfo | src/agent-tools.ts 的 octo_management 工具，action=group-info；src/actions.ts 的 channel-info 动作 | 根据群 ID 获取群资料，返回群号、名称及服务端附加信息，供模型工具操作或消息动作查询使用 | 仓内只有定义与导出，没有这两条旧业务调用链。它不承担当前群消息准入或 @ 判断 |
 | getUploadPresign + uploadFileToPresignedUrl | src/channel.ts 的 outbound.sendMedia；src/inbound.ts 的 uploadMedia / uploadAndSendMedia，被 IM 回复投递与 actions 媒体发送调用 | 读取本地文件、data URI 或下载远端媒体，取得上传许可，将字节上传到对象存储，拿下载地址后发送图片/文件消息；富文本也复用上传结果 | 仓内只有 helper，没有自动 artifact 收集、上传及发送链。保留代码不等于当前产品需要 Channel 执行上传 |
@@ -118,7 +116,7 @@ Git 提交 `7ef1e25036cf62440e14cb1bbab44b3b11535526`（2026-06-11，fix(upload)
 
 按[现行架构](../../rules/architecture.md#业务动作归-agent-tool-callcontext-约束行为)，Agent 的业务查询、文件上传及附件交付由 octo-cli 或其他工具执行，业务方通过本轮 Context v3 指令表达要求；Channel 不因收到媒体引用就在后台替 Agent 上传。getGroupInfo 与群规则读取、群成员读取是不同接口，清理前者不代表删除后两者。
 
-当前结论已从“清理候选”更新为“删除决策已确认、代码待实施”：删除 getGroupInfo、getUploadPresign、uploadFileToPresignedUrl；保留 files.ts 的 parseImageDimensions 及原生图片输入所需依赖。用户确认 octo-cli 支持相应业务能力且端到端验收通过，本轮未独立重跑。其他 helper 不自动纳入删除范围。固定渠道逻辑仍可直接调用 API，逐项按职责与必要性判断。
+当前状态为“已按删除决策实施并提交”：删除 getGroupInfo、getUploadPresign、uploadFileToPresignedUrl；保留 files.ts 的 parseImageDimensions 及原生图片输入所需依赖。用户确认 octo-cli 支持相应业务能力且端到端验收通过，本轮未独立重跑。其他 helper 不自动纳入删除范围。固定渠道逻辑仍可直接调用 API，逐项按职责与必要性判断。
 
 ### 不应误报或机械扩大范围的地方
 

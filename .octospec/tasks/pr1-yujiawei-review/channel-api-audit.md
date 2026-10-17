@@ -8,6 +8,8 @@ timestamp: 2026-10-17T00:00:00Z
 
 # Channel API 消费者审查
 
+本文件保留实施前的消费者证据；三个 API 已按后续决定删除，图片解析保留，当前实施与验证见[实施记录](implementation.md)。
+
 属于[PR 1 评审计划](brief.md)。基线仍为 `0eb8b8d8fe8be5829da74ec6e686bfa39432f521`；本轮只审查并记录，没有修改产品代码、删除导出、提交或推送。
 
 ## 用户本轮澄清后的判断依据
@@ -23,15 +25,15 @@ timestamp: 2026-10-17T00:00:00Z
 - Runtime 的 apps、packages、public、test、scripts 和 test-support：追踪 API 定义、具名导入、命名空间导出、方法调用、直接 fetch/http 请求及最终回复分支。
 - 本地生态工作区的源码检索，重点复核 Work App 与 channel-gateway-register-demo 的宿主装配。两个宿主导入 gatewayModule 用于加载 Extra，没有发现访问 imApi 的业务调用。
 - 工作区内旧 Runtime 副本与当前源码区分；源码副本中的同名定义不是外部消费者。检索排除 node_modules、构建产物等重复内容，没有检查未知第三方产品的运行时代码。
-- 公共入口仍通过 `export * as imApi` 暴露 API。没有已知调用不等于导出无法调用；后续删除需要完成声明文件、文档、脚本与发行接口检查。
+- 公共入口仍通过 `export * as imApi` 暴露 API。没有已知调用不等于导出无法调用；本轮删除已核对声明文件、文档、脚本与发行接口，详见实施记录。
 
 ## 上传与查群 API 的消费者
 
 | API | 产品消费者 | 测试 / 脚本消费者 | 已知宿主消费者 | 结论 |
 | --- | --- | --- | --- | --- |
-| getUploadPresign | 未发现 | 未发现 | 未发现 | 已确认删除实现与公开导出；代码待实施，不继续建设 Channel 上传能力 |
-| uploadFileToPresignedUrl | 未发现 | 未发现 | 未发现 | 已确认删除实现与公开导出；R02a/R02b 通过清理处理，代码待实施 |
-| getGroupInfo | 未发现 | 未发现 | 未发现 | 已确认删除实现与公开导出，覆盖 R01；与群准入、群规则、成员查询分别处理，代码待实施 |
+| getUploadPresign | 未发现 | 未发现 | 未发现 | 已确认删除实现与公开导出；已实施并验证，不继续建设 Channel 上传能力 |
+| uploadFileToPresignedUrl | 未发现 | 未发现 | 未发现 | 已确认删除实现与公开导出；R02a/R02b 通过清理处理，已实施并验证 |
+| getGroupInfo | 未发现 | 未发现 | 未发现 | 已确认删除实现与公开导出，覆盖 R01；与群准入、群规则、成员查询分别处理，已实施并验证 |
 
 定义分别位于 [files.ts](../../../packages/octo-runtime-extra-channel-gateway/src/transport/api/files.ts) 与 [conversations.ts](../../../packages/octo-runtime-extra-channel-gateway/src/transport/api/conversations.ts)，导出链为 [API index](../../../packages/octo-runtime-extra-channel-gateway/src/transport/api/index.ts) → [包入口 imApi](../../../packages/octo-runtime-extra-channel-gateway/src/index.ts)。
 
@@ -81,4 +83,4 @@ fetchBotGroups 的具体消费者为 [群准入脚本](../../../scripts/verify-c
 
 判定依据是具体职责、消费者、替代能力及内置必要性；不能以模型执行前后或是否直接调用 API 一概判越界。固定 @ 校验、卡片、typing、交互和协议投递仍可使用 API。完整原因、范围及后续验收见[已确认决策](brief.md#已确认决策r01r02ar02b)。
 
-本轮只更新 OKF，三个 API 目前仍在代码及公开导出中。状态为“决策已确认、代码待实施”；此前路径编码、上传重定向和存储白名单备选已退出本次计划。其他清理候选不自动实施，也不得整文件删除 files.ts。
+后续已按决定删除三个 API 的实现与导出，保留 files.ts 的图片解析。此前路径编码、上传重定向和存储白名单备选已退出本次计划；其他清理候选未自动实施。

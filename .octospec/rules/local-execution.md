@@ -71,6 +71,16 @@ CLI `playboard` 也经过 daemon：启动本次临时 daemon，经 UDS/Pipe 执�
 - Host 缓冲有界源帧，不提供 durable outbox、逐事件 ACK 或重启后完整历史。过期、源变化和窗口缺口明确失败。
 - Provider 终态、应用保存完成和 IM 投递成功是不同事实。断开订阅本身不等于取消执行。
 
+## 本次执行资源的错误隔离与回收
+
+创建者负责其启动的进程及 stdio：spawn、stdin/stdout/stderr 的不可恢复错误必须归属本次调用，保存首个错误，拒绝 pending 和后续请求，不能因未处理的 error 事件终止共享 Host。一个 Provider 失败不得中断兄弟调用或阻止后续调用。
+
+POSIX 下，由创建者明确创建的独立进程组按整个组回收；leader 退出不能作为工具后代已退出的证据。并发、重复关闭等待同一次清理 Promise，覆盖 TERM、必要的 KILL 和消失确认；只操作本次所有权范围，不扫描全机或保存历史 PGID 以后重试。EPERM 不表示目标不存在；短暂拒绝后须确认消失才能报告成功，持续失败或超时返回真实错误，并保留原始启动/执行失败原因。
+
+ACP、NDJSON、Host launcher 和 ZCode 复用 [process-cleanup](../../packages/octo-runtime-adapter-sdk/src/process-cleanup.ts)：TERM 400 ms、KILL 后确认 200 ms 共用起点；ACP/ZCode 的协议取消宽限为 250 ms。更短的 Host 取消预算仍按既有合同返回 cleanup_timeout，不静默延长。Windows 保留既有受管 child 范围，不把 POSIX 进程组保证写成已支持 Windows 后代树。此处不将其他 Provider 的原生关闭策略强行统一为这些数值。
+
+接收缓冲超限属于当前传输失败；正常 Provider 退出则须保留已接纳且尚待读取的终态，不因资源释放而伪造执行失败。具体容量见[有界状态](stateless-execution.md#provider-接收缓冲)，实现与平台验证见 [PR 1 整改记录](../tasks/pr1-yujiawei-review/implementation.md)。
+
 ## 外部系统
 
 当前仓库不提供 Worker WS 接入工厂或远端 native 入口。Extra 可接收外部请求并调用共享 Host；请求者身份、租户/owner 作用域、远程授权、业务幂等及可靠投递由拥有该业务的系统实现。
