@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { promisify } from "node:util";
 import type { AdapterInvocationContext } from "./activity.js";
 import { invocationEnvironment } from "./environment.js";
+import { createProcessCleanup } from "./process-cleanup.js";
 import { watchLineLimit } from "./line-limit.js";
 import { mapReasoningEffort, reasoningLevelMap, type ReasoningLevelMap } from "./reasoning.js";
 export type { AdapterInvocationContext, ProviderActivity } from "./activity.js";
@@ -221,21 +222,14 @@ export async function* spawnJsonLines<TNative>(
   });
   // Spawn may fail before stdout closes and the generator reaches its exit await.
   void exitPromise.catch(() => undefined);
-  let killTimer: NodeJS.Timeout | undefined;
-  let terminating = false;
+  const cleanup = createProcessCleanup(child, { processGroup: process.platform !== "win32" });
   const abort = (): void => {
-    if (terminating || child.exitCode !== null || child.signalCode !== null) return;
-    terminating = true;
-    signalProcessTree(child, "SIGTERM");
-    killTimer ??= setTimeout(() => {
-      if (child.exitCode === null && child.signalCode === null) signalProcessTree(child, "SIGKILL");
-    }, 1_000);
-    killTimer.unref();
+    // R06：清理不能在 leader exit 时取消升级；finally 必须等待同一结果。
+    // .octospec/tasks/pr1-yujiawei-review/assessment.md
+    void cleanup().catch(() => undefined);
   };
-  options.onSpawn?.(() => {
-    if (child.exitCode === null) abort();
-    return Promise.resolve();
-  });
+  child.once("exit", abort);
+  options.onSpawn?.(cleanup);
   signal?.addEventListener("abort", abort, { once: true });
   if (signal?.aborted) abort();
   let stderr = "";
@@ -267,7 +261,6 @@ export async function* spawnJsonLines<TNative>(
   if (options.controlHandler) child.stdin.write(input ?? "", onInputWritten);
   else child.stdin.end(input, onInputWritten);
 
-  let exited = false;
   try {
     // One provider-native event per line; whether a parse failure is ignored is
     // left to the specific adapter's parseLine.
@@ -288,7 +281,6 @@ export async function* spawnJsonLines<TNative>(
     }
 
     const exit = await exitPromise;
-    exited = true;
     if (controlError) throw controlError;
     if (exit.code !== 0) {
       throw new ProviderProcessError(
@@ -300,28 +292,9 @@ export async function* spawnJsonLines<TNative>(
     reader.close();
     removeLineGuard();
     signal?.removeEventListener("abort", abort);
-    if (!exited && child.exitCode === null && child.signalCode === null) {
-      abort();
-      await Promise.race([
-        exitPromise.catch(() => undefined),
-        new Promise<void>((resolve) => setTimeout(resolve, 1_000))
-      ]);
-      if (child.exitCode === null && child.signalCode === null) signalProcessTree(child, "SIGKILL");
-    }
-    if (killTimer) clearTimeout(killTimer);
+    // 正常 EOF 也要回收继承进程组、但已关闭 stdio 的后台后代。
+    await cleanup();
   }
-}
-
-function signalProcessTree(child: ReturnType<typeof spawn>, signal: NodeJS.Signals): void {
-  if (process.platform !== "win32" && child.pid !== undefined) {
-    try {
-      process.kill(-child.pid, signal);
-      return;
-    } catch (error) {
-      if (!["ESRCH", "EPERM"].includes((error as NodeJS.ErrnoException).code ?? "")) throw error;
-    }
-  }
-  child.kill(signal);
 }
 
 /** Raised when a provider subprocess exits non-zero; carries the exit code/signal alongside the captured stderr message. */

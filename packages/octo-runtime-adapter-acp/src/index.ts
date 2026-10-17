@@ -301,7 +301,7 @@ export function createAcpAdapter(
     const abort = (): void => {
       if (sessionId) client.cancel(sessionId);
       forceCloseTimer ??= setTimeout(() => {
-        void client.close();
+        void client.close().catch(() => undefined);
       }, 250);
       forceCloseTimer.unref?.();
     };

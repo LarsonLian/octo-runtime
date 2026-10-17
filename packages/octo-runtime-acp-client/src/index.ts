@@ -1,3 +1,4 @@
+import { createProcessCleanup } from "@mininglamp-oss/octo-runtime-adapter-sdk/process-cleanup";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 
@@ -132,20 +133,25 @@ export class AcpClient {
   #stderr = "";
   #closed = false;
   #failure?: Error;
+  readonly #cleanup: () => Promise<void>;
+  #closePromise?: Promise<void>;
   readonly #reader: ReturnType<typeof createInterface>;
 
   constructor({
     child,
     permissionHandler,
     onPermissionResponseWritten,
-    onPermissionResponseFailed
+    onPermissionResponseFailed,
+    processGroup = false
   }: {
     child: ChildProcessWithoutNullStreams;
+    processGroup?: boolean;
     permissionHandler?: PermissionHandler;
     onPermissionResponseWritten?: (params: JsonRecord) => void;
     onPermissionResponseFailed?: (params: JsonRecord, error: Error) => void;
   }) {
     this.#child = child;
+    this.#cleanup = createProcessCleanup(child, { processGroup });
     this.#permission = permissionHandler ?? denyPermission;
     this.#permissionWritten = onPermissionResponseWritten;
     this.#permissionFailed = onPermissionResponseFailed;
@@ -404,38 +410,16 @@ export class AcpClient {
     this.#send({ jsonrpc: "2.0", method: "session/cancel", params: { sessionId } });
   }
 
-  /** Terminate the subprocess: SIGTERM, then escalate to SIGKILL if it has not exited within one second. */
-  async close(): Promise<void> {
-    if (this.#closed) return;
+  /** R06：所有关闭调用等待同一次进程组回收，失败保留给调用方。 */
+  close(): Promise<void> {
+    return (this.#closePromise ??= this.#close());
+  }
+
+  async #close(): Promise<void> {
     this.#closed = true;
     this.#failAll(new Error("ACP client closed"));
-    if (this.#child.exitCode !== null) return;
-    signalProcessTree(this.#child, "SIGTERM");
-    await new Promise<void>((resolve) => {
-      const done = (): void => {
-        clearTimeout(timer);
-        this.#child.removeListener("exit", done);
-        resolve();
-      };
-      const timer = setTimeout(done, 1000);
-      this.#child.once("exit", done);
-      if (this.#child.exitCode !== null || this.#child.signalCode !== null) done();
-    });
-    if (this.#child.exitCode === null && this.#child.signalCode === null)
-      signalProcessTree(this.#child, "SIGKILL");
+    await this.#cleanup();
   }
-}
-
-function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
-  if (process.platform !== "win32" && child.pid !== undefined) {
-    try {
-      process.kill(-child.pid, signal);
-      return;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-    }
-  }
-  child.kill(signal);
 }
 
 /**
@@ -462,12 +446,14 @@ export function spawnAcpClient(options: SpawnAcpClientOptions): AcpClient {
   });
   const client = new AcpClient({
     child,
+    processGroup: process.platform !== "win32",
     permissionHandler,
     onPermissionResponseWritten,
     onPermissionResponseFailed
   });
   const abort = (): void => {
-    void client.close();
+    // 异步取消先启动清理；调用方随后 await close 仍取得同一失败。
+    void client.close().catch(() => undefined);
   };
   if (signal?.aborted) abort();
   else signal?.addEventListener("abort", abort, { once: true });

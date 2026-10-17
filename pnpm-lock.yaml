@@ -148,7 +148,11 @@ importers:
         specifier: 2.2.3
         version: 2.2.3
 
-  packages/octo-runtime-acp-client: {}
+  packages/octo-runtime-acp-client:
+    dependencies:
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-sdk
 
   packages/octo-runtime-adapter-acp:
     dependencies:

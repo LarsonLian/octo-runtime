@@ -19,7 +19,7 @@ timestamp: 2026-10-17T00:00:00Z
 - R03（yujiawei）：已同步架构、本地执行及两份 SDK 指南；同账号互信，不新增鉴权或错误卡片。OKF 与补丁格式检查通过。
 - R04（yujiawei）：原提交 CI 已有证据，新修改按实际检查补充。
 - R05（Jerry-Xin）：已监听 child/stdin/stdout/stderr 错误并保存首次失败，拒绝 pending 与后续调用、关闭 reader、释放失败队列；修正同步写失败的定时器清理。6 项新增回归（含真实 Host RPC 中坏调用失败、兄弟及后续调用成功）和 8 项既有 ACP 回归通过。
-- R06（Jerry-Xin）：待实施，ACP/NDJSON 受管组回收。
+- R06（Jerry-Xin）：ACP/NDJSON 已使用同一次可等待的受管组清理；父进程 exit 不取消 KILL 升级，NDJSON 自然 exit 也启动清理。7 项进程组/超时回归、6 项 ACP 故障回归及 47 项既有 ACP/Host/native 回归通过。
 - S01–S05（同类审查）：待逐项核实、修复和回归。
 
 ## 验证约束
@@ -33,3 +33,9 @@ timestamp: 2026-10-17T00:00:00Z
 ## S05：Host 启动错误归属
 
 来自 Jerry-Xin R05 同类审查。已在 readiness 前监听 ChildProcess error 并关闭该 RPC 客户端，避免共享调用方被未处理异常终止。隔离地替换测试进程 execPath 注入真实 ENOENT；readiness 立即失败，不等配置的 10 秒超时。Host 包构建及相关测试通过。
+
+## R06：回收预算与平台范围
+
+采用 adapter-sdk 独立 process-cleanup 子路径共享低层回收函数；ACP client 增加单向 SDK 依赖，无循环依赖。POSIX 仅对明确创建的独立组发信号，不扫描其他进程。TERM 400 ms、KILL 后确认 200 ms 共用起点；ACP 协议取消等待 250 ms 后进入此清理，默认总等待上限约 850 ms，位于 Host 默认 1000 ms 宽限内。更短的宿主宽限仍由现有 Host 返回真实 cleanup_timeout，不扩大用户预算；后台同次清理继续有界收敛。
+
+重复 close 返回同一 Promise；EPERM 不计作不存在，实际发信号失败直接返回，确认超时返回 PROCESS_CLEANUP_TIMEOUT。macOS 使用真实隔离父子进程验收，未调用模型或业务 API。Windows 继续只终止既有受管 child，不把 POSIX 组回收声称为 Windows 后代树保证；Linux/macOS 远端 CI 在后续推送后确认，本轮未执行 Windows 实机验收。
