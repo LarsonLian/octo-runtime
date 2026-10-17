@@ -38,7 +38,7 @@ timestamp: 2026-10-17T00:00:00Z
 
 采用 adapter-sdk 独立 process-cleanup 子路径共享低层回收函数；ACP client 增加单向 SDK 依赖，无循环依赖。POSIX 仅对明确创建的独立组发信号，不扫描其他进程。TERM 400 ms、KILL 后确认 200 ms 共用起点；ACP 协议取消等待 250 ms 后进入此清理，默认总等待上限约 850 ms，位于 Host 默认 1000 ms 宽限内。更短的宿主宽限仍由现有 Host 返回真实 cleanup_timeout，不扩大用户预算；后台同次清理继续有界收敛。
 
-重复 close 返回同一 Promise；EPERM 不计作不存在；实际发信号遇到 EPERM 时保存原因并继续有界确认，其他非 ESRCH 错误直接抛出；确认超时返回 PROCESS_CLEANUP_TIMEOUT。macOS 使用真实隔离父子进程验收，未调用模型或业务 API。Windows 继续只终止既有受管 child，不把 POSIX 组回收声称为 Windows 后代树保证；Linux/macOS 远端 CI 在后续推送后确认，本轮未执行 Windows 实机验收。
+重复 close 返回同一 Promise；EPERM 不计作不存在；实际发信号遇到 EPERM 时保存原因并继续有界确认，其他非 ESRCH 错误直接抛出；确认超时返回 PROCESS_CLEANUP_TIMEOUT。macOS 使用真实隔离父子进程验收，未调用模型或业务 API。Windows 已有 child 关闭实现，必须满足产品生命周期要求；后代回收行为按[Windows 验收](windows-validation.md)真机核实，发现问题必须修复；Linux/macOS 远端 CI 在后续推送后确认，本轮未执行 Windows 实机验收。
 
 ## S02：Host 所拥有的进程组回收
 
@@ -68,7 +68,7 @@ R06/S02 完整回归补充：macOS 在进程退出窗口可能短暂拒绝组信
 - 完整 pnpm test:suites：Node 1113 项，1104 通过、9 跳过、0 失败；现有 UI 35 项通过。最终错误 cause 元数据补充后，额外 Host 启动/装配回归通过。
 - 三个删除 API 在源码及构建导出中均不存在，原生图片尺寸解析保留。
 - OKF 与 git diff --check 通过，专属进程 fixture 已退出；没有操作真实模型或 im-test 业务 API，没有修改现有 Runtime 身份、Home、profile 或配置。
-- 当前没有待用户决定的方案项。尚未运行的是新提交远端 CI 和 Windows 实机验收，不能冒充本地证据；Windows 不承诺 POSIX 后代组回收语义。
+- 当前没有待用户决定的方案项。尚未运行的是新提交远端 CI 和 Windows 实机验收，不能冒充本地证据；Windows 已有实现、尚未真机验证；平台支持不因此降低，真机验收和 CI 覆盖由 issue 2 跟踪。
 - 用户授权范围内已按问题本地提交，commit 正文注明 reviewer、问题编号、决策与验证。未推送、未发送评审回复、未合并 PR。
 
 复现过程发现并修正了三项完整回归失败（macOS 退出窗口 EPERM 影响启动错误和正常完成），重新执行完整测试后全部通过。曾将类型构建和 ESLint 同时启动，clean-dist 导致类型文件暂时缺失；后续按构建完成后再运行类型化 Lint 的顺序检查通过，没有通过放宽规则绕过门禁。

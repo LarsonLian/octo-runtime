@@ -31,6 +31,8 @@
 
 机器可读触发条件见 [规则索引](rules/_index.yaml)，与规则 frontmatter 同步。`inject_when` 只是编码 Agent 阅读条件，不是 Runtime 自动注入模型 Context 的配置。
 
+- [Windows 真机验收与问题跟踪](tasks/pr1-yujiawei-review/windows-validation.md)：已有实现，用户计划补真机测试；后代回收疑点及 Windows CI 覆盖由 issue 2 跟踪，发现问题必须修复。
+
 ## 操作指南
 
 - [为什么统一设备](../ARCHITECTURE.md)：新旧对比、Home 级设备实例、本地 IPC / 异地云端寻址目标及移动端 Buddy 的价值。

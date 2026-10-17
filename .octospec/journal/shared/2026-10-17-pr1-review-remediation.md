@@ -18,6 +18,6 @@ Jerry-Xin 的 R05/R06 分别修复 ACP 传输错误逃逸和 leader 退出后的
 
 macOS / Node v24.19.0：全量类型构建通过，Lint、命名、格式检查通过；Node 完整测试 1104 通过、9 跳过、0 失败，既有 UI 测试 35 通过。最终 cause 元数据补充另通过 Host 启动/装配回归。OKF 和补丁格式检查通过。
 
-测试使用假 Provider、真实 OS 管道和隔离的受管进程组，没有调用真实模型或 im-test 业务 API；没有改变既有 Runtime 身份、Home、配置或用户进程。macOS 已确认父进程先退出、后代忽略 TERM、重复关闭、短暂和持续 EPERM 的行为。新提交尚未推送，远端 CI 与 Windows 实机结果不记为已通过；当前 Windows 继续既有受管 child 范围。
+测试使用假 Provider、真实 OS 管道和隔离的受管进程组，没有调用真实模型或 im-test 业务 API；没有改变既有 Runtime 身份、Home、配置或用户进程。macOS 已确认父进程先退出、后代忽略 TERM、重复关闭、短暂和持续 EPERM 的行为。新提交尚未推送，远端 CI 与 Windows 实机结果不记为已通过；Windows 已有实现，用户计划后续真机测试；后续澄清明确平台必须支持，疑点及 CI 缺口见[Windows 验收](../../tasks/pr1-yujiawei-review/windows-validation.md)，不以缺少验证降低产品要求。
 
 本轮没有待用户选择的产品方案。已本地提交，未推送、未发送 GitHub 评审回复、未合并。

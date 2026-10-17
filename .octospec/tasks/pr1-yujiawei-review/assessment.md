@@ -39,7 +39,7 @@ R01/R02a/R02b 的可执行性均为 100：删除范围、保留边界和验收�
 
 ### 原可执行性缺口的处理
 
-R06 已明确预算：TERM 400 ms + KILL 后确认 200 ms 共用起点，ACP/ZCode 协议取消宽限 250 ms，总计约 850 ms，低于 Host 默认 1000 ms。更短 Host 宽限仍返回真实 cleanup_timeout，不扩大用户预算。同次清理 Promise 保存结果，EPERM 不记为目标消失。POSIX 实现方案可执行性调整为 100；本机 macOS 已验证，远端 Linux CI 与 Windows 实机验证不冒充已完成。Windows 保留既有受管 child 范围，不承诺 POSIX 组语义。
+R06 已明确预算：TERM 400 ms + KILL 后确认 200 ms 共用起点，ACP/ZCode 协议取消宽限 250 ms，总计约 850 ms，低于 Host 默认 1000 ms。更短 Host 宽限仍返回真实 cleanup_timeout，不扩大用户预算。同次清理 Promise 保存结果，EPERM 不记为目标消失。POSIX 实现方案可执行性调整为 100；本机 macOS 已验证，远端 Linux CI 与 Windows 实机验证不冒充已完成。Windows 已有关闭实现，必须满足同等生命周期要求；本轮未真机验收，后代回收疑点及 CI 缺口由 [issue 2](https://github.com/Mininglamp-OSS/octo-runtime/issues/2) 跟踪，不能将支持要求降为“不保证”。
 
 S03 已补真实 ZCode 协议 fixture，S04 已确定普通行、图片回显和队列各自上限；二者的原方案缺口已消除。当前实施细节、验证数量及平台边界以实施记录为准，历史低分描述不再代表待用户决策事项。
 

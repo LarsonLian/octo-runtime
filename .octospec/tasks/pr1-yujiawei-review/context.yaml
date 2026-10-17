@@ -1,4 +1,4 @@
-status: implemented-local-validation-passed
+status: implemented-local-validation-passed-windows-validation-pending
 decisions:
   R01: 删除 getGroupInfo 实现及公开导出；已实施并提交。
   R02a: 删除 getUploadPresign、uploadFileToPresignedUrl；已实施并提交。
@@ -124,3 +124,9 @@ implementation_validation:
   okf_diff: passed
   remote_ci: 新提交未推送，尚未运行；不使用原 SHA 通过结果代替本次验证。
   boundaries: 假 Provider 与真实 OS 管道/进程组；无真实模型或 im-test API 调用，Windows 未实测。
+
+windows_validation:
+  issue: https://github.com/Mininglamp-OSS/octo-runtime/issues/2
+  implementation: Windows 已有执行和 child 关闭实现，不能表述为未实现。
+  status: 本轮未真机验证，用户计划后续补测；后代回收疑点待核实。
+  requirement: Windows 同等生命周期要求，发现问题必须修复；补 Windows CI，不能以不保证支持豁免。
