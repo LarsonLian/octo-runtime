@@ -15,6 +15,7 @@ import {
   PROVIDER_DIAGNOSTIC_MAX_BYTES
 } from "@mininglamp-oss/octo-runtime-protocol";
 import { codexEnvironmentConfig } from "./environment.js";
+import { createProcessCleanup } from "@mininglamp-oss/octo-runtime-adapter-sdk/process-cleanup";
 /**
  * Codex app-server transport and event adaptation layer.
  *
@@ -55,8 +56,8 @@ import { createHash } from "node:crypto";
 import { createInterface, type Interface as ReadLineInterface } from "node:readline";
 
 const APP_SERVER_REQUEST_TIMEOUT_MS = 30_000;
-const APP_SERVER_CLOSE_GRACE_MS = 500;
-const APP_SERVER_KILL_GRACE_MS = 1_000;
+// R06b：EOF 宽限 250 ms + 共享 TERM/KILL 确认 600 ms，位于默认 Host 1 秒预算内。
+const APP_SERVER_CLOSE_GRACE_MS = 250;
 const FINALIZATION_TIMEOUT_MS = 15_000;
 const FINALIZATION_INTERRUPT_GRACE_MS = 2_000;
 // Keep only the tail of stderr, balancing error diagnosability against the memory ceiling of a long-lived process.
@@ -178,6 +179,7 @@ export async function* runCodexAppServerTurn({
   onInteractionResponder?.((response) => client.respondInteraction(response));
   onNativeResponder?.((response) => client.respondNative(response));
   let terminal = false;
+  let executionFailure: unknown;
 
   try {
     throwIfAborted(request.signal);
@@ -400,6 +402,7 @@ export async function* runCodexAppServerTurn({
       throw new CodexAppServerProcessError(client.processErrorMessage(exit), exit);
     }
   } catch (error) {
+    executionFailure = error;
     if (context?.protocolMode === "native") {
       yield* client.bufferedEvents();
       throw error;
@@ -445,7 +448,27 @@ export async function* runCodexAppServerTurn({
     // close() handles RPC/stdio/process; spec.cleanup handles any caller-owned resources.
     onInteractionResponder?.(undefined);
     onNativeResponder?.(undefined);
+    await closeClientAndResources(client, spec, executionFailure);
+  }
+}
+
+async function closeClientAndResources(
+  client: CodexAppServerClient,
+  spec: CodexAppServerCommand,
+  executionFailure: unknown
+): Promise<void> {
+  try {
     await client.close();
+  } catch (cleanupError) {
+    // R06b：清理失败不能覆盖原始执行失败，也不能阻止调用方资源释放。
+    if (executionFailure !== undefined)
+      throw new AggregateError(
+        [executionFailure, cleanupError],
+        "Codex execution and process cleanup failed",
+        { cause: cleanupError }
+      );
+    throw cleanupError;
+  } finally {
     await spec.cleanup?.();
   }
 }
@@ -1154,6 +1177,8 @@ function boundedJson(value: unknown, depth = 0): unknown {
  */
 class CodexAppServerClient {
   readonly #child: ChildProcessWithoutNullStreams;
+  readonly #cleanupProcess: () => Promise<void>;
+  #closePromise?: Promise<void>;
   readonly #reader: ReadLineInterface;
   readonly #removeLineGuard: () => void;
   readonly #queue = new DriverQueue<AdapterOutput>();
@@ -1281,8 +1306,8 @@ class CodexAppServerClient {
    *
    * The queue immediately publishes the sole run.cancelled so the UI need not wait
    * for a Codex response; if the thread/turn IDs are known, turn/interrupt is
-   * sent in the background. After 250ms without exit, SIGTERM follows, with the
-   * final SIGKILL fallback left to close().
+   * sent in the background. After 250ms the same bounded cleanup used by close()
+   * starts even if the consumer has stopped reading the cancellation terminal.
    */
   readonly #abortListener = (): void => {
     if (this.#closed || this.#terminal) return;
@@ -1308,7 +1333,10 @@ class CodexAppServerClient {
         1_000
       ).catch(() => undefined);
     }
-    this.#abortTimer = setTimeout(() => signalProcessTree(this.#child, "SIGTERM"), 250);
+    this.#abortTimer = setTimeout(() => {
+      // 观察异步失败以免产生 unhandled rejection；close 仍等待同一 Promise 并返回失败。
+      void this.#cleanupProcess().catch((error: Error) => this.#handleProcessError(error));
+    }, APP_SERVER_CLOSE_GRACE_MS);
     this.#abortTimer.unref?.();
   };
 
@@ -1330,6 +1358,10 @@ class CodexAppServerClient {
       this.#resolveExit = resolve;
     });
     this.#child = spawnFn(spec.command, spec.args, { cwd: spec.cwd, env: spec.env });
+    this.#cleanupProcess = createProcessCleanup(this.#child, {
+      // 只有 production defaultSpawn 明确拥有独立组；注入的 child 不推定拥有组。
+      processGroup: isolatedProcessGroups.has(this.#child)
+    });
 
     // The app-server protocol requires one JSON-RPC frame per line; readline handles chunk boundaries.
     const transportLimit =
@@ -1587,31 +1619,32 @@ class CodexAppServerClient {
   }
 
   /**
-   * Idempotently close the client and reap the subprocess along the ladder
-   * stdin EOF -> SIGTERM -> SIGKILL.
-   *
-   * Before closing it removes the AbortSignal listener, closes the reader and
-   * rejects pending requests, guaranteeing no Promise or event consumer hangs
-   * forever. A well-behaved app-server should exit on its own after stdin EOF.
+   * R06b：父进程退出只结束 EOF 等待，不能代替本次受管组清理完成。
+   * 重复 close 共享同一结果；保留已接纳终态，清理失败继续向调用方抛出。
+   * .octospec/tasks/pr1-yujiawei-review/second-review.md
    */
-  async close(): Promise<void> {
-    if (this.#closed) return;
-    this.#closed = true;
-    this.#clearFinalizationTimer();
-    if (this.#finalizationGraceTimer) clearTimeout(this.#finalizationGraceTimer);
-    this.#closing = true;
-    this.#signal?.removeEventListener("abort", this.#abortListener);
-    if (this.#abortTimer) clearTimeout(this.#abortTimer);
-    this.#reader.close();
-    this.#removeLineGuard();
-    this.#rejectPending(new Error("codex app-server closed"));
-    this.#invalidateInteractions("execution_lost");
-    if (this.#exited) return;
-    this.#child.stdin.end();
-    if (await waitForExit(this.#exitPromise, APP_SERVER_CLOSE_GRACE_MS)) return;
-    signalProcessTree(this.#child, "SIGTERM");
-    if (await waitForExit(this.#exitPromise, APP_SERVER_KILL_GRACE_MS)) return;
-    signalProcessTree(this.#child, "SIGKILL");
+  close(): Promise<void> {
+    return (this.#closePromise ??= (async () => {
+      this.#closed = true;
+      this.#clearFinalizationTimer();
+      if (this.#finalizationGraceTimer) clearTimeout(this.#finalizationGraceTimer);
+      this.#closing = true;
+      this.#signal?.removeEventListener("abort", this.#abortListener);
+      if (this.#abortTimer) clearTimeout(this.#abortTimer);
+      this.#reader.close();
+      this.#removeLineGuard();
+      this.#rejectPending(new Error("codex app-server closed"));
+      this.#invalidateInteractions("execution_lost");
+      try {
+        if (!this.#exited) {
+          this.#child.stdin.end();
+          await waitForExit(this.#exitPromise, APP_SERVER_CLOSE_GRACE_MS);
+        }
+      } finally {
+        // 即使 leader 早已退出或 EOF 已成功，仍确认后代消失并按需升级 KILL。
+        await this.#cleanupProcess();
+      }
+    })());
   }
 
   errorMessage(error: unknown): string {

@@ -8,11 +8,11 @@ timestamp: 2026-10-17T00:00:00Z
 
 # 第二轮评审
 
-两份新评审均针对 55e977f249b6b0fae85d43c79748db1ff35bb719。当前状态：R06b 待修复；R07 经公司规范核对后改为证据回应，保留 @v1；此前本地测试通过记录仍有效，但不表示已覆盖以下新发现。此次只更新分析与计划，不修改产品代码或 workflow，也不发送评审回复。
+两份新评审均针对 55e977f249b6b0fae85d43c79748db1ff35bb719。当前状态：R06b 已实现，新增回归及本地门禁结果见下文；R07 经公司规范核对后改为证据回应，保留 @v1；此前本地测试通过记录仍有效，但不表示已覆盖以下新发现。本次已实施 R06b；R07 保留公司规范的 @v1，已按用户授权发表评审说明，不修改 workflow。
 
 | 编号 | 来源及问题 | 与上一轮的关系 | 严重程度 | 修改必要性 / 100 | 技术可执行性 / 100 | 处理目标与状态 |
 | --- | --- | --- | --- | --- | --- | --- |
-| R06b | Jerry-Xin：Codex app-server 退出后，close 提前返回，未完成本次进程组回收 | R06 的遗漏路径；之前 Codex S01 只修了管道错误隔离 | P1，真实执行资源隔离缺陷 | 100 | 100 | 修复；待实施、待本地新增回归 |
+| R06b | Jerry-Xin：Codex app-server 退出后，close 提前返回，未完成本次进程组回收 | R06 的遗漏路径；之前 Codex S01 只修了管道错误隔离 | P1，真实执行资源隔离缺陷 | 100 | 100 | 已实现；生产 spawn 路径及失败语义回归通过 |
 | R07 | yujiawei 建议将 11 个公司共享 workflow 固定 SHA；公司规范明确使用滚动 @v1 | 新评审建议，与已删除 API 无关；已补组织合同核对 | 评审 P1；本次不认定为偏离公司规范的本仓 P1 缺陷 | 0（本仓单独改 SHA） | 100（证据回应） | 与组织对齐，保留 @v1；评审讨论未关闭 |
 
 分数含义沿用[原评分口径](assessment.md)：可执行性 100 表示处理方式清楚，不表示实现、目标 SHA 内容审查或验证已完成。当前没有新的产品决策需求。
@@ -25,7 +25,7 @@ reviewer 明确确认 ACP 启动失败、共享 Host 兄弟任务存活、ACP/ND
 
 本轮源码核对：Codex 的 app-server.ts close 在 #exited 为 true 时直接返回，两次 leader-exit 等待成功也直接返回；重复调用只看到 #closed 后返回，没有等待同一清理结果。defaultSpawn 在非 Windows 创建独立进程组，leader 退出不足以证明组内工具已退出。
 
-reviewer 通过 public runCodexAppServerTurn、生产 defaultSpawn 与合成 app-server 复现取消和正常完成两种场景，每种三次；返回后 300 ms 内后代继续写文件 13–14 次。该运行结果来自 reviewer，本轮仅独立核对源码，尚未独立重跑，不能记录为本地已复现或真实 Codex 模型验收。
+reviewer 通过 public runCodexAppServerTurn、生产 defaultSpawn 与合成 app-server 复现取消和正常完成两种场景，每种三次；返回后 300 ms 内后代继续写文件 13–14 次。上述写入次数来自 reviewer；本轮另用生产 defaultSpawn 和合成协议独立复现 4 个失败场景，详见下文，不将其记录为真实 Codex 模型验收。
 
 之前实现覆盖：ACP 与公共 NDJSON 已接入回收函数，Claude Code 使用 spawnJsonLines，随公共实现生效；Host、ZCode 已接入；Codex 仅补管道错误隔离，独立关闭流程漏接。上一轮“同类整改完整完成”的总结过早。
 
@@ -62,12 +62,21 @@ reviewer 通过 public runCodexAppServerTurn、生产 defaultSpawn 与合成 app
 
 风险判断仍保留：v1 可移动并且上游共享代码可能带写权限；组织滚动版本策略不等于引用不可变，也不等于风险为零。正式发布机制有意让下游接收同一主版本更新。若要改为每仓固定 SHA，应在组织共享 workflow 的版本治理中统一评审、实施和迁移，不在本仓孤立改制。没有证据表明上游已遭攻击或本仓已泄露凭据。
 
-R07 的本仓单独修改必要性由 90 调整为 0；证据回应可执行性 100。reviewer 是否接受尚未确认，不能把本地决定写成 GitHub Changes Requested 已解除。本轮未发送评审回复、未修改 workflow。
+R07 的本仓单独修改必要性由 90 调整为 0；证据回应可执行性 100。reviewer 是否接受尚未确认，不能把本地决定写成 GitHub Changes Requested 已解除。已按用户授权发送[评审说明](https://github.com/Mininglamp-OSS/octo-runtime/pull/1#issuecomment-6230666277)，未修改 workflow。
 
 后续处理：提供上述正式策略和项目快照作为讨论依据；如维护者决定调整组织政策，再统一确定 SHA 更新与迁移机制。现阶段无需选择或审查一个用于本仓替换的新 SHA。
 
 ## 其他观察与关闭条件
 
-Jerry 提到隔离 checkout 下有 14 个指向兄弟仓库的文档链接缺失，属于原有记录，不是本轮新增阻塞。需要后续区分生态工作区导航与独立仓库可用性；不写成当前两项 P1，也不把本地生态目录的检查通过等同于独立 checkout 的文档完整性。
+Jerry 提到隔离 checkout 下有 14 个指向兄弟仓库的文档链接缺失，属于原有记录，不是本轮新增阻塞。需要后续区分生态工作区导航与独立仓库可用性；不并入 R06b/R07 的阻塞判断，也不把本地生态目录的检查通过等同于独立 checkout 的文档完整性。
 
-R06b 修复后单独提交，正文写明 reviewer、编号、决策和验证；R07 按公司合同证据回应，等待评审达成一致，不制造 workflow 变更。不得以第一轮全绿关闭第二轮问题。原 R01/R02/R03/S01 等已完成项保持完成；R06 总项因 Codex 遗漏恢复为部分完成。Windows 真机测试按用户计划继续跟踪。
+R06b 本次修复单独提交，正文写明 reviewer、编号、决策和验证；R07 按公司合同证据回应，等待评审达成一致，不制造 workflow 变更。不得以第一轮全绿关闭第二轮问题。原 R01/R02/R03/S01 等已完成项保持完成；R06b 已补齐 Codex 路径，Windows 真机验收仍待完成，不将本机测试推广为全部平台已验收。Windows 真机测试按用户计划继续跟踪。
+
+## R06b 本次实现与验收
+
+- Codex close 保留 250 ms EOF 宽限，随后始终等待共享 createProcessCleanup 的 TERM 400 ms / KILL 后确认 200 ms；父进程提前退出不跳过清理。默认总预算约 850 ms，较短 Host 预算继续按既有合同返回真实超时。
+- closePromise 与 cleanupPromise 分别保存本次关闭及进程回收结果；重复关闭不再只根据 #closed 提前成功。只有 defaultSpawn 创建并登记的独立组才执行组回收，注入 child 不自动扩大为进程组所有权。
+- 取消后的消费者即使暂停读取，250 ms 后仍启动同次有界回收；异步错误被观察，后续 close 返回同一失败结果。
+- 清理错误继续向调用方抛出；与执行错误同时出现时用 AggregateError 保存两者，调用方 spec.cleanup 在 finally 中执行。正常 canonical/native 终态保留。
+- 新增 test/codex-process-cleanup.test.js 与 fake-codex-owned-tree.mjs：生产 defaultSpawn、同组且独立 stdio 的 TERM-resistant 后代，canonical/native 分别覆盖取消、完成、EOF 后 leader 退出、取消后消费者暂停，以及两个执行/清理双失败场景。修复前 4 个基础场景均因后代存活失败；修复后 10 项新增回归通过，相关专项合计 50 项通过。
+- Node 24 全 workspace 构建与类型检查通过；完整门禁结果记录于 implementation.md。未调用真实 Codex 模型或业务 API；Windows 已有实现，真机测试继续由 issue 2 跟踪。

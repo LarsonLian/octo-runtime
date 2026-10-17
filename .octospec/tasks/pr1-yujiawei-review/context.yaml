@@ -1,4 +1,4 @@
-status: second-review-remediation-pending
+status: r06b-implemented-local-validation-passed
 decisions:
   R01: 删除 getGroupInfo 实现及公开导出；已实施并提交。
   R02a: 删除 getUploadPresign、uploadFileToPresignedUrl；已实施并提交。
@@ -136,11 +136,11 @@ second_review:
   R06b:
     author: Jerry-Xin
     url: https://github.com/Mininglamp-OSS/octo-runtime/pull/1#pullrequestreview-5556594844
-    status: 待修复；R06 总项部分完成。
-    evidence: reviewer 协议 fixture 复现，本轮仅独立核对 Codex close 源码。
+    status: 已实现；本轮全量 Node 1114 通过、9 跳过，UI 35 通过；构建、类型、lint、命名、格式通过。
+    evidence: 本轮通过 production defaultSpawn 独立复现旧代码 4 项失败；修复后新增 10 项及相关共 50 项通过。
   R07:
     author: yujiawei
     url: https://github.com/Mininglamp-OSS/octo-runtime/pull/1#pullrequestreview-5556602456
-    status: 与公司规范对齐，保留 @v1；改为证据回应，尚未发送评审回复。
+    status: 与公司规范对齐，保留 @v1；已按用户授权发送 issuecomment-6230666277。
     evidence: 公司 workflow-architecture 第 5 节明确滚动 @v1；octo-cli 9 处、octo-server 14 处、openclaw-channel-octo 12 处全部 @v1；codex-channel-octo 无此类引用。
-  current_scope: 更新原 OKF 计划与状态，未修改产品代码或 workflow，未发送评审回复。
+  current_scope: 按用户授权实施 Codex R06b 并单独提交，未修改 workflow；不自动推送。

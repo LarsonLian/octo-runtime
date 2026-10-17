@@ -77,7 +77,7 @@ CLI `playboard` 也经过 daemon：启动本次临时 daemon，经 UDS/Pipe 执�
 
 POSIX 下，由创建者明确创建的独立进程组按整个组回收；leader 退出不能作为工具后代已退出的证据。并发、重复关闭等待同一次清理 Promise，覆盖 TERM、必要的 KILL 和消失确认；只操作本次所有权范围，不扫描全机或保存历史 PGID 以后重试。EPERM 不表示目标不存在；短暂拒绝后须确认消失才能报告成功，持续失败或超时返回真实错误，并保留原始启动/执行失败原因。
 
-ACP、NDJSON、Host launcher 和 ZCode 复用 [process-cleanup](../../packages/octo-runtime-adapter-sdk/src/process-cleanup.ts)：TERM 400 ms、KILL 后确认 200 ms 共用起点；ACP/ZCode 的协议取消宽限为 250 ms。更短的 Host 取消预算仍按既有合同返回 cleanup_timeout，不静默延长。Windows 必须满足同等故障隔离、取消及受管后代回收要求。Windows 已有 child 关闭实现，本轮尚未真机验证；后代回收疑点与自动化缺口按[Windows 验收](../tasks/pr1-yujiawei-review/windows-validation.md)跟踪，确认缺陷后必须修复，不得用“不保证支持”代替处理。此处不将其他 Provider 的原生关闭策略强行统一为这些数值。
+ACP、NDJSON、Host launcher、Codex 和 ZCode 复用 [process-cleanup](../../packages/octo-runtime-adapter-sdk/src/process-cleanup.ts)：TERM 400 ms、KILL 后确认 200 ms 共用起点；ACP/ZCode 的协议取消宽限为 250 ms，Codex 的 EOF 宽限为 250 ms；Codex 即使已收到 leader 退出，也必须等待受管组清理，暂停消费的取消仍启动有界回收。更短的 Host 取消预算仍按既有合同返回 cleanup_timeout，不静默延长。Windows 必须满足同等故障隔离、取消及受管后代回收要求。Windows 已有 child 关闭实现，本轮尚未真机验证；后代回收疑点与自动化缺口按[Windows 验收](../tasks/pr1-yujiawei-review/windows-validation.md)跟踪，确认缺陷后必须修复，不得用“不保证支持”代替处理。此处不将其他 Provider 的原生关闭策略强行统一为这些数值。
 
 接收缓冲超限属于当前传输失败；正常 Provider 退出则须保留已接纳且尚待读取的终态，不因资源释放而伪造执行失败。具体容量见[有界状态](stateless-execution.md#provider-接收缓冲)，实现与平台验证见 [PR 1 整改记录](../tasks/pr1-yujiawei-review/implementation.md)。
 
