@@ -222,6 +222,7 @@ test("Windows 发行验收通过 taskkill 回收全局 daemon shim 的进程树"
   assert.match(verifier, /execute\("taskkill", \["\/PID", String\(daemon\.pid\), "\/T", "\/F"\]/);
   assert.match(verifier, /await stopDaemon\(\)/);
   assert.match(workflow, /os: \[ubuntu-latest, macos-latest, windows-latest\]/);
+  assert.match(workflow, /git config --global core\.autocrlf false/);
   assert.match(workflow, /node scripts\/verify-release\.mjs/);
   assert.doesNotMatch(cliManifest.scripts.build, /\bchmod\b/);
   assert.doesNotMatch(daemonManifest.scripts.build, /\bchmod\b/);
