@@ -23,9 +23,11 @@ clean 构建门禁；CI 用实际 checkout SHA 验证发行包的 `build-info.co
 `Release Publish` 在稳定版 tag push 时自动调用可复用的 `npm Publish`。发布链路要求
 annotated tag、严格稳定 SemVer、`main` 祖先和 `0.0.0` 源码模板，随后对 tag SHA 执行完整
 Linux/macOS CI，以 tag 版本生成 artifact，发布 npm 并创建或修复携带同一 tgz 的 GitHub
-Release。手工 npm dry-run 与 Release 故障恢复入口保留。同版本重跑先比较 registry
+Release。手工 dry-run 与 Release 故障恢复统一从 `Release Publish` 进入，不存在绕过 Release
+的独立 npm 正式发布入口。同版本重跑先比较 registry
 `dist.integrity` 与本次 tgz；一致时跳过不可变 npm 版本，不一致时拒绝把另一个产物归入该
-tag。
+tag。恢复旧版本使用独立 dist-tag，避免回退 npm 和 GitHub 的 latest 标记；`v0.0.0` 明确
+保留为源码占位版本，不能发布。
 
 ## 验证证据
 

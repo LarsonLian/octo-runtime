@@ -22,16 +22,9 @@ on:
       version:
         description: 不带 v 前缀的发行版本
         value: ${{ jobs.validate.outputs.version }}
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: 已存在的稳定版本 tag（vX.Y.Z），必须位于 main 历史中
-        required: true
-        type: string
-      dry_run:
-        description: 仅验证发布，不上传 npm
-        type: boolean
-        default: true
+      dist_tag:
+        description: 本次版本使用的 npm dist-tag
+        value: ${{ jobs.publish.outputs.dist_tag }}
 
 permissions: {}
 
@@ -52,6 +45,10 @@ jobs:
           set -euo pipefail
           [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
             echo '::error::Tag must be a stable version: vX.Y.Z'
+            exit 1
+          }
+          test "$TAG" != "v0.0.0" || {
+            echo '::error::v0.0.0 is reserved as the source placeholder version'
             exit 1
           }
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -99,6 +96,8 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    outputs:
+      dist_tag: ${{ steps.registry.outputs.dist_tag }}
     steps:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
@@ -139,10 +138,36 @@ jobs:
             printf '%s\n' "$output" >&2
             exit "$status"
           fi
+          set +e
+          latest_output=$(npm view "$package@latest" version 2>&1)
+          latest_status=$?
+          set -e
+          if [ "$latest_status" -eq 0 ]; then
+            latest=$latest_output
+          elif printf '%s' "$latest_output" | grep -Eiq 'E404|404 Not Found|is not in this registry'; then
+            latest=''
+          else
+            printf '%s\n' "$latest_output" >&2
+            exit "$latest_status"
+          fi
+          dist_tag=$(node -e '
+            const [candidate, latest] = process.argv.slice(1);
+            const compare = (left, right) => {
+              const a = left.split(".").map(Number);
+              const b = right.split(".").map(Number);
+              for (let index = 0; index < 3; index++) {
+                if (a[index] !== b[index]) return a[index] - b[index];
+              }
+              return 0;
+            };
+            process.stdout.write(!latest || compare(candidate, latest) > 0 ? "latest" : `release-${candidate}`);
+          ' "$VERSION" "$latest")
+          echo "dist_tag=$dist_tag" >> "$GITHUB_OUTPUT"
       - name: Publish verified archive
         if: steps.registry.outputs.exists != 'true'
         env:
           VERSION: ${{ needs.validate.outputs.version }}
+          DIST_TAG: ${{ steps.registry.outputs.dist_tag }}
           DRY_RUN: ${{ inputs.dry_run }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
@@ -150,9 +175,9 @@ jobs:
           ARCHIVE="release/mininglamp-oss-octo-runtime-$VERSION.tgz"
           test -f "$ARCHIVE"
           if [ "$DRY_RUN" = true ]; then
-            npm publish "$ARCHIVE" --access public --tag latest --dry-run
+            npm publish "$ARCHIVE" --access public --tag "$DIST_TAG" --provenance --dry-run
           else
-            npm publish "$ARCHIVE" --access public --tag latest --provenance
+            npm publish "$ARCHIVE" --access public --tag "$DIST_TAG" --provenance
           fi
       - name: Verify published registry version
         if: inputs.dry_run == false

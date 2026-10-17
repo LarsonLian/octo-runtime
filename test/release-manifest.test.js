@@ -37,4 +37,10 @@ test("发行打包只接受不带 v 前缀的稳定 SemVer", async () => {
     }),
     /用法/
   );
+  await assert.rejects(
+    execute(process.execPath, ["scripts/pack-release.mjs", "--version", "0.0.0"], {
+      cwd: root
+    }),
+    /仅用于源码占位/
+  );
 });

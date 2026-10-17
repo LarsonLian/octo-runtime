@@ -6,9 +6,17 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 故障恢复时重新处理的稳定版本 annotated tag（vX.Y.Z）
+        description: 已存在的稳定版本 annotated tag（vX.Y.Z）
         required: true
         type: string
+      mode:
+        description: dry-run 仅验证；recover 正式恢复 npm 与 GitHub Release
+        required: true
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - recover
 
 permissions: {}
 
@@ -21,7 +29,7 @@ jobs:
     uses: ./.github/workflows/npm-publish.yml
     with:
       tag: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
-      dry_run: false
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run' }}
     secrets:
       NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     permissions:
@@ -30,6 +38,7 @@ jobs:
       id-token: write
 
   publish-release:
+    if: github.event_name == 'push' || inputs.mode == 'recover'
     needs: publish-npm
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -52,12 +61,20 @@ jobs:
           test -f "$ARCHIVE"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ARCHIVE" --clobber --repo "$GITHUB_REPOSITORY"
-            gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
+            if [ "${{ needs.publish-npm.outputs.dist_tag }}" = latest ]; then
+              gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
+            else
+              gh release edit "$TAG" --draft=false --latest=false --repo "$GITHUB_REPOSITORY"
+            fi
           else
+            latest_flag=--latest=false
+            if [ "${{ needs.publish-npm.outputs.dist_tag }}" = latest ]; then
+              latest_flag=--latest
+            fi
             gh release create "$TAG" "$ARCHIVE" \
               --verify-tag \
               --generate-notes \
               --title "$TAG" \
-              --latest \
+              "$latest_flag" \
               --repo "$GITHUB_REPOSITORY"
           fi

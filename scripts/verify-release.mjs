@@ -157,6 +157,10 @@ try {
       .stdout,
     /Octo Runtime CLI/
   );
+  const daemonCommand = join(
+    directory,
+    process.platform === "win32" ? "octo-runtime-daemon.cmd" : "bin/octo-runtime-daemon"
+  );
   const consumer = process.platform === "win32" ? directory : join(directory, "lib");
   await writeFile(join(consumer, "package.json"), '{"type":"module"}\n');
   await cp(join(root, "test-support/public-extra/plugin.mts"), join(consumer, "plugin.mts"));
@@ -316,8 +320,9 @@ try {
     );
     assert.equal(result.stdout.trim(), code, specifier);
   }
-  daemon = spawn(process.execPath, [join(installed, "apps/daemon/dist/index.js"), "--home", home], {
+  daemon = spawn(daemonCommand, ["--home", home], {
     cwd: directory,
+    shell: process.platform === "win32",
     stdio: ["ignore", "ignore", "pipe"]
   });
   daemonExit = once(daemon, "exit");

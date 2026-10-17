@@ -72,33 +72,28 @@ before relying on automatic requests for subsequent PRs.
 Reviewer requests and approval requirements are separate. The three owners are
 requested, while `main` currently requires at least one approval.
 
-## npm Release
+## npm 发行
 
-Source manifests keep the non-release placeholder version `0.0.0`. A stable annotated
-`vX.Y.Z` tag is the sole release-version source; do not commit version bumps for a
-release. Before the first production tag, `npm Publish` may be run manually with
-`dry_run=true` to exercise the exact tag build without uploading it.
+源码清单始终使用非发行占位版本 `0.0.0`。稳定版 annotated tag `vX.Y.Z` 是唯一发行版本
+来源，发行时不得提交清单版本变更。`Release Publish` 的手工 `dry-run` 仅适用于已经存在的
+tag，例如自动运行在 npm 上传前被取消或失败时进行诊断；创建 tag 会立即触发正式发布，不能
+把同一个 tag 用于事前演练。
 
-Pushing the tag starts `Release Publish`, which validates the tag and its `main`
-ancestry, calls the complete CI matrix at that exact commit, stamps `X.Y.Z` into the
-generated package, publishes the verified archive to npm, and then creates or repairs
-the matching GitHub Release with the same archive. A failed run can be retried through
-the workflow's manual tag input. Existing immutable npm versions are verified and
-skipped rather than overwritten.
+推送 tag 后，`Release Publish` 校验 tag 及其 `main` 祖先关系，在该提交上调用完整 CI 矩阵，
+把 `X.Y.Z` 写入生成包，发布已验证的归档到 npm，再用同一归档创建或修复 GitHub Release。
+失败后可通过手工 tag 输入选择 `recover` 重试。npm 已存在的不可变版本会先核对完整性，一致
+则跳过而不是覆盖。恢复旧版本时使用独立 dist-tag，不回退 npm 的 `latest`。
 
-Publishing requires an `NPM_TOKEN` with package publish access; the job also receives
-OIDC permission for provenance. Ordinary PR checks do not read this secret. Every
-internal app and package is private and is never published separately. Production
-dependencies are bundled into the one public root package. Do not invoke `npm publish`
-directly in the repository root; the existing prepack guard rejects that path.
+发布需要具备 package publish 权限的 `NPM_TOKEN`，job 同时获得生成 provenance 所需的 OIDC
+权限。普通 PR 检查不读取该 secret。所有内部 app 和 package 都是 private，永不独立发布；
+生产依赖随唯一的公开根包捆绑。不得在仓库根目录直接执行 `npm publish`，现有 prepack 门禁会
+拒绝该路径。
 
 ## GitHub Release
 
-Release Drafter continues preparing notes between versions. The tag-triggered release
-workflow creates the final release only after npm publication succeeds and uploads the
-same verified tgz. If npm was already published but Release creation failed, rerunning
-the workflow skips the immutable npm version and repairs the Release.
+Release Drafter 继续在版本之间准备说明。tag 触发的发布工作流仅在 npm 发布成功后创建正式
+Release，并上传同一个已验证 tgz。如果 npm 已发布而 Release 创建失败，选择 `recover` 重跑
+会跳过一致的 npm 不可变版本并修复 Release；恢复旧版本不会把它标为 latest。
 
-The repository uses Apache-2.0 and preserves third-party license notices. Remote
-publishing and release creation require separate verification; see the
-[initial CI record](../.octospec/journal/shared/2026-10-15-github-open-source-ci.md).
+仓库使用 Apache-2.0，并保留第三方许可证通知。远端发布与 Release 创建仍需单独核验，参见
+[初始 CI 记录](../.octospec/journal/shared/2026-10-15-github-open-source-ci.md)。

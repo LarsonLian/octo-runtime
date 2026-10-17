@@ -21,7 +21,7 @@ workspace 清单。内部 workspace 全部 `private: true`，不进入 npm regis
 ## 关键合同
 
 - **版本归属：** `vX.Y.Z` tag 是唯一发行版本，工作流内执行严格 SemVer 校验；生成包版本
-  必须等于去掉 `v` 的 tag。源码占位版本不得被误当成发行版本。
+  必须等于去掉 `v` 的 tag。`v0.0.0` 被明确禁止，源码占位版本不得被误当成发行版本。
 - **来源归属：** tag 必须指向 `main` 历史中的 commit。构建元数据保留完整 commit；正式
   发行必须满足 `build-info.commit == tag commit` 且 `dirty == false`。
 - **单包边界：** `apps/*` 和 `packages/*` 只参与源码构建或根包捆绑，全部禁止独立发布。
@@ -30,8 +30,9 @@ workspace 清单。内部 workspace 全部 `private: true`，不进入 npm regis
   离线安装、公开入口和真实全局命令验证任一失败都不得发布。
 - **重试行为：** npm 已存在同版本时不尝试覆盖不可变版本；工作流继续核对 registry 版本并
   可补齐 GitHub Release。不同 tag 使用独立并发键，同 tag 不并发发布。
-- **触发方式：** 稳定版 tag push 自动启动正式发布；保留手工 dry-run 和同 tag 故障恢复入口。
-  普通 PR、`main` push 和手工 CI 仍生成 `0.0.0` 测试包，不发布。
+- **触发方式：** 稳定版 tag push 自动启动正式发布；手工入口统一位于 `Release Publish`，只能
+  对已存在 tag 选择 dry-run 或同 tag 故障恢复，不能形成仅发布 npm 的第二条正式路径。普通
+  PR、`main` push 和手工 CI 仍生成 `0.0.0` 测试包，不发布。
 
 本任务属于 Runtime 发行基础设施，不改变产品行为、Provider 选择、Agent 输入、Runtime Home、
 身份、profile 或 Extra 配置。发布流程只忠实使用维护者显式创建的 tag，不替产品或调用方增加
@@ -52,9 +53,9 @@ workspace 清单。内部 workspace 全部 `private: true`，不进入 npm regis
 - `pack-release.mjs --version 1.2.3` 只在临时目录生成
   `mininglamp-oss-octo-runtime-1.2.3.tgz`，不改写源码工作树；生成根清单及内部 workspace
   清单版本均为 `1.2.3`，不存在 `workspace:`、`link:` 或 `file:` 依赖。
-- 发行 tgz 离线全局安装后，`octo-runtime --help`、`octo-runtime --version`、daemon、公开
-  TypeScript 入口和内置 Extra 验证通过；版本为 tag 版本，commit 为 tag commit，且不带
-  dirty 标记。
+- 发行 tgz 离线全局安装后，`octo-runtime --help`、`octo-runtime --version`、全局
+  `octo-runtime-daemon` 启动、公开 TypeScript 入口和内置 Extra 验证通过；版本为 tag 版本，
+  commit 为 tag commit，且不带 dirty 标记。
 - tag 工作流拒绝格式错误、非 `main` 历史、源码模板不合规或构建证据不一致的发行。
 - npm 首次发布使用 public access 和 provenance；同版本重跑不覆盖 npm 版本，并能恢复或补齐
   GitHub Release。

@@ -12,9 +12,13 @@ const arguments_ = process.argv.slice(2);
 if (arguments_.length !== 0 && (arguments_.length !== 2 || arguments_[0] !== "--version")) {
   throw new Error("用法：node scripts/pack-release.mjs [--version X.Y.Z]");
 }
+const hasReleaseVersion = arguments_.length === 2;
 const releaseVersion = arguments_[1] ?? manifest.version;
 if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(releaseVersion)) {
   throw new Error(`发行版本必须是稳定 SemVer，实际为 ${releaseVersion}`);
+}
+if (hasReleaseVersion && releaseVersion === "0.0.0") {
+  throw new Error("0.0.0 仅用于源码占位，不能作为发行版本");
 }
 if (manifest.version !== "0.0.0") {
   throw new Error(`源码根 package.json.version 必须保持 0.0.0，实际为 ${manifest.version}`);
