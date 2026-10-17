@@ -26,6 +26,12 @@ tests. No production UI or new browser end-to-end gate is introduced. Provider t
 use fakes unless their existing live-test opt-in is explicitly enabled. A dedicated
 Windows job builds and packs the distribution, then executes the installed `.cmd`
 daemon shim and terminates its full process tree before uninstalling the package.
+It also proves that the installed CLI and daemon derive the same named pipe from one
+Runtime Home. Platform-independent contract tests exercise the same production path
+functions with an explicit Windows platform, but only the hosted Windows job proves
+that `.cmd`, PowerShell, named-pipe and `taskkill` behavior works natively. Readiness
+uses a bounded overall deadline and reports the last CLI status failure plus bounded
+daemon stderr on failure.
 
 `CI Gate` is the stable required check. It runs after the Ubuntu/macOS matrix and the
 Windows release verification, including on failure, and rejects any aggregate result other than `success`. Branch protection
