@@ -100,6 +100,13 @@ See [GitHub CI and release operations](.github/CI.md) for workflow details.
 Direct pushes, force pushes and branch deletion are blocked for `main`. Local hooks
 are not installed automatically; run the checks above before pushing.
 
+[CODEOWNERS](.github/CODEOWNERS) automatically requests `Jerry-Xin`, `yujiawei` and
+`mochashanyao` when a non-draft PR is opened or a draft becomes ready for review.
+GitHub uses the base branch's ownership file, so this starts after the initial PR
+merges into `main`. The initial PR requests these reviewers manually. A PR author
+cannot review their own PR. Requesting three reviewers does not require three
+approvals; the branch protection above requires at least one.
+
 ## Security and Local State
 
 Preserve existing Runtime Home, identities, profiles and configuration during updates.

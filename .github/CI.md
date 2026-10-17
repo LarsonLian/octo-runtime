@@ -59,6 +59,18 @@ merging; do not bypass protection to compensate for a failed bootstrap.
 Hosted results must be verified on the actual PR. Local checks do not establish that
 Linux/macOS hosted runners or organization reusable workflows have succeeded.
 
+## Automatic Review Requests
+
+[CODEOWNERS](CODEOWNERS) assigns every path to `Jerry-Xin`, `yujiawei` and
+`mochashanyao`. GitHub automatically requests these owners for non-draft PRs and
+when a draft becomes ready for review, excluding the PR author. No custom workflow
+or token is needed. Automatic owner requests use the base branch's file: request
+reviewers manually for the initial PR, then merge the file through normal review
+before relying on automatic requests for subsequent PRs.
+
+Reviewer requests and approval requirements are separate. The three owners are
+requested, while `main` currently requires at least one approval.
+
 ## npm Release
 
 1. Update the root package version, merge into `main`, and push a stable `vX.Y.Z` tag.
