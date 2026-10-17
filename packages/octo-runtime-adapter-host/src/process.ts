@@ -1,3 +1,4 @@
+import { createProcessCleanup } from "@mininglamp-oss/octo-runtime-adapter-sdk/process-cleanup";
 import { spawn, type ChildProcessByStdio } from "node:child_process";
 import type { Readable, Writable } from "node:stream";
 import type { HostedAdapterMetadata } from "./index.js";
@@ -53,6 +54,7 @@ export async function spawnAdapterHost({
       detached: process.platform !== "win32"
     }
   );
+  const cleanup = createProcessCleanup(child, { processGroup: process.platform !== "win32" });
   let stderr = "";
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (value: string | Buffer) => {
@@ -71,15 +73,18 @@ export async function spawnAdapterHost({
     adapters = await waitForReady(client.list(), readyTimeoutMs, signal);
   } catch (error) {
     client.close(error instanceof Error ? error : new Error(errorMessage(error)));
-    await terminateProcessTree(child);
+    await cleanup();
     throw new Error(`${errorMessage(error)}${stderr ? `: ${stderr}` : ""}`, { cause: error });
   }
   return {
     client,
     child,
     adapters,
-    async close(): Promise<void> {
-      await terminateProcessTree(child);
+    // S02：关闭 RPC 后等待本次进程组，不以 leader exit 结束回收。
+    // .octospec/tasks/pr1-yujiawei-review/assessment.md
+    close(): Promise<void> {
+      client.close();
+      return cleanup();
     },
     stderr: () => stderr
   };
@@ -113,42 +118,6 @@ function waitForReady<T>(
         finish(() => reject(error instanceof Error ? error : new Error(errorMessage(error))))
     );
   });
-}
-
-async function terminateProcessTree(child: HostedChild): Promise<void> {
-  if (hasExited(child)) return;
-  signalProcessTree(child, "SIGTERM");
-  await waitForExit(child, 1_000);
-  if (hasExited(child)) return;
-  signalProcessTree(child, "SIGKILL");
-  await waitForExit(child, 1_000);
-}
-
-function hasExited(child: HostedChild): boolean {
-  return child.exitCode !== null || child.signalCode !== null;
-}
-
-async function waitForExit(child: HostedChild, timeoutMs: number): Promise<void> {
-  if (hasExited(child)) return;
-  await Promise.race([
-    new Promise<void>((resolve) => child.once("exit", () => resolve())),
-    new Promise<void>((resolve) => setTimeout(resolve, timeoutMs))
-  ]);
-}
-
-function signalProcessTree(child: HostedChild, signal: NodeJS.Signals): void {
-  if (process.platform !== "win32" && child.pid !== undefined) {
-    try {
-      process.kill(-child.pid, signal);
-      return;
-    } catch (error) {
-      const code = (error as NodeJS.ErrnoException).code;
-      // The group may already be gone before Node delivers the child's exit.
-      // Fall back only to the child we own; never select another process group.
-      if (code !== "ESRCH" && code !== "EPERM") throw error;
-    }
-  }
-  child.kill(signal);
 }
 
 function errorMessage(error: unknown): string {

@@ -1,7 +1,17 @@
+import { createInterface } from "node:readline";
 import { spawn } from "node:child_process";
 import { appendFileSync, writeFileSync } from "node:fs";
 
-const [readyPath, tickPath, mode] = process.argv.slice(2);
+const [
+  readyPath = process.env.OCTO_REVIEW_READY,
+  tickPath = process.env.OCTO_REVIEW_TICKS,
+  mode = "host"
+] = process.argv.slice(2);
+if (mode === "host")
+  createInterface({ input: process.stdin }).on("line", (line) => {
+    const request = JSON.parse(line);
+    process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: [] }) + "\n");
+  });
 if (mode === "tool") {
   process.on("SIGTERM", () => {});
   process.send("ready");

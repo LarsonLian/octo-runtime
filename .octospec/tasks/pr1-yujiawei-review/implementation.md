@@ -39,3 +39,7 @@ timestamp: 2026-10-17T00:00:00Z
 采用 adapter-sdk 独立 process-cleanup 子路径共享低层回收函数；ACP client 增加单向 SDK 依赖，无循环依赖。POSIX 仅对明确创建的独立组发信号，不扫描其他进程。TERM 400 ms、KILL 后确认 200 ms 共用起点；ACP 协议取消等待 250 ms 后进入此清理，默认总等待上限约 850 ms，位于 Host 默认 1000 ms 宽限内。更短的宿主宽限仍由现有 Host 返回真实 cleanup_timeout，不扩大用户预算；后台同次清理继续有界收敛。
 
 重复 close 返回同一 Promise；EPERM 不计作不存在，实际发信号失败直接返回，确认超时返回 PROCESS_CLEANUP_TIMEOUT。macOS 使用真实隔离父子进程验收，未调用模型或业务 API。Windows 继续只终止既有受管 child，不把 POSIX 组回收声称为 Windows 后代树保证；Linux/macOS 远端 CI 在后续推送后确认，本轮未执行 Windows 实机验收。
+
+## S02：Host 所拥有的进程组回收
+
+来自 Jerry-Xin R06 的同类检查。Host launcher 复用本次受管组回收函数，close 先关闭 RPC 再返回同一清理 Promise，readiness 失败也等待同一清理；删除按 leader exit 提前返回与遗留 exit/timer 竞速。真实 Host fixture 的后代忽略 TERM 仍被回收，相关组回收和 Host 共 30 项测试通过。
