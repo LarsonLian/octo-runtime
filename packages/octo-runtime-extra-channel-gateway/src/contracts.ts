@@ -46,7 +46,10 @@ export interface ImCommonConfig {
 export interface OctoBotConfig extends ImCommonConfig {
   api_url: string;
   bf_token?: string;
-  group_ids?: string[];
+  /** .octospec/tasks/channel-group-admission/plan.md：群/话题入口开关，省略为 true，不影响私聊。 */
+  groups_enabled?: boolean;
+  /** 仅约束群范围；省略、null、[] 均不增加限制，关闭入口使用 groups_enabled=false。 */
+  group_ids?: string[] | null;
   cards?: boolean;
   typing?: boolean;
 }

@@ -31,9 +31,14 @@ export function acceptsImMessage(
   const contentSupported = (): boolean =>
     ![11, 14].includes(message.payload.type as number) || Boolean(messageContent(message.payload));
   if (message.channelType === 1) return contentSupported();
+  // .octospec/tasks/channel-group-admission/plan.md：启停与范围分开。
+  // 空名单不承担“禁用”语义；只有非空名单限制父群，且永不影响上面的私聊分支。
   if (
     ![2, 5].includes(message.channelType) ||
-    !config.group_ids?.includes(groupScope(message.channelId).groupNo)
+    config.groups_enabled === false ||
+    (config.group_ids != null &&
+      config.group_ids.length > 0 &&
+      !config.group_ids.includes(groupScope(message.channelId).groupNo))
   )
     return false;
   return mentionsBot(message.payload.mention, config.bot_id) && contentSupported();

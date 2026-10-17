@@ -1,0 +1,33 @@
+status: verified-release-pending
+baseline: 6a4397d51091b04a4d7b603abb2b5ffdf7bb912a
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-extras
+  - runtime-engineering
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - packages/octo-runtime-extra-channel-gateway/src/transport/normalize.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/lifecycle/configuration.ts
+  - packages/octo-runtime-extra-channel-gateway/config-schema.json
+  - test/im-mention-trigger.test.js
+decisions:
+  - groups_enabled 省略或 true 启用群和话题，false 关闭；null 和非布尔值非法，不影响私聊。
+  - group_ids 省略、null 和空数组均不增加群范围限制，非空名单校验父群；不做旧语义兼容。
+  - 默认 owner、显式发送者名单、Space、自身和真实 mention 校验保留。
+  - 真实调试仅使用 im-test 的既有隔离 QA 群，不使用正式环境。
+  - 用户已授权更新整体设计、实施、提交推送及本地安装，保留身份、Home 和宿主配置。
+validation:
+  regression_before_fix: 共 5 项，原有 2 项通过，新增 3 项失败，复现可选群范围导致的拒绝。
+  im_test_before_fix: 真实 QA 历史 payload 重放，显式群通过、省略群拒绝，发送消息和模型调用均为 0。
+  after_fix: 新合同 11 项定向测试、类型、lint 通过；Node 1074 通过、9 跳过，WebUI 35 通过；OKF 检查通过。
+  im_test_after_fix: 只读真实 payload 重放通过；CLI 与 SDK 真实 WS 群和话题收发通过，共 12 条输入和 7 次测试 Adapter 执行，不调用模型。
+  not_performed: 提交后发行包构建与安装待执行；第三方 App 升级、真人 owner 和实际模型闭环未验。

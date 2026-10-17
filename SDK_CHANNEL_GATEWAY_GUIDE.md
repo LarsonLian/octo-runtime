@@ -202,6 +202,21 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 
 参考 [Work App 的 imChannelBotConfig](../octo-work-app/src/main/im-channel-service.ts)：它将通道设置中保存的 `channel.instructions` 转成上述 item，空白提示词不生成 item，再与该 Bot 的连接和 Adapter 配置一起交给 Gateway。这里的提示词来自宿主授权的 Agent 配置入口，IM 消息正文不能冒充该来源；协议说明见 [Context 输入合同](.octospec/rules/context-input.md)。
 
+### 3.2 群与话题准入
+
+宿主在 config.bots[i] 中配置 groups_enabled 和 group_ids；SDK 只负责装配，Channel 解释和校验这些字段。CLI 与 SDK 使用同一合同：
+
+| 字段和值 | 群/话题效果 | 私聊效果 |
+| --- | --- | --- |
+| groups_enabled 省略或 true | 开启入口，继续检查范围、授权和真实 @ | 不受此字段影响 |
+| groups_enabled: false | 关闭所有群/话题，优先于范围名单 | 不受此字段影响 |
+| group_ids 省略、null 或 [] | 不增加群范围限制 | 不受此字段影响 |
+| group_ids: ["G1"] | 只允许父群 G1 及其话题继续检查其他条件 | 不受此字段影响 |
+
+例如默认 owner 在 G1 中 @Bot，默认配置、null 和 [] 均可处理；名单为 ["G2"] 或 groups_enabled: false 时拒绝。话题 G1____T1 按 G1 校验，回复留在 G1____T1。groups_enabled 的 null 或非布尔值非法；group_ids 的错误类型和空 ID 非法。不保留旧空数组禁用群的兼容行为，需要禁用时明确使用 false。
+
+以上只定义群范围，不放开发送者：allowed_sender_ids 省略仍仅允许服务端认证所得 owner，显式名单替代 owner，[] 拒绝所有发送者，null 非法。真实 @、Space 和拒绝自身消息的检查继续生效。宿主不需要处理 Gateway 内部权限对象，亦不要在 SDK、AdapterHost 或 loadContexts 中补救准入；详见[架构合同](.octospec/rules/channel-integration.md#本轮输入)与[事故计划](.octospec/tasks/channel-group-admission/plan.md)。
+
 ## 4. 在主进程启动 daemon 和 IM
 
 ### 4.1 创建独立 Host 入口

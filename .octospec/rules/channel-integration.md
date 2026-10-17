@@ -44,6 +44,10 @@ ChannelGateway 与 WeCom 各自以整个 Extra 为加载、卸载和配置重载
 
 ## 本轮输入
 
+2026-10-17 群准入合同：启停与范围分开表达。Octo Bot 的 groups_enabled 省略或 true 开启群/话题入口，false 关闭全部群/话题；group_ids 省略、null 或 [] 不增加群范围限制，非空数组按父群 ID 限定群及话题。两个字段均不影响私聊。groups_enabled 的 null/非布尔值及 group_ids 的错误类型/空 ID 必须拒绝。无旧空名单禁用群的兼容分支，需要禁用时明确写 groups_enabled: false。
+
+这里的“不限制”只针对群范围，不代表放开授权：allowed_sender_ids 省略仍仅允许认证所得 owner，显式名单替代默认 owner，[] 拒绝所有发送者，null 非法；自身、错 Space、非法消息和无真实 @ 的群消息继续拒绝。名单外群不会因直接点名而放行；话题按父群检查，但执行和回复留在原话题地址。配置解释和准入属于 Channel，不由宿主、Context renderer 或 AdapterHost 补救。事故证据、配置例子和验收见[群准入专项](../tasks/channel-group-admission/plan.md)。
+
 2026-10-16 F25 用户确认：尊重真实发送者的明确授权，不因发送者是其他已知 Bot 而额外拒绝。当前 allowed_sender_ids 同时用于私聊和群/话题，显式名单替代默认 owner；群/话题仍须满足允许群及真实 mention 条件，回复留在原频道或话题、按其权限可见。自身消息继续拒绝，不通过正文或名称猜测 Bot 身份，也不新增私聊/群聊拆分授权开关。
 
 已授权 A/B 在群中持续互相 @ 的循环属于协作模型边界，不要求 Channel 承担通用多 Agent 协作治理。需要受控协作时另行设计协作模型；不得借此在 Channel 新增已知 Bot 黑名单、内容循环识别、跨 Bot 全局状态或自动协作编排，不将这些列为延期待办。现有准入、容量及执行期限继续有效，不承诺授权双方永不循环。详见 [F25 评审](../tasks/gateway-august-feature-assessment/assessment.md#逐项-reviewf25-已知-bot-过滤与防互触发)。

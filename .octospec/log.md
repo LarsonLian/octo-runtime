@@ -2,6 +2,10 @@
 
 ## 2026-10-17
 
+- 实施[群准入合同修复](journal/shared/2026-10-17-channel-group-admission-delivery.md)：groups_enabled 独立启停，group_ids 省略/null/[] 不限制范围，非空限制父群；不保留旧空名单语义。Schema、整体设计及 CLI/SDK 指南同步，owner/Space/真实 @ 等授权保留。11 项定向及全量 Node 1074 通过、9 跳过，UI 35 通过；im-test 的 CLI/SDK 群和话题真实收发通过，12 条输入、7 次测试 Adapter 执行，模型调用为 0。发行安装随后执行，第三方宿主升级与实际模型尚未验收。
+
+- 调查阶段建立[群聊明确点名无响应事故分析与处理计划](tasks/channel-group-admission/brief.md)：CLI/SDK 共用 Gateway 在 group_ids 省略时拒绝所有群/话题，默认 CLI 示例与 Schema 因而失效；问题早于本轮 SDK 改造。新增 3 项准入/transport 回归按预期失败，im-test 既有真实历史 payload 的只读重放复现，未发送消息或调用模型。记录 owner 默认说明错误、临时显式群范围止损、逐阶段修复与真实入口验收、宿主升级/回退和事故关闭条件。当时不改业务代码、用户配置或安装，后续实施见上条记录。
+
 - 完成[宿主函数装配的本地 SDK](journal/shared/2026-10-17-sdk-host-extra-contexts.md)：三参数 loadExtra 接收模块、JSON 与业务函数，SDK 管理内部 loader、独立执行端口、状态、控制归属及完整生命周期；原 JSON descriptor 路径保留。整体架构与接入指南解释两阶段返回函数的目的、初始化与逐轮读取的区别，以及同步/异步 SQLite 的阻塞和取消边界。新增 13 项 SDK 和 3 项取消测试；构建/类型/lint 通过，全量 1069 通过、9 跳过、WebUI 35 通过。第三方 App/demo 按用户要求暂不修改，未新增真实 IM/Provider 或 SDK 长期内存验收。
 
 - 按用户要求将[SDK 动态 Context 计划](tasks/sdk-host-extra-contexts/brief.md)收敛为宿主完整接入流程：Buddy / 自研 CLI 经统一 SDK 启动、传函数、更新数据、查询、重载和退出，自带 CLI 保持 JSON。SDK 内部装配和竞态检查移入附录，移除额外 npm 分发前置条件；撤回内部加权 40 分作为整体 SDK 完成度，按 H01–H06 记录已有和待接能力。接入指南移除让宿主自建 loader 的示例，目标入口仍未实施，必要性与可执行性均 100。本轮仅文档，不修改 Runtime 或 demo 代码。

@@ -113,7 +113,9 @@ JSON
 | `adapter` | 必选 | 执行设置对象；子字段要求见下表 |
 | `context` | 可选 | 提供时必须符合 `octo.context-envelope/v3`；允许空 `items` |
 | `approval_mode` | 可选 | 默认 `full_access`；支持范围按所选 Adapter 合同 |
-| `allowed_sender_ids` | 可选 | 发送者 ID 白名单；省略不按此项限制，`[]` 不允许任何发送者 |
+| `groups_enabled` | 可选 | 省略或 `true` 开启群/话题，`false` 关闭群/话题；不影响私聊，`null` 非法 |
+| `group_ids` | 可选 | 省略、`null`、`[]` 不增加群范围限制；非空名单按父群 ID 限制群及话题，不影响私聊；禁用使用 `groups_enabled: false` |
+| `allowed_sender_ids` | 可选 | 省略仅允许服务端认证所得 owner；显式名单替代 owner，`[]` 不允许任何发送者，`null` 非法；同时约束私聊、群和话题 |
 | `run_timeout_ms` | 可选 | 默认 `86400000`（一天），范围 `100..86400000`；包含所有尝试、恢复等待与交互等待 |
 | `codex_retry` | 可选 | Codex 恢复策略；各子字段均可选，默认值见下文；不影响其他 Extra |
 | `config.authorized_space_ids` | 可选 | 租户授权列表；省略不按此项限制，`[]` 不授权任何 Space |

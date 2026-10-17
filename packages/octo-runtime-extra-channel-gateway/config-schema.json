@@ -210,16 +210,21 @@
               },
               "allowed_sender_ids": {
                 "type": "array",
-                "description": "可选。允许触发本 Bot 的真实 Octo 发送者 ID 白名单；省略不按本项限制，空数组拒绝所有发送者。不能使用展示名称代替身份；群/话题仍须满足真实 mention 和平台范围准入。",
+                "description": "可选。允许触发本 Bot 的真实 Octo 发送者 ID 白名单；省略时仅允许服务端注册返回的 owner，显式名单替代默认 owner 名单，空数组拒绝所有发送者。不能使用展示名称代替身份；群/话题仍须满足真实 mention 和平台范围准入。",
                 "items": {
                   "type": "string",
                   "minLength": 1,
                   "description": "允许触发的 Octo 用户业务 ID。"
                 }
               },
+              "groups_enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "可选。是否启用群及话题消息入口，省略为 true；false 拒绝所有群/话题，无论 group_ids 如何配置，但不影响私聊。启用仍需通过发送者、Space、群范围及真实 mention 校验。null 或非布尔值无效。"
+              },
               "group_ids": {
-                "type": "array",
-                "description": "可选。允许处理的 Octo 群范围 ID；省略不按本项限制，空数组拒绝所有群/话题，但不因此拒绝私聊。话题按所属父群匹配 groupNo；不使用群展示名称，也不会绕过真实 mention、成员权限或发送者白名单。",
+                "type": ["array", "null"],
+                "description": "可选。额外限制允许处理的 Octo 父群 ID；省略、null 或空数组均表示不增加群范围限制，非空数组只允许列出的父群及其话题。禁止所有群/话题须显式设置 groups_enabled=false，不能用空名单表示。话题按父群 groupNo 匹配，回复保留原话题地址；本项不影响私聊，也不绕过真实 mention、成员权限或发送者白名单。",
                 "items": {
                   "type": "string",
                   "minLength": 1,

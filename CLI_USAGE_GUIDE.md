@@ -230,6 +230,19 @@ octo-runtime status
 
 ### 4.4 配置说明与多个 Bot
 
+Bot 内的群配置分别表达入口启停和范围，CLI 与 SDK 完全相同：
+
+| 字段和值 | 群/话题效果 | 私聊效果 |
+| --- | --- | --- |
+| groups_enabled 省略或 true | 开启入口，继续检查范围、授权和真实 @ | 不受此字段影响 |
+| groups_enabled: false | 关闭全部群/话题，即使名单包含该群也拒绝 | 不受此字段影响 |
+| group_ids 省略、null 或 [] | 不增加群范围限制 | 不受此字段影响 |
+| group_ids: ["G1"] | 仅 G1 和其话题可继续检查其他条件 | 不受此字段影响 |
+
+例如 owner 在 G1 中 @Bot：默认配置、group_ids: null 或 [] 均可触发；["G2"] 或 groups_enabled: false 拒绝群消息。话题按父群判断，回复仍发回原话题。groups_enabled 只接受布尔值，null 非法；group_ids 只接受 null 或非空字符串数组。
+
+这些字段不放开发送者权限：allowed_sender_ids 省略仅允许服务端认证所得 owner；显式名单替代 owner，[] 拒绝所有发送者，null 非法。群消息仍需真实 @Bot，自身消息及错误 Space 仍拒绝。不保留旧 group_ids: [] 禁用群的语义，需要禁用时明确填写 groups_enabled: false。详见[准入合同与事故修复](.octospec/tasks/channel-group-admission/plan.md)。
+
 `adapter.workdir` 可省略，默认使用并创建 `~/octo-runtime/channels/{bot_id}`，同一 Agent 后续执行复用此目录；显式填写时必须是绝对路径。该默认路径不随 CLI `--home` 改变。
 
 `model`、`effort` 可省略，使用引擎默认值；`effort` 是思考强度。

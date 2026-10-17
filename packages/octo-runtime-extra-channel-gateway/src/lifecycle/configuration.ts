@@ -120,11 +120,12 @@ export function validateImConfig(config: ImBotConfig): void {
   validateUrl(config.api_url, "https:", "http:");
   if (
     config.group_ids !== undefined &&
+    config.group_ids !== null &&
     (!Array.isArray(config.group_ids) ||
       config.group_ids.some((id) => typeof id !== "string" || !id))
   )
     throw new Error("IM_CONFIG_INVALID");
-  for (const key of ["cards", "typing"] as const)
+  for (const key of ["groups_enabled", "cards", "typing"] as const)
     if (config[key] !== undefined && typeof config[key] !== "boolean")
       throw new Error("IM_CONFIG_INVALID");
   if (config.bf_token !== undefined && typeof config.bf_token !== "string")

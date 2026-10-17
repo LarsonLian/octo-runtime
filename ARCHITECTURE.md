@@ -206,3 +206,11 @@ flowchart TB
 loadContexts 既能同步返回 `readonly ContextItem[]`，也能返回 Promise。内存或同步 SQLite 可以直接返回数组；异步 SQLite/HTTP 可以使用 async。同步查询不会因为加了 async 就变为非阻塞，取消查询也取决于底层驱动能力。存储、连接及业务授权归宿主；SDK 管装配、取消和清理；Channel 构造本轮 Context，Host/Adapter 按统一合同执行，不读取宿主业务存储或补齐历史 Context。
 
 本地 SDK 接口及生命周期已通过自动化，第三方 App 与真实 IM 接入本轮尚未验收。完整操作见 [SDK 原生接入手册](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#22-加载和重载-extra)和 [Gateway 动态 Context 接入](SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)；强制边界见[架构规则](.octospec/rules/architecture.md#宿主函数注入与逐轮业务数据读取)，证据见[交付记录](.octospec/journal/shared/2026-10-17-sdk-host-extra-contexts.md)。
+
+## 6. IM 消息由谁决定是否接纳
+
+Channel Gateway 在调用执行内核前校验消息身份、Space、发送者、群范围与真实 @。CLI 和 SDK 使用同一套准入实现；宿主只通过公开配置表达策略，不接管插件内部判断，AdapterHost 不补做 IM 授权。
+
+群入口是否启用与允许哪些群是两个问题：groups_enabled 省略或 true 开启群/话题，false 关闭群/话题；group_ids 省略、null 或 [] 不增加群范围限制，非空名单只允许列出的父群及其话题。二者都不限制私聊。关闭群必须明确使用 groups_enabled: false，不用空名单暗示禁用，也不保留旧空名单语义的兼容分支。
+
+不限制群范围不等于允许所有人触发：allowed_sender_ids 省略仍只允许服务端认证所得 owner，显式名单替代 owner，[] 拒绝所有发送者。群/话题还必须在本条消息中真实 @Bot；话题按父群校验，回复留在原话题。错误类型必须报配置错误。精确定义、例子及此次默认配置无响应的修复验收见[群准入事故计划](.octospec/tasks/channel-group-admission/plan.md)，现行强制合同见[渠道规则](.octospec/rules/channel-integration.md#本轮输入)。

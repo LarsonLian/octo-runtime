@@ -5,12 +5,43 @@ import { ImRuntime } from "../packages/octo-runtime-extra-channel-gateway/dist/a
 import { validateImBots } from "@mininglamp-oss/octo-runtime-extra-channel-gateway";
 import load from "../packages/octo-runtime-extra-channel-gateway/dist/extra.js";
 import { assertJsonByteLimit } from "../packages/octo-runtime-protocol/dist/index.js";
+import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 
 const bot = (id = "qa") => ({
   bot_id: id,
   enabled: false,
   api_url: "https://im-test.deepminer.com.cn/api",
   adapter: { adapter_type: "codex" }
+});
+
+test("group switch and optional scope accept the same values in runtime and published Schema", () => {
+  const Ajv = createRequire(import.meta.resolve("eslint"))("ajv");
+  const schema = JSON.parse(
+    readFileSync(
+      new URL("../packages/octo-runtime-extra-channel-gateway/config-schema.json", import.meta.url),
+      "utf8"
+    )
+  );
+  const validate = new Ajv({ allErrors: true }).compile(schema);
+  const check = (fields, expected) => {
+    const config = { ...bot(), ...fields };
+    assert.equal(
+      validate({
+        module: "@mininglamp-oss/octo-runtime-extra-channel-gateway",
+        config: { bots: [config] }
+      }),
+      expected,
+      JSON.stringify(fields)
+    );
+    if (expected) assert.doesNotThrow(() => validateImBots([config]));
+    else assert.throws(() => validateImBots([config]), /IM_CONFIG_INVALID/);
+  };
+  for (const groups_enabled of [undefined, true, false])
+    for (const group_ids of [undefined, null, [], ["group"]])
+      check({ groups_enabled, group_ids }, true);
+  for (const groups_enabled of [null, 0, 1, "false", [], {}]) check({ groups_enabled }, false);
+  for (const group_ids of [false, "group", {}, [null], [1], [""]]) check({ group_ids }, false);
 });
 
 test("JSON byte counter matches actual encoding and stops before cloning", () => {
