@@ -1,0 +1,30 @@
+baseline: 36095b8cd505d50588eca0beb7f315bc858a6aa8
+rules:
+  - runtime-architecture
+  - runtime-engineering
+  - commit
+guides:
+  - workspace
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/single-npm-release/brief.md
+  - .octospec/journal/shared/2026-10-17-tag-driven-npm-release.md
+  - .github/CI.md
+  - DEPLOYMENTS.md
+  - .github/workflows/npm-publish.yml
+  - .github/workflows/release-publish.yml
+  - https://github.com/Mininglamp-OSS/octo-runtime/pull/19
+decisions:
+  - PR #19 关于跨 tag latest 竞态和同 tag 恢复降级的两条阻塞意见均成立。
+  - 不可变版本交付按 tag 独立，共享 latest 提升按包级状态协调。
+  - 显式区分 first、newer、equal、older，不再以 dist_tag 字符串代替跨系统状态判断。
+  - 全局 concurrency 只能保护可重算的 promotion，不能依赖其 FIFO 或保证每个等待运行都执行。
+  - 自动验收使用本地 npm 与 GitHub 状态 fixture，不操作真实 tag、registry 或 Release。
+  - Windows 全局 daemon shim 验收必须显式回收进程树，不能只终止 cmd 包装进程。
+  - npm latest 与 GitHub Latest 均为单调下界；资产短暂缺失时 promotion 零写并有界重读。
+  - 每个 tag 的 Release 资产独立交付，不能放入会替换 pending 运行的全局 concurrency group。

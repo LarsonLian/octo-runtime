@@ -60,6 +60,12 @@ CLI `playboard` 也经过 daemon：启动本次临时 daemon，经 UDS/Pipe 执�
 | Host 到 Provider | Adapter 管理的子进程、SDK 或认证原生连接 |
 | Extra 到外部系统 | 插件自身的传输、认证和投递合同 |
 
+正式 Runtime CLI 与正式 daemon 对同一个规范化 Home 必须调用同一个端点派生函数。POSIX 使用
+Home 下的 `sockets/octo-runtime-daemon.sock`；Windows 使用 `octo-runtime-` 前缀和 Home 的
+16 位 SHA-256 前缀。CLI 不得复制另一套 Home hash 算法。SDK embedded daemon 与 Playboard
+临时 daemon 分别使用自己的 prefix 和生命周期，不得与正式 Runtime 合并命名空间。显式
+`--socket` 或 `OCTO_RUNTIME_SOCKET` 仍由调用方负责两端一致配置，不改变默认派生合同。
+
 `agent_run.invoke` 和 `agent_run.subscribe` 强制 JSON-RPC 2.0；不能把 CLI 普通控制路径的简化编码推广为所有 IPC 的合同。流式 notification 包含源身份、连续序号与完整 HostFrame。
 
 执行 RPC 的 params 使用 `input`，不再传 `adapter_type / adapterType + request + options`。signal 不进入 params，客户端将 abort 映射为 cancel；服务端为本次 invocation 维护 AbortController，覆盖 ACK 在途取消和传输关闭。仅有必要的可信 executionEnvOverrides 以独立环境字段传输，不注入模型。CLI / Playboard / Work App 验证入口见[统一调用任务](../tasks/unify-invoke-transport/brief.md)。

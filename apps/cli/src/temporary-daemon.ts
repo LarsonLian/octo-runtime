@@ -7,6 +7,15 @@ import { createHash } from "node:crypto";
 import { reapOrphanedInvocationManifest } from "@mininglamp-oss/octo-runtime-daemon";
 import { probeDaemon } from "@mininglamp-oss/octo-runtime-daemon/runtime/runtime-contract";
 
+export function temporaryDaemonEndpoint(
+  directory: string,
+  platform: NodeJS.Platform = process.platform
+): string {
+  return platform === "win32"
+    ? `\\\\.\\pipe\\octo-playboard-${createHash("sha256").update(directory).digest("hex").slice(0, 16)}`
+    : join(directory, "daemon.sock");
+}
+
 export async function startTemporaryDaemon(options: {
   home: string;
   profile: string;
@@ -16,10 +25,7 @@ export async function startTemporaryDaemon(options: {
 }): Promise<{ socket: string; close(): Promise<void> }> {
   options.signal.throwIfAborted();
   const directory = await mkdtemp(join(await realpath(tmpdir()), "octo-playboard-"));
-  const socket =
-    process.platform === "win32"
-      ? `\\\\.\\pipe\\octo-playboard-${createHash("sha256").update(directory).digest("hex").slice(0, 16)}`
-      : join(directory, "daemon.sock");
+  const socket = temporaryDaemonEndpoint(directory);
   const child = spawn(
     process.execPath,
     [

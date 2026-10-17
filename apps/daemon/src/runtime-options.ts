@@ -1,22 +1,20 @@
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runtimeControlEndpoint } from "@mininglamp-oss/octo-runtime-daemon/runtime-endpoint";
 import type { StartDaemonServerOptions } from "./server.js";
 
 export function resolveDaemonRuntimePaths(
   args = process.argv.slice(2),
-  env: NodeJS.ProcessEnv = process.env
+  env: NodeJS.ProcessEnv = process.env,
+  platform: NodeJS.Platform = process.platform
 ): StartDaemonServerOptions & { executionOnly: boolean; profile: string } {
   const defaultHome =
-    process.platform === "win32" && env.LOCALAPPDATA?.trim()
+    platform === "win32" && env.LOCALAPPDATA?.trim()
       ? join(env.LOCALAPPDATA.trim(), "OctoRuntime")
       : join(env.HOME?.trim() || homedir(), ".octo-runtime");
   const home = resolve(option(args, ["--home"], env.OCTO_RUNTIME_HOME ?? defaultHome));
-  const socket =
-    process.platform === "win32"
-      ? `\\\\.\\pipe\\octo-runtime-${createHash("sha256").update(home.toLowerCase()).digest("hex").slice(0, 16)}`
-      : join(home, "sockets", "octo-runtime-daemon.sock");
+  const socket = runtimeControlEndpoint(home, platform);
   return {
     executionOnly: args.includes("--execution-only"),
     profile: option(args, ["--profile"], "default"),

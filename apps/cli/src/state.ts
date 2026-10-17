@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { access, chmod, mkdir, open, readFile, rename, rm, rmdir } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
+import { runtimeControlEndpoint } from "@mininglamp-oss/octo-runtime-daemon/runtime-endpoint";
 
 const PROFILE_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 const RESERVED_PROFILE_NAMES = new Set([
@@ -88,7 +89,11 @@ export function defaultRuntimeHome(
   return resolve(env.HOME?.trim() || homedir(), ".octo-runtime");
 }
 
-export function runtimePaths(home: string, profile: string): RuntimePaths {
+export function runtimePaths(
+  home: string,
+  profile: string,
+  platform: NodeJS.Platform = process.platform
+): RuntimePaths {
   assertProfileName(profile);
   const absoluteHome = resolve(home);
   const profileRoot = join(absoluteHome, profile);
@@ -103,10 +108,7 @@ export function runtimePaths(home: string, profile: string): RuntimePaths {
     openclawRoot: join(profileRoot, "adapters", "openclaw"),
     setupLock: join(absoluteHome, "run", "setup.lock"),
     pid: join(absoluteHome, "octo-daemon.pid"),
-    socket:
-      process.platform === "win32"
-        ? `\\\\.\\pipe\\octo-runtime-${portableHomeId(absoluteHome)}`
-        : join(absoluteHome, "sockets", "octo-runtime-daemon.sock"),
+    socket: runtimeControlEndpoint(absoluteHome, platform),
     logs: join(absoluteHome, "logs")
   };
 }
@@ -365,15 +367,6 @@ function processAlive(pid: number): boolean {
   } catch (error) {
     return isNodeError(error, "EPERM");
   }
-}
-
-function portableHomeId(home: string): string {
-  let hash = 2166136261;
-  for (const character of home.toLowerCase()) {
-    hash ^= character.codePointAt(0) ?? 0;
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function isNodeError(error: unknown, code: string): boolean {

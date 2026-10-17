@@ -1,6 +1,6 @@
 {
   "name": "@mininglamp-oss/octo-runtime-acp-client",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": "./dist/index.js",

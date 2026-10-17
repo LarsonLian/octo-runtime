@@ -1,6 +1,27 @@
+baseline: 957c9b40ec9910b302a5e5b3ed96e0dab72104bf
 rules:
   - runtime-architecture
   - runtime-engineering
   - commit
 guides:
   - workspace
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/single-npm-release/brief.md
+  - .octospec/journal/shared/2026-10-15-github-open-source-ci.md
+  - .github/CI.md
+  - .github/workflows/ci.yml
+  - .github/workflows/npm-publish.yml
+  - .github/workflows/release-publish.yml
+  - scripts/pack-release.mjs
+  - scripts/verify-release.mjs
+decisions:
+  - 稳定版 annotated tag 是唯一发行版本来源，源码清单固定为非发行占位版本。
+  - 只发布根包；内部 apps 和 packages 全部 private，并作为根包内容或 bundled dependencies 交付。
+  - 正式发行必须保留并验证 tag commit，禁止 dirty 构建。
+  - tag push 自动发布，手工入口只承担 dry-run 和同 tag 故障恢复。

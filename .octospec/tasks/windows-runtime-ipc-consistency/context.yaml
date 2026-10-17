@@ -1,0 +1,35 @@
+baseline: 0010de172e3d406ae46008fb865ec38ce0ccd16f
+rules:
+  - runtime-architecture
+  - runtime-local-execution
+  - runtime-lifecycle
+  - runtime-engineering
+  - commit
+guides:
+  - workspace
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/single-npm-release/brief.md
+  - .octospec/tasks/release-latest-consistency/brief.md
+  - .github/CI.md
+  - .github/workflows/ci.yml
+  - apps/cli/src/state.ts
+  - apps/cli/src/temporary-daemon.ts
+  - apps/daemon/src/runtime-options.ts
+  - packages/octo-runtime-daemon/src/runtime/home.ts
+  - scripts/verify-windows-release.mjs
+  - https://github.com/Mininglamp-OSS/octo-runtime/pull/19
+decisions:
+  - 正式 Runtime CLI 与正式 daemon 对同一规范化 Home 必须共享一个端点派生函数。
+  - Windows 正式端点沿用 daemon 的 16 位 SHA-256 前缀格式，删除 CLI 的 8 位 FNV 派生。
+  - SDK embedded 与 Playboard 属于独立生命周期和命名空间，不纳入正式端点统一。
+  - 本地跨平台测试只证明确定性字符串合同；Hosted Windows 成功才证明原生 Pipe 与 cmd 链路。
+  - readiness 使用总 deadline，并保留有界的最后 status 错误与 daemon stderr。
+  - 不创建发行 tag，不发布 npm 或 GitHub Release。

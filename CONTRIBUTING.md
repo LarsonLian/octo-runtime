@@ -80,10 +80,11 @@ changes require cross-package verification. Explicit live API debugging must use
 the IM test environment and report its evidence separately from fake-Provider tests.
 Never commit credentials or include them in logs, screenshots or test reports.
 
-Linux and macOS CI run the frozen dependency install, ESLint, naming checks,
-formatting, type checking/build, generated-file drift checks, complete test suites,
-package creation and offline installation verification. The final `CI Gate` succeeds
-only when the entire build/test/package matrix succeeds.
+Linux and macOS CI run the frozen dependency install, ESLint, naming checks, formatting,
+type checking/build, generated-file drift checks, complete test suites, package creation
+and offline installation verification. A dedicated Windows job builds the package and
+verifies real global installation, daemon process-tree cleanup and uninstall. The final
+`CI Gate` succeeds only when both paths succeed.
 See [GitHub CI and release operations](.github/CI.md) for workflow details.
 
 ## Commits and Pull Requests

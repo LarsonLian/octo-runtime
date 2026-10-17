@@ -12,6 +12,13 @@ const execute = promisify(execFile);
 const archive = resolve(process.argv[2]);
 const root = resolve(import.meta.dirname, "..");
 const live = process.argv.includes("--live");
+const expectedCommitIndex = process.argv.indexOf("--expected-commit");
+const expectedCommit =
+  expectedCommitIndex === -1 ? null : (process.argv[expectedCommitIndex + 1] ?? null);
+const requireClean = process.argv.includes("--require-clean");
+if (expectedCommitIndex !== -1 && !/^[a-f0-9]{40,64}$/.test(expectedCommit ?? "")) {
+  throw new Error("--expected-commit 必须提供完整的十六进制 commit");
+}
 // macOS Unix sockets have a short path limit; its default temp directory is too long.
 const directory = await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "orc-"));
 const npm = join(
@@ -22,6 +29,28 @@ const npm = join(
 );
 let daemon;
 let daemonExit;
+async function stopDaemon() {
+  if (!daemon || daemon.exitCode !== null || daemon.signalCode !== null) return;
+  if (process.platform === "win32") {
+    try {
+      await execute("taskkill", ["/PID", String(daemon.pid), "/T", "/F"], {
+        windowsHide: true,
+        timeout: 10_000
+      });
+    } catch (error) {
+      if (daemon.exitCode === null && daemon.signalCode === null) throw error;
+    }
+  } else {
+    daemon.kill("SIGTERM");
+    const timer = setTimeout(() => daemon.kill("SIGKILL"), 10_000);
+    await daemonExit;
+    clearTimeout(timer);
+  }
+  await daemonExit;
+  assert.ok(daemon.exitCode !== null || daemon.signalCode !== null, "daemon 包装进程必须退出");
+  daemon = undefined;
+  daemonExit = undefined;
+}
 try {
   await execute(
     process.execPath,
@@ -127,6 +156,8 @@ try {
     await readFile(join(installed, "apps/cli/dist/build-info.json"), "utf8")
   );
   assert.match(build.commit, /^[a-f0-9]{40,64}$/);
+  if (expectedCommit !== null) assert.equal(build.commit, expectedCommit);
+  if (requireClean) assert.equal(build.dirty, false);
   const versionInfo = `${metadata.version}\ncommit:${build.commit.slice(0, 12)}${build.dirty ? " (dirty)" : ""}`;
   assert.equal((await run(["--version"])).stdout.trim(), versionInfo);
   assert.match(
@@ -147,6 +178,10 @@ try {
     (await execute(command, ["--help"], { cwd: directory, shell: process.platform === "win32" }))
       .stdout,
     /Octo Runtime CLI/
+  );
+  const daemonCommand = join(
+    directory,
+    process.platform === "win32" ? "octo-runtime-daemon.cmd" : "bin/octo-runtime-daemon"
   );
   const consumer = process.platform === "win32" ? directory : join(directory, "lib");
   await writeFile(join(consumer, "package.json"), '{"type":"module"}\n');
@@ -307,8 +342,9 @@ try {
     );
     assert.equal(result.stdout.trim(), code, specifier);
   }
-  daemon = spawn(process.execPath, [join(installed, "apps/daemon/dist/index.js"), "--home", home], {
+  daemon = spawn(daemonCommand, ["--home", home], {
     cwd: directory,
+    shell: process.platform === "win32",
     stdio: ["ignore", "ignore", "pipe"]
   });
   daemonExit = once(daemon, "exit");
@@ -366,10 +402,7 @@ try {
   const adapters = JSON.parse((await run(["adapter", "list"])).stdout);
   assert.ok(adapters.some((adapter) => adapter.type === "codex"));
   assert.ok(adapters.some((adapter) => adapter.type === "claude-code"));
-  daemon.kill("SIGTERM");
-  const stopTimer = setTimeout(() => daemon.kill("SIGKILL"), 10_000);
-  await daemonExit;
-  clearTimeout(stopTimer);
+  await stopDaemon();
   await execute(
     process.execPath,
     [
@@ -409,11 +442,6 @@ try {
     })
   );
 } finally {
-  if (daemon && daemon.exitCode === null && daemon.signalCode === null) {
-    daemon.kill("SIGTERM");
-    const timer = setTimeout(() => daemon.kill("SIGKILL"), 10_000);
-    await daemonExit;
-    clearTimeout(timer);
-  }
+  await stopDaemon();
   await rm(directory, { recursive: true, force: true });
 }

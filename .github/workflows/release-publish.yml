@@ -1,27 +1,112 @@
 name: Release Publish
 on:
+  push:
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 已存在的发行 tag（vX.Y.Z）
+        description: 已存在的稳定版本 annotated tag（vX.Y.Z）
         required: true
         type: string
-      validate_run_id:
-        description: 与 tag 同一提交的成功 CI run ID
+      mode:
+        description: dry-run 仅验证；recover 正式恢复 npm 与 GitHub Release
         required: true
-        type: string
-      draft:
-        description: 保持为草稿
-        type: boolean
-        default: true
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - recover
+
 permissions: {}
+
+concurrency:
+  group: octo-runtime-release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
-  publish:
-    uses: Mininglamp-OSS/.github/.github/workflows/reusable-release-publish.yml@v1
+  publish-npm:
+    uses: ./.github/workflows/npm-publish.yml
     with:
-      tag: ${{ inputs.tag }}
-      validate_run_id: ${{ inputs.validate_run_id }}
-      draft: ${{ inputs.draft }}
+      tag: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+      dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run' }}
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+
+  publish-release:
+    if: github.event_name == 'push' || inputs.mode == 'recover'
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
       actions: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: octo-runtime-release
+          path: release
+      - name: Create or repair GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          VERSION: ${{ needs.publish-npm.outputs.version }}
+        run: |
+          set -euo pipefail
+          ARCHIVE="release/mininglamp-oss-octo-runtime-$VERSION.tgz"
+          test -f "$ARCHIVE"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ARCHIVE" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$ARCHIVE" \
+              --verify-tag \
+              --generate-notes \
+              --title "$TAG" \
+              --latest=false \
+              --repo "$GITHUB_REPOSITORY"
+          fi
+
+  promote-latest:
+    if: >-
+      always() &&
+      needs.publish-npm.result == 'success' &&
+      (needs.publish-release.result == 'success' ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run'))
+    needs: [publish-npm, publish-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: >-
+        ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run' &&
+        format('octo-runtime-latest-dry-run-{0}', github.run_id) ||
+        'octo-runtime-latest-promotion' }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.publish-npm.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - name: Reconcile npm and GitHub latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run' }}
+          VERSION: ${{ needs.publish-npm.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$DRY_RUN" = true ]; then
+            node scripts/reconcile-release-latest.mjs --dry-run --candidate "$VERSION"
+          else
+            node scripts/reconcile-release-latest.mjs
+          fi

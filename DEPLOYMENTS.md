@@ -29,11 +29,11 @@ HostApp 提供固定版本的 Node 24.x、SDK runner、直接 import 并注册�
 
 ## 2. 可选接入的发行物
 
-| 场景 | 额外部署 | 启动 |
-| --- | --- | --- |
-| Octo IM | extra-channel-gateway 及其生产依赖 | 显式提供 `channel-gateway` Extra 声明 |
-| 企业微信 | extra-channel-wecom 及其生产依赖 | 显式提供 `channel-wecom` Extra 声明 |
-| 仅本地 | 无接入包 | 仅启动本地账号 Runtime |
+| 场景     | 额外部署                           | 启动                                  |
+| -------- | ---------------------------------- | ------------------------------------- |
+| Octo IM  | extra-channel-gateway 及其生产依赖 | 显式提供 `channel-gateway` Extra 声明 |
+| 企业微信 | extra-channel-wecom 及其生产依赖   | 显式提供 `channel-wecom` Extra 声明   |
+| 仅本地   | 无接入包                           | 仅启动本地账号 Runtime                |
 
 Extra 通过注入的共享 Host 执行，不复制本地执行器。安装包不代表已经启用；HostApp 显式提供初始 extras 声明或调用 configureExtra。Bot 配置与凭据由插件处理，停用插件不停止本地 Host。CLI 使用统一的 `<home>/extras/<name>/config.json`，SDK 宿主自行选择持久化来源。
 
@@ -61,19 +61,18 @@ prepare 会构建 workspace，CLI 指向编译后的 dist。修改源码后构�
 npm unlink --global @mininglamp-oss/octo-runtime
 ```
 
-对外只发布 `@mininglamp-oss/octo-runtime`。内部 packages 标记为 private，不独立发布；发行脚本将生产依赖实体化并随 CLI 打入一个 tarball。内部模块的发行版本统一取根 package.json，不要求分别升级 workspace 版本。安装端不需要 pnpm 或构建工具，也不访问内部包 registry；根包不提供 SDK exports。源码 SDK 集成仍按第 1 节由宿主自行构建部署。
+对外只发布 `@mininglamp-oss/octo-runtime`。内部 apps 与 packages 标记为 private，不独立发布；发行脚本将生产依赖实体化并随 CLI 打入一个 tarball。源码清单统一保持 `0.0.0` 非发行占位版本，正式版本唯一取自稳定版 annotated tag，并只写入生成的发行包。安装端不需要 pnpm 或构建工具，也不访问内部包 registry；根包只公开声明的 CLI、Extra 与协议入口。源码 SDK 集成仍按第 1 节由宿主自行构建部署。
 
 ```bash
 pnpm typecheck
 pnpm lint
 pnpm test
-pnpm pack:release
+pnpm build
+node scripts/pack-release.mjs --version 1.0.0
 node scripts/verify-release.mjs ./dist/release/mininglamp-oss-octo-runtime-1.0.0.tgz
-# 核对产物并完成隔离安装验收后，只发布生成的 tarball
-npm publish ./dist/release/mininglamp-oss-octo-runtime-1.0.0.tgz --access public
 ```
 
-发布新版本先修改根 package.json 的 version，再重新执行 pack:release；上面文件名中的版本随之替换。不要直接 npm publish 或 pnpm publish workspace 根目录。
+本地命令只用于验证，不用于正式上传。正式发布在最新 `main` 提交上创建并推送 `vX.Y.Z` annotated tag；GitHub Actions 校验 tag、重新构建并验证 commit 后，先交付不可变 npm 版本和对应 GitHub Release，再把两端 latest 收敛到已完整交付的最高稳定版。并发 tag 或历史版本恢复不会回退 `@latest`。不要修改源码清单版本，也不要直接 npm publish 或 pnpm publish workspace 根目录。
 
 使用者安装：
 

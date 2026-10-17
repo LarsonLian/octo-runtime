@@ -1,6 +1,6 @@
 {
   "name": "@mininglamp-oss/octo-runtime",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "private": false,
   "description": "Provider-neutral Agent runtime for unified execution through provider adapters",
   "license": "Apache-2.0",

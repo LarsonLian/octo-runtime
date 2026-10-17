@@ -1,6 +1,6 @@
 {
   "name": "@mininglamp-oss/octo-runtime-daemon-app",
-  "version": "1.0.0",
+  "version": "0.0.0",
   "private": true,
   "type": "module",
   "bin": {
@@ -22,7 +22,7 @@
   },
   "scripts": {
     "start": "node dist/launcher.js",
-    "build": "tsc -p tsconfig.json && chmod +x dist/launcher.js"
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/launcher.js', 0o755)\""
   },
   "dependencies": {
     "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
