@@ -1,19 +1,22 @@
-## 变更
+## Summary
 
-说明具体问题及变更后的行为。
+Describe the problem and the resulting behavior.
 
-## 关联需求
+## Related Work
 
-关联 `.octospec/tasks/<slug>/brief.md` 或实际需求；关键合同变更必须提供依据。
+Link the actual issue or `.octospec/tasks/<slug>/brief.md`. Explain the basis for
+changes to architecture or shared contracts.
 
-## 验证
+## Validation
 
-记录实际执行的检查、联调环境与证据；未执行项明确标记，不填写凭据。
+List checks actually performed, integration environments and evidence. Identify
+checks not performed. Never include credentials.
 
-## 关键路径评审
+## Architecture and Critical Paths
 
-架构、关键合同或 P0 变更回答以下问题；简单文档、格式或配置变更可删除本节。
+For architecture, shared contracts or P0 changes, answer the following questions.
+Remove this section for simple documentation, formatting or configuration changes.
 
-1. 关键路径实际改变了什么？
-2. 可能影响哪些调用方，失败时会怎样？
-3. 哪些测试、复现步骤或运行证据证明有效？
+1. What changes in the critical execution path?
+2. Which callers are affected, and what happens on failure?
+3. Which tests, reproduction steps or runtime evidence validate the change?

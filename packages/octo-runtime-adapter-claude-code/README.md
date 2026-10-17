@@ -52,7 +52,7 @@ sequenceDiagram
 
 ## 使用
 
-前置条件：Node.js 20+、pnpm，以及 PATH 上一个已登录的 Claude Code CLI（使用同一 OS 用户认证）。
+前置条件：Node.js 24.x、pnpm，以及 PATH 上一个已登录的 Claude Code CLI（使用同一 OS 用户认证）。
 
 ```bash
 claude --version

@@ -103,7 +103,7 @@ elicitation 继续走 durable interaction。用户正文和控制指令不会被
 
 配置字段参见 [Codex 配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。
 
-前置条件：Node.js 20+、pnpm，以及 PATH 上一个已登录的 Codex CLI。
+前置条件：Node.js 24.x、pnpm，以及 PATH 上一个已登录的 Codex CLI。
 
 ```bash
 codex --version

@@ -9,7 +9,7 @@ on:
   workflow_call:
     inputs:
       ref:
-        description: 已校验的发行提交 SHA
+        description: Validated release commit SHA
         type: string
         required: true
 
@@ -36,19 +36,22 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: '24'
+          node-version-file: .nvmrc
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
-        # 从 package.json 的 packageManager 读取 pnpm 版本。
+        # Read the pnpm version from package.json's packageManager field.
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Lint
         run: pnpm lint && pnpm lint:names
+      - name: Check formatting
+        run: pnpm format:check
       - name: Typecheck and build
         run: pnpm typecheck
       - name: Check generated protocol and lockfile drift
         run: git diff --exit-code -- pnpm-lock.yaml packages/octo-runtime-protocol/src/generated/protocol-types.ts
       - name: Test
-        run: node --test test/*.test.js packages/octo-runtime-protocol/test/*.test.js
+        # Run the same suites as pnpm test, reusing the preceding build.
+        run: pnpm test:suites
       - name: Pack single distribution
         id: pack
         run: |
@@ -67,3 +70,22 @@ jobs:
           path: ${{ steps.pack.outputs.archive }}
           if-no-files-found: error
           retention-days: 7
+
+  gate:
+    # Stable required-check name: matrix failures and skipped builds must fail it.
+    # See .octospec/tasks/company-development-checks/brief.md.
+    name: CI Gate
+    needs: check
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Require every matrix job to succeed
+        env:
+          CHECK_RESULT: ${{ needs.check.result }}
+        run: |
+          if [ "$CHECK_RESULT" != "success" ]; then
+            echo "::error::Build, test and package matrix did not succeed: $CHECK_RESULT"
+            exit 1
+          fi

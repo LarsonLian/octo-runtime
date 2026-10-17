@@ -79,7 +79,7 @@ persona 是 demo 自己的业务存储，SDK 不规定宿主必须实现该对�
 1. 接通通用 runtime.loadExtra(module, config, dependencies)，SDK 内复用已有 loader 和执行传输。
 2. 将该路径接入现有状态、卸载、退出和账号切换；取消、交互和唯一实例校验由 SDK 内部完成。
 3. 当前以仓内 SDK fixture 验证 H01–H06、动态取值、独立 Host 和控制往返，使用 fake Provider，不调用真实模型。
-4. 后续接入外部 [register-demo](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime-channel-gateway-register-demo/src/main/octo-runtime-daemon.ts)，再在 im-test 验证真实 IM；按本轮用户要求，这两项暂不执行。
+4. 后续接入外部 [register-demo](../../../../octo-runtime-channel-gateway-register-demo/src/main/octo-runtime-daemon.ts)，再在 im-test 验证真实 IM；按本轮用户要求，这两项暂不执行。
 
 本次不要求新增 npm 包、公开 SDK 子路径或新的分发平台；既有 submodule/workspace 接入方式有效。也不新增插件管理平台、逐 Bot 热更或宿主执行桥。内部需要检查的身份、状态与清理问题放在[SDK 实现附录](flows.md)，不转化为宿主操作步骤。
 

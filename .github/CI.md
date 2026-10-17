@@ -1,32 +1,82 @@
-# GitHub 检查与发行
+# GitHub Checks and Releases
 
-目标仓库为 `Mininglamp-OSS/octo-runtime`，只发布 `@mininglamp-oss/octo-runtime`。参考 `octo-cli` 与 `cc-channel-octo`，通用工作流复用组织 `Mininglamp-OSS/.github@v1`。组织实现的升级随 v1 生效；本仓直接使用的 Actions 固定到 commit，由 Dependabot 提议更新。
+This repository publishes one npm distribution: `@mininglamp-oss/octo-runtime`.
+Common workflows reuse `Mininglamp-OSS/.github@v1`; directly referenced Actions are
+pinned to commits and updated through Dependabot.
 
-## 检查
+## Pull Request Checks
 
-`CI` 对 main push、所有面向 main 的 PR（包括纯文档和 draft）及手动运行执行完整检查，不使用路径过滤，避免 required checks 永久等待。Linux 与 macOS 均使用 Node 24、packageManager 指定的 pnpm 和冻结 lockfile，执行 lint、命名、类型、构建、Node 测试、单包打包及离线安装验证。测试使用 fake Provider，真实 Provider 测试维持原有显式开关。当前没有 Windows runner 的验证证据。
+The `CI` workflow runs for every PR targeting `main`, including draft and documentation
+PRs, pushes to `main`, manual dispatches and validated release calls. It has no path
+filter that could leave its required check waiting indefinitely.
 
-Linux 上传 `octo-runtime-release` artifact，保留 7 天。打包验证覆盖空缓存离线全局安装、CLI、daemon、第三方 Extra 类型编译/加载和卸载保留 Home；不自动安装 Provider。
+Both Ubuntu and macOS use **Node.js 24.x**, read from `.nvmrc`, and the pnpm version
+declared in `package.json#packageManager`. Each runner executes:
 
-另有历史关系检查、Secret Scan、Dependency Review、每周 CodeQL、Workflow Sanity、PR 标题/标签、Issue 欢迎、Stale 与 Release Drafter。需要组织 Project token 的 Sprint/看板流程暂不接入，避免新仓库在尚未配置 Project 时阻断贡献。
+1. `pnpm install --frozen-lockfile`.
+2. `pnpm lint`, `pnpm lint:names` and `pnpm format:check`.
+3. `pnpm typecheck`, including the workspace build.
+4. A lockfile and generated protocol type drift check.
+5. `pnpm test:suites`, the same suites used by local `pnpm test` without another build.
+6. Single-distribution packaging and offline installation/public API verification.
 
-## 仓库准备
+The complete test entry point includes the existing local debugging WebUI plugin
+tests. No production UI or new browser end-to-end gate is introduced. Provider tests
+use fakes unless their existing live-test opt-in is explicitly enabled. Windows is
+not included in this runner matrix.
 
-1. 在 GitHub 创建目标仓库并推送代码后启用 Actions，确认允许调用组织复用工作流。
-2. 在 main 分支规则中选择实际运行产生的两个 `Build, test and package` 检查和安全检查；首次运行前不要猜测嵌套检查名称。
-3. npm 发布配置 `NPM_TOKEN` secret，具有目标包的发布权限；开启 OIDC 权限用于 provenance。普通 PR CI 不读取该 token。
-4. 项目按 octo-cli 使用 Apache-2.0，根 `LICENSE` 和 `package.json.license` 已补齐，发行包必须携带完整许可证；第三方依赖及 `.octospec/` 资源保留各自许可证与声明。
+`CI Gate` is the stable required check. It runs after the entire matrix, including
+on failure, and rejects any aggregate result other than `success`. Branch protection
+requires this check from the GitHub Actions app and an up-to-date branch.
 
-## npm 发行
+Formatting covers owned source, tests, scripts, JSON/YAML configuration, `.github`
+collaboration files and `CONTRIBUTING.md`. Generated output, the lockfile, pinned
+upstream browser sources, architecture documentation and historical Octospec records
+are outside this formatting gate. `pnpm format` and `pnpm format:check` use identical
+file patterns and `.prettierignore`.
 
-1. 修改根 package.json 版本，合入 main，创建并推送已有提交的稳定 tag `vX.Y.Z`。
-2. 在默认分支运行 `npm Publish`，填入 tag，保留 `dry_run=true` 验证。
-3. 确认后再以 `dry_run=false` 运行。工作流校验 tag 在 main 历史中且版本匹配，以精确提交重新调用 CI，仅发布该次 CI 验证的 tgz，并附 provenance。内部 workspace 不单独发布。
+Linux uploads the verified `octo-runtime-release` artifact for seven days. Verification
+covers empty-cache offline global installation, CLI/daemon entry points, third-party
+Extra compilation/loading, and unloading without deleting Home. It does not install
+Providers automatically.
 
-发布稳定版本到 `latest`，本次不引入自动 dev 版或预发行策略。重跑实际发布前先检查 npm 是否已有同版本；npm 版本不可覆盖。禁止直接在仓库根执行 `npm publish`，已有 prepack 守卫继续生效。
+Additional workflows provide common-history validation, secret scanning, dependency
+review, weekly CodeQL, workflow sanity, PR title checks, labels and release drafting.
+Project/Sprint automation is not configured in this repository.
+
+## Main Protection and First-PR Bootstrap
+
+`main` requires a PR, one approval, resolved review conversations, and `CI Gate` from
+GitHub Actions. New commits dismiss prior approvals. Administrators follow the same
+rules; force pushes and branch deletion are disabled.
+
+The first PR introduces these workflow files into `main`. Its `pull_request` CI can
+produce `CI Gate`; metadata workflows using `pull_request_target`, such as title lint,
+depend on the base branch already containing their workflow. Do not make those checks
+required before they can actually run. A missing, failed or cancelled `CI Gate` blocks
+merging; do not bypass protection to compensate for a failed bootstrap.
+
+Hosted results must be verified on the actual PR. Local checks do not establish that
+Linux/macOS hosted runners or organization reusable workflows have succeeded.
+
+## npm Release
+
+1. Update the root package version, merge into `main`, and push a stable `vX.Y.Z` tag.
+2. Run `npm Publish` against that tag with `dry_run=true`.
+3. After checking the result, run with `dry_run=false` to publish the verified archive.
+
+Publishing requires an `NPM_TOKEN` with package publish access and OIDC permission
+for provenance. Ordinary PR checks do not read this secret. The workflow verifies
+the tag's main ancestry and package version, then runs CI at the exact release SHA.
+Internal workspace packages are not published separately. Do not invoke `npm publish`
+directly in the repository root; the existing prepack guard rejects that path.
 
 ## GitHub Release
 
-`Release Drafter` 生成更新草稿。单独运行 `Release Publish`，传入 tag 以及该提交成功的顶层 `CI` run ID，默认保留草稿。组织工作流核对 CI 名称、提交 SHA 和成功状态。GitHub Release 与 npm 发布独立，不依赖 GITHUB_TOKEN 创建 Release 后触发另一个工作流；该事件不会自动级联触发 npm 发布。
+Release Drafter prepares release notes. Run `Release Publish` with the stable tag
+and a successful top-level `CI` run ID for that commit; it defaults to a draft.
+GitHub Release creation and npm publishing are independent operations.
 
-所有本机验证及其限制见[本次记录](../.octospec/journal/shared/2026-10-15-github-open-source-ci.md)。远端 runner、npm 上传、GitHub Release 和仓库规则须在目标仓库建立后验证。
+The repository uses Apache-2.0 and preserves third-party license notices. Remote
+publishing and release creation require separate verification; see the
+[initial CI record](../.octospec/journal/shared/2026-10-15-github-open-source-ci.md).

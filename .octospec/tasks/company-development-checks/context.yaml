@@ -1,0 +1,29 @@
+status: local-checks-and-main-protection-verified
+rules:
+  - runtime-architecture
+  - runtime-engineering
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - CONTRIBUTING.md
+  - .github/CI.md
+  - .github/workflows/ci.yml
+  - package.json
+  - .prettierrc.json
+  - .prettierignore
+decisions:
+  - 用户指定 Node 24.x，协作说明使用英文。
+  - 保留调试插件现有测试，通过共享命令消除本地与 CI 测试列表漂移。
+  - main 以稳定 CI Gate 加一次 Review 保护；远端首次 PR 结果单独验收。
+validation:
+  node: v24.19.0
+  checks: format:check、lint、lint:names、typecheck、完整测试、actionlint、打包和离线安装通过。
+  node_tests: 1083 项，1074 通过，9 条既有条件跳过，0 失败。
+  debug_plugin_tests: 35 项通过。
+  ci_gate: success 返回 0；failure/cancelled/skipped/空结果均返回 1。
+  main_protection: 已通过 GitHub API 写入并回读；严格 CI Gate，Actions app 15368，一次批准，撤销过期批准，解决会话，管理员同样受限，禁止强推和删除。
+  hosted_ci: 尚未创建 PR，未运行 GitHub hosted runner。

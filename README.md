@@ -131,7 +131,7 @@ packages/
 
 ## 安装与本地初始化
 
-独立 CLI 通过 npm 安装，要求 Node.js 24+：
+独立 CLI 通过 npm 安装，要求 Node.js 24.x：
 
 ```bash
 npm install -g @mininglamp-oss/octo-runtime
@@ -144,7 +144,7 @@ HostApp 集成时自行决定安装方案与版本。源码开发、全局 link 
 
 ## 源码开发与验证
 
-要求 Node.js 24+。真实 provider 还要求对应 CLI 已安装并完成认证。
+要求 Node.js 24.x。真实 provider 还要求对应 CLI 已安装并完成认证。
 
 ```bash
 pnpm install

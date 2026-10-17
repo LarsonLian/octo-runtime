@@ -16,7 +16,7 @@ CLI 是独立 Runtime 的完整发行物，面向云端设备的定制接入、�
 
 环境要求：
 
-- Node.js 24 或更高版本。
+- Node.js 24.x。
 - **整仓源码开发必须使用 pnpm 11 或更高版本**，具体版本以根目录 `package.json` 的 `packageManager` 为准。仓库内部依赖使用 `workspace:*`，构建脚本也依赖 pnpm；不支持用 npm 或 Yarn 替代整仓依赖安装和构建。
 - 安装已发布的 Runtime 发行包和工具包可以使用 npm；源码完成 pnpm 安装和构建后，也可以使用 `npm link` 创建全局命令。
 

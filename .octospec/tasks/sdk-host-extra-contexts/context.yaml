@@ -34,8 +34,8 @@ sources:
   - .octospec/tasks/extra-initializer-context-dependencies/assessment.md
   - .octospec/journal/shared/2026-10-17-extra-initializer-delivery.md
   - SDK_CHANNEL_GATEWAY_GUIDE.md
-  - /Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime-channel-gateway-register-demo/src/main/octo-runtime-daemon.ts
-  - /Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime-channel-gateway-register-demo/src/main/persona.ts
+  - ../octo-runtime-channel-gateway-register-demo/src/main/octo-runtime-daemon.ts
+  - ../octo-runtime-channel-gateway-register-demo/src/main/persona.ts
   - packages/octo-runtime-daemon/src/runtime/types.ts
   - packages/octo-runtime-daemon/src/runtime/daemon-runtime.ts
   - packages/octo-runtime-daemon/src/runtime/local-extras.ts

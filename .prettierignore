@@ -2,3 +2,7 @@
 **/node_modules/**
 coverage/
 pnpm-lock.yaml
+# Generated from the protocol schema; validate through the build/drift check.
+packages/octo-runtime-protocol/src/generated/**
+# Pinned upstream browser sources retain their original formatting.
+packages/octo-runtime-extra-webui/web/**

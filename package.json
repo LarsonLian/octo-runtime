@@ -46,7 +46,8 @@
     "prepack": "node scripts/require-release-pack.mjs",
     "clean": "node scripts/clean-dist.mjs",
     "prebuild": "pnpm run clean",
-    "test": "pnpm build && pnpm --filter @mininglamp-oss/octo-runtime-extra-webui test:ui && node --test test/*.test.js packages/octo-runtime-protocol/test/*.test.js",
+    "test": "pnpm build && pnpm test:suites",
+    "test:suites": "pnpm --filter @mininglamp-oss/octo-runtime-extra-webui test:ui && node --test test/*.test.js packages/octo-runtime-protocol/test/*.test.js",
     "cli": "pnpm build && node apps/cli/dist/index.js",
     "daemon": "pnpm build && node apps/daemon/dist/launcher.js",
     "host": "pnpm build && node packages/octo-runtime-adapter-host/dist/runner.js --manifest apps/cli/dist/default_adapters.json",
@@ -55,8 +56,8 @@
     "typecheck": "pnpm build && tsc -p tsconfig.json --noEmit",
     "lint": "eslint apps packages",
     "lint:names": "node scripts/lint-names.mjs",
-    "format": "prettier --write",
-    "format:check": "prettier --check"
+    "format": "prettier --write \"{apps,packages,public,scripts,test,test-support}/**/*.{js,mjs,cjs,ts,mts,cts,tsx,json,yml,yaml}\" \".github/**/*.{yml,yaml,md}\" \"*.{json,yml,yaml}\" CONTRIBUTING.md",
+    "format:check": "prettier --check \"{apps,packages,public,scripts,test,test-support}/**/*.{js,mjs,cjs,ts,mts,cts,tsx,json,yml,yaml}\" \".github/**/*.{yml,yaml,md}\" \"*.{json,yml,yaml}\" CONTRIBUTING.md"
   },
   "dependencies": {
     "@mininglamp-oss/octo-runtime-extra-webui": "workspace:*",
@@ -93,7 +94,7 @@
     "typescript-eslint": "^8.68.0"
   },
   "engines": {
-    "node": ">=24",
+    "node": ">=24 <25",
     "pnpm": ">=11"
   }
 }

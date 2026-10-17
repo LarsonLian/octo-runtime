@@ -14,7 +14,7 @@ timestamp: 2026-10-17T00:00:00Z
 
 ## 面向宿主的一条完整流程
 
-后续以 [register-demo](/Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime-channel-gateway-register-demo/src/main/index.ts) 为主要样例，沿现有 submodule/workspace 编译和 SDK 接入方式验证。保持它的独立 Host 入口，不在 demo 中创建 ExtraPlugins 或执行桥。本轮暂不修改或运行该 App。
+后续以 [register-demo](../../../../octo-runtime-channel-gateway-register-demo/src/main/index.ts) 为主要样例，沿现有 submodule/workspace 编译和 SDK 接入方式验证。保持它的独立 Host 入口，不在 demo 中创建 ExtraPlugins 或执行桥。本轮暂不修改或运行该 App。
 
 | 步骤 | 宿主操作 | 必须观察到的结果 |
 | --- | --- | --- |
