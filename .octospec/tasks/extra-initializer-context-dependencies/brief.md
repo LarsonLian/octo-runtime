@@ -8,7 +8,9 @@ timestamp: 2026-10-16T00:00:00Z
 
 # Extra 两阶段函数入口与动态 Context 依赖注入
 
-状态：2026-10-17 已实施共享 loader、三个 CLI Extra、两个 Channel 动态 Context、text-only 指令及配置示例。实施基线 `aad4086`。用户最新要求“SDK 接入的先不用改”，因此 SDK HostApp 同进程装配迁移明确延期；下文保留该部分目标设计。实际证据与未验项见[交付记录](../../journal/shared/2026-10-17-extra-initializer-delivery.md)。本次不兼容旧 Extra ABI 和 instructions.source，不删除或重新初始化用户身份、Home 或配置。
+后续实施更新：此前延期的 SDK 范围现由[宿主完整 SDK 接入专项](../sdk-host-extra-contexts/brief.md)统一维护，本地 SDK 函数入口与 daemon 自动化已完成，见[新交付记录](../../journal/shared/2026-10-17-sdk-host-extra-contexts.md)。第三方 App 与 demo 按用户要求暂不修改。下段保留此前交付范围和当时授权，不作为当前 SDK 能力结论。
+
+此前交付状态：2026-10-17 已实施共享 loader、三个 CLI Extra、两个 Channel 动态 Context、text-only 指令及配置示例。实施基线 `aad4086`。当时用户要求“SDK 接入的先不用改”，因此当时 SDK HostApp 同进程装配迁移延期；下文保留该部分目标设计。实际证据与未验项见[此前交付记录](../../journal/shared/2026-10-17-extra-initializer-delivery.md)。该次不兼容旧 Extra ABI 和 instructions.source，不删除或重新初始化用户身份、Home 或配置。
 
 ## 本轮实施范围
 

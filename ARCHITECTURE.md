@@ -190,3 +190,19 @@ flowchart TB
 现有的 `webui-extra` 插件提供类似 OpenClaw 的 WebUI 能力，**仅用于本地服务调试，不用于实际生产环境。**
 
 已有内置 Extra 插件的具体使用方式，请参考 [CLI 使用手册](CLI_USAGE_GUIDE.md)。
+
+## 5. 宿主如何提供持续变化的业务数据
+
+宿主 App 可能将 Agent 提示词和业务 Context 存在内存、SQLite 或远端服务。启动时复制一次会让后续任务继续使用旧数据；每次编辑都重载 Gateway 又会中断连接。我们需要下一轮能读取新数据，同时保持宿主对存储和授权的管理权，以及 Extra 的整体封装。
+
+因此 Extra 使用两阶段入口 `extra(context, jsonConfig)(dependencies)`：第一阶段同步返回初始化函数，SDK 再传入 loadContexts 等宿主函数并等待初始化完成。JSON 配置与不可序列化的函数分开，宿主通过统一接口 `runtime.loadExtra(module, jsonConfig, { loadContexts })` 装配，无需创建插件内部对象或执行桥。Extra 与函数留在宿主 Node 进程，模型执行仍复用原 daemon 和独立 AdapterHost。
+
+| 时间点 | 执行内容 | 目的 |
+| --- | --- | --- |
+| 每次加载 Extra | SDK 调用返回的 initializer，绑定宿主函数并初始化插件 | 一次建立依赖和资源，由 SDK 统一管理生命周期 |
+| 每个已接纳任务开始准备 | Channel 调用 loadContexts，取得本轮 ContextItem 数组 | 读取宿主当前数据，形成该轮独立快照 |
+| 宿主更新业务数据 | 下一轮调用同一函数读取新值 | 无需重载连接；更换 JSON 或函数引用时仍整体卸载重载 |
+
+loadContexts 既能同步返回 `readonly ContextItem[]`，也能返回 Promise。内存或同步 SQLite 可以直接返回数组；异步 SQLite/HTTP 可以使用 async。同步查询不会因为加了 async 就变为非阻塞，取消查询也取决于底层驱动能力。存储、连接及业务授权归宿主；SDK 管装配、取消和清理；Channel 构造本轮 Context，Host/Adapter 按统一合同执行，不读取宿主业务存储或补齐历史 Context。
+
+本地 SDK 接口及生命周期已通过自动化，第三方 App 与真实 IM 接入本轮尚未验收。完整操作见 [SDK 原生接入手册](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#22-加载和重载-extra)和 [Gateway 动态 Context 接入](SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)；强制边界见[架构规则](.octospec/rules/architecture.md#宿主函数注入与逐轮业务数据读取)，证据见[交付记录](.octospec/journal/shared/2026-10-17-sdk-host-extra-contexts.md)。

@@ -538,10 +538,21 @@ async function handleRequestLine({
       if ((JSON.parse(line) as Record<string, unknown>).jsonrpc !== "2.0")
         throw new Error("JSON-RPC 2.0 required");
       if (request.method === "agent_run.invoke") {
-        const receipt = await host.submit(request.params?.input as InvokeInput, {
-          executionEnvOverrides: request.params?.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"]
-        });
-        request.params = { run_id: receipt.run_id };
+        // .octospec/tasks/sdk-host-extra-contexts/flows.md：回执前尚无可供 cancel 查询的 Run。
+        // 仅在接纳期间将断连映射为停止；已接纳源流仍按原合同支持断线续订。
+        const pending = new AbortController();
+        const disconnect = (): void => pending.abort();
+        socket.once("close", disconnect);
+        if (socket.destroyed) pending.abort();
+        try {
+          const receipt = await host.submit(request.params?.input as InvokeInput, {
+            signal: pending.signal,
+            executionEnvOverrides: request.params?.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"]
+          });
+          request.params = { run_id: receipt.run_id };
+        } finally {
+          socket.off("close", disconnect);
+        }
       }
       await streamAgentRun(request, socket, host);
       return;

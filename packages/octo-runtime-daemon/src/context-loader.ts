@@ -9,6 +9,8 @@ import type { JsonObject, JsonValue } from "./extras.js";
  * 宿主业务函数：每轮接收独立 Bot 配置快照，返回 ContextItem 列表而非 envelope。
  * 函数引用在初始化时固定，但每次调用可读取宿主最新的 Agent 提示词，无需重载 Extra。
  * 存储、授权及读取一致性归宿主；同步读取和异步 IO 均支持，IO 须传递 signal。
+ * SQLite 同步驱动可直接返回数组，异步驱动可返回 Promise；async 不会使同步查询自动非阻塞。
+ * .octospec/tasks/sdk-host-extra-contexts/brief.md；SDK 在主进程绑定函数，不把它写入 JSON/IPC。
  */
 export type LoadContexts = (
   config: JsonObject,

@@ -5,9 +5,11 @@ import { createServer } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { invokeDaemonRun } from "../packages/octo-runtime-daemon/dist/runtime/run-stream.js";
 import { callDaemon } from "../packages/octo-runtime-daemon/dist/runtime/runtime-contract.js";
-import { invokeRequest } from "./runtime-fixture.js";
+import { deferred, invokeRequest, withTimeout } from "./runtime-fixture.js";
+import { startDaemonServer } from "../packages/octo-runtime-daemon/dist/index.js";
 import { canonicalEvents } from "../packages/octo-runtime-protocol/dist/index.js";
 
 async function fixture(t, handler) {
@@ -111,7 +113,9 @@ test("local invoke repairs IPC disconnect without submitting again or losing ful
   });
   const received = [];
   for await (const value of canonicalEvents(
-    invokeDaemonRun(path, invocationInput(request, "canonical", "codex"), { signal: request.signal })
+    invokeDaemonRun(path, invocationInput(request, "canonical", "codex"), {
+      signal: request.signal
+    })
   ))
     received.push(value);
   assert.deepEqual(received, canonical);
@@ -134,7 +138,11 @@ test("source expiration fails explicitly and never reinvokes the adapter", async
     socket.end();
   });
   await assert.rejects(async () => {
-    for await (const value of invokeDaemonRun(path, invocationInput(request, "canonical", "codex"), { signal: request.signal }))
+    for await (const value of invokeDaemonRun(
+      path,
+      invocationInput(request, "canonical", "codex"),
+      { signal: request.signal }
+    ))
       void value;
   }, /STREAM_EXPIRED/);
   assert.deepEqual(
@@ -175,7 +183,94 @@ test("lost acceptance ACK recovers the original native stream without a second i
     socket.end();
   });
   const received = [];
-  for await (const frame of invokeDaemonRun(path, invocationInput(request, "native", "codex"), { signal: request.signal })) received.push(frame);
+  for await (const frame of invokeDaemonRun(path, invocationInput(request, "native", "codex"), {
+    signal: request.signal
+  }))
+    received.push(frame);
   assert.deepEqual(received, frames);
   assert.deepEqual(calls, ["agent_run.invoke", "agent_run.get", "agent_run.subscribe"]);
 });
+
+for (const matches of [true, false]) {
+  test(`ACK-in-flight cancellation ${matches ? "cancels the original Run" : "does not cancel another invocation"}`, async (t) => {
+    const request = invokeRequest();
+    const arrived = deferred();
+    const methods = [];
+    const path = await fixture(t, (rpc, socket) => {
+      methods.push(rpc.method);
+      if (rpc.method === "agent_run.invoke") {
+        arrived.resolve();
+        return;
+      }
+      if (rpc.method === "agent_run.get") {
+        write(socket, {
+          jsonrpc: "2.0",
+          id: rpc.id,
+          result: {
+            ...receipt(request, "in-flight"),
+            invocation_id: matches ? request.invocationId : "someone-else"
+          }
+        });
+      } else write(socket, { jsonrpc: "2.0", id: rpc.id, result: { cancelled: true } });
+      socket.end();
+    });
+    const controller = new AbortController();
+    const consuming = (async () => {
+      for await (const frame of invokeDaemonRun(
+        path,
+        invocationInput(request, "canonical", "test"),
+        { signal: controller.signal }
+      ))
+        void frame;
+    })();
+    await arrived.promise;
+    controller.abort();
+    await consuming;
+    assert.deepEqual(
+      methods,
+      matches
+        ? ["agent_run.invoke", "agent_run.get", "agent_run.cancel"]
+        : ["agent_run.invoke", "agent_run.get"]
+    );
+  });
+}
+
+test(
+  "daemon interrupts pending admission when the invoking socket closes before its receipt",
+  { timeout: 10000 },
+  async (t) => {
+    const home = await mkdtemp(join(tmpdir(), "octo-pending-admission-"));
+    const path = join(home, "control.sock");
+    const daemon = await startDaemonServer({
+      socketPath: path,
+      stateDirectory: home,
+      hostEntrypoint: fileURLToPath(new URL("./fixtures/direct-adapter-host.js", import.meta.url))
+    });
+    t.after(async () => {
+      await daemon.close();
+      await rm(home, { recursive: true, force: true });
+    });
+    const arrived = deferred(),
+      stopped = deferred();
+    t.mock.method(daemon.host, "submit", async (_input, { signal }) => {
+      arrived.resolve();
+      if (!signal.aborted)
+        await new Promise((resolve) => signal.addEventListener("abort", resolve, { once: true }));
+      stopped.resolve();
+      signal.throwIfAborted();
+    });
+    const controller = new AbortController();
+    const consuming = (async () => {
+      for await (const frame of invokeDaemonRun(
+        path,
+        invocationInput(invokeRequest(), "canonical", "test"),
+        { signal: controller.signal }
+      ))
+        void frame;
+    })();
+    await arrived.promise;
+    controller.abort();
+    await consuming;
+    await withTimeout(stopped.promise, 1000, "pending admission did not receive cancellation");
+  }
+);

@@ -162,7 +162,7 @@ CLI 默认从 JSON 文件读取；Desktop App 可以从 SQLite 或其他来源�
 
 initializer 返回或 Promise 完成表示初始化完成，不表示插件卸载。长期连接、监听器与任务仍由插件持有。旧的直接 void/Promise 入口拒绝为 EXTRA_INITIALIZER_REQUIRED，不提供兼容转发。
 
-2026-10-17 两阶段接口已实施。共享 ExtraPlugins 支持代码装配 `load(module, config, dependencies)`；config 继续是普通 JSON，函数不得写入 JSON。业务函数由宿主实现，模型执行端口继续由框架提供。CLI 三个 Extra 均使用新入口；现有 createDaemonRuntime SDK 的同进程函数装配接线本轮暂缓，不把共享 loader 的代码接口写成已支持 SDK 跨进程传函数。
+2026-10-17 两阶段接口已实施。共享 ExtraPlugins 支持代码装配 `load(module, config, dependencies)`；config 继续是普通 JSON，函数不得写入 JSON。业务函数由宿主实现，模型执行端口继续由框架提供。CLI 三个 Extra 均使用新入口；createDaemonRuntime SDK 新增 `loadExtra(module, config, dependencies)`，在 HostApp Node 进程装配模块与函数，执行复用原 daemon 和独立 AdapterHost。本地 SDK 自动化已通过，第三方 App 与真实 IM 接入本轮不进行，见[交付记录](../journal/shared/2026-10-17-sdk-host-extra-contexts.md)。
 
 两个 Channel 的可选 loadContexts 接收单 Bot JSON 快照及 `{ signal }`，可返回有序 ContextItem 数组或其 Promise。准入后、每轮开始时调用一次；控制消息和 Provider 内部重试不重新调用。静态与动态同 namespace/name 整项替换，保留静态位置，新项按返回顺序追加。动态 instructions 不暗中追加静态人设。config.context_loading 默认 timeout_ms=5000、max_in_flight=8，分别限制为 1..30000 和 1..32；超时未结束仍占名额，满额直接失败，无新增回调等待队列。仅保留本轮及既有有界重试快照，无动态历史缓存。卸载先 abort，等待清理最多 5000ms；失败阻止同名重载，其他 Extra 仍尝试清理。任意不合作 JS 不在沙箱内，不能承诺绝对 OOM 防护。详见[设计](../tasks/extra-initializer-context-dependencies/design.md)。
 
@@ -193,13 +193,15 @@ Octo 与 WeCom 已接入 Extra signal；WebSocket close 等待实际关闭，Oct
 
 `loadExtra(descriptor)` 接收完整声明，显式加载会将该 SDK 实例内的声明标记为启用；相同名称尚未卸载时拒绝，不自动更新或重载。`unloadExtra(name)` 先通知停止并等待资源清理。加载器保留清理失败的实例以阻止重复加载，不把失败伪装成资源已释放。
 
-`extraStatus()` 查询生命周期；`extraStatus(name)` 查询该实例的同步状态回调，经 IPC 返回 JSON 对象。加载器的 `inspect(name)` 在对应实例生命周期队列中读取快照，校验 JSON 并复制；回调异常或无效 JSON 返回受控 `EXTRA_STATUS_FAILED`，不泄漏异常原文。
+`loadExtra(module, jsonConfig, dependencies)` 在 SDK 所在 Node 进程装配 Extra，用于注入 loadContexts 等宿主函数。宿主只传模块、配置与业务依赖；loader、模型执行端口、账号代次、状态和清理由 SDK 管理。函数不进入 JSON/IPC；本地与 runner 装配共享名字与最多 64 个声明的边界。SDK 执行端口按实例记录 invocationId/runId，取消和交互只能操作所属实例的原调用；卸载不停止其他 Extra 或共享执行内核。
+
+`extraStatus()` 查询并合并两种装配位置的生命周期；`extraStatus(name)` 查询该实例的同步状态回调，runner 实例经 IPC 返回 JSON，本地实例在 SDK 进程读取。加载器的 `inspect(name)` 在对应实例生命周期队列中读取快照，校验 JSON 并复制；回调异常或无效 JSON 返回受控 `EXTRA_STATUS_FAILED`，不泄漏异常原文。
 
 CLI `extraset` 只保存并返回 `reload_required`，执行 `daemon restart` 后读取最新配置。持久停用通过 `extraset` 保存 `enabled: false` 后重启。CLI 不提供 extra status/load/unload；SDK 与内部 IPC 保留显式生命周期管理。框架不会因状态变化自行重载。
 
 SDK 在显式加载尚未完成时，卸载、退出和切换账号／租户可先发出停止请求，不排在该加载完成之后才通知停止。停止请求绑定原账号的进程；已排队的旧账号卸载不能作用于新账号。被取消的加载返回 EXTRA_LOAD_CANCELLED，不记为最新启用声明。最终配置与账号状态仍通过生命周期队列更新。SDK 退出时即使收到 EXTRA_DISPOSE_FAILED 也继续回收进程，进程退出后向宿主报告该失败；进程已停止不等于插件清理正常完成。
 
-SDK 保留成功应用的最新声明供同账号重启恢复；load/unload 更新该实例内的启用状态。logout/account-switch 清除动态声明并恢复构造时的初始声明，宿主应在新账号登录后恢复自己的配置。宿主长期存储仍由宿主负责。
+SDK 保留成功应用的最新 JSON descriptor 供同账号重启恢复；load/unload 更新该实例内的启用状态。logout/account-switch 清除动态声明并恢复构造时的初始声明，宿主应在新账号登录后恢复自己的配置。函数装配实例在 stop、账号切换或 runner 退出时中止并清理，恢复后由宿主重新提交，SDK 不隐式重放旧闭包。主进程清理失败会阻止替换及新代次装配，不能通过新建容器绕过；停止 runner 仍继续尝试。宿主长期存储仍由宿主负责。
 
 IM 插件仅在加载时处理完整 bots 数组；状态由各插件返回 `{ bots: [...] }`，SSE 返回监听与活动请求信息，各包 README 维护字段含义。可选 authorized_space_ids 属于插件业务配置，Octo 以认证得到的真实 Space 校验；空列表不授权任何 Space，省略时不增加宿主租户限制。Work App 保留账号 SQLite，由宿主按平台卸载、保存并加载完整配置，不要求 SDK 提供逐 Bot 命令。
 

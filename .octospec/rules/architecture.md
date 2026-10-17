@@ -86,6 +86,20 @@ F30 进一步明确宿主及其凭据保护责任：大多数接入通过 SDK �
 
 本次清理不保留旧凭据文件配置的兼容入口、读取解析、旧模块路径转发、自动迁移或来源回退。该决定只针对这次删除的配置机制，不作为其他历史数据或 Runtime 身份重建的授权。
 
+## 宿主函数注入与逐轮业务数据读取
+
+宿主可能将 Agent 提示词和业务 Context 存在内存、SQLite 或远端服务。仅在启动配置里复制这些值，会使后续任务读到旧快照；每次业务数据变化都重载 Extra，又会中断其内部连接。框架也不应为了读取新值而接管宿主的数据库、配置来源或业务查询。
+
+为解决这个目标，Extra 使用两阶段入口 `extra(ctx, jsonConfig)(dependencies)`：第一阶段同步返回 initializer，由 SDK 在第二阶段传入宿主函数并等待初始化完成。宿主调用 `runtime.loadExtra(module, jsonConfig, { loadContexts })`，不用创建插件 manager 或模型执行桥。JSON 配置可校验、复制和传输；不可序列化的函数留在宿主 Node 进程，不写入配置或跨 IPC 传递。模型执行仍由 SDK 接到原 daemon 和独立 AdapterHost。
+
+**两阶段初始化与逐轮回调是两个不同时间点。** initializer 在每次加载时执行一次，其完成表示插件初始化完成；Channel 在每个已接纳任务开始准备时，再调用同一个 loadContexts 函数获取本轮材料。宿主修改函数读取的数据后，下一轮读取新值，不重载连接；替换函数引用或 JSON 配置时才整体卸载后重载。SDK 不读取宿主业务存储，不自动决定 Context 内容、顺序或历史补齐。
+
+loadContexts 的返回合同为 `readonly ContextItem[] | Promise<readonly ContextItem[]>`，同步函数和 async 函数都有效。内存或同步 SQLite 查询可以直接返回数组；异步 SQLite/HTTP 查询返回 Promise。SDK 不强制具体数据库或驱动。同步数据库查询仍占用宿主 Node 线程，外面加 async 不会使查询自动转为非阻塞。
+
+回调第二参数提供 `{ signal }`。宿主应在调用前后检查取消，并在底层 IO 支持时传递 signal；不能声称任意 SQLite 驱动都支持中断。超时会终止本轮等待，未结束的实际操作仍占在途额度，迟到结果不进入模型。它不是任意业务代码的线程沙箱。
+
+该通用 SDK 接口与生命周期已完成本地自动化；第三方 App 接入及真实 IM 验证按后续范围开展。接口、使用示例及验证边界见[SDK 指南第 7 节](../../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)和[本地 SDK 交付记录](../journal/shared/2026-10-17-sdk-host-extra-contexts.md)。
+
 ## 设备执行内核、Extra 与外部工具的职责权限边界
 
 F29 已确认采用设备执行内核 + Extra 插件 + 外部工具的分工：Extra 判断业务接入是否准入，并提供明确的业务输入和工具身份；执行内核按统一执行合同处理权限、审批与生命周期，Adapter 负责原生映射；Agent 调用实际工具，工具与服务端检查凭据和资源 ACL。HostApp 负责装配、配置来源和安装决策。获准触发不等于获得发送者个人权限，full_access 不扩大 Bot 资源权限，Context 指引不替代安全校验。
@@ -283,7 +297,7 @@ Extra 的函数式入口负责封装内部流程：宿主传入完整配置和�
 
 静态 `config.bots[i].context.items` 与本轮函数结果在 Channel 业务边界合并：同 namespace/name 动态整项替换、保留静态位置，新 key 按动态顺序追加；不拼接 payload 或 instructions.entries，不保存上一轮动态结果。动态空数组保留静态项，加载失败不以旧结果兜底。Host/Adapter 只处理本轮显式快照，不读取宿主存储。动态系统指令取得成功与 Provider 续聊实际应用不同，沿既有可信指令会话合同，不自动 reset。
 
-共享 loader 与两渠道已实现上述合同；现有 createDaemonRuntime SDK 仍经 JSON descriptor 在 runner 加载 Extra，HostApp Node 同进程函数装配接线延期。不得把底层代码接口当成当前 SDK 已支持闭包。场景、完整覆盖示例、内存边界和 SDK 初始化方案见[逐轮 Context 专题](../guides/channel-dynamic-contexts.md)与[SDK 指南第 7 节](../../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)。
+共享 loader、两渠道和 createDaemonRuntime SDK 已实现上述合同。SDK 三参数 loadExtra 在宿主 Node 进程装配模块与函数，JSON descriptor 继续在 runner 加载；二者共享名称与声明容量，不能同名重复装配。执行仍复用原 daemon 和独立 AdapterHost。场景、完整覆盖示例、内存边界和 SDK 初始化方案见[逐轮 Context 专题](../guides/channel-dynamic-contexts.md)与[SDK 指南第 7 节](../../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)；本轮仅验收本地 SDK 自动化，第三方 App 与真实 IM 接入另验。
 
 | 插件方向 | 状态 | 边界 |
 | --- | --- | --- |

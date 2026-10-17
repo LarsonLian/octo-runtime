@@ -99,14 +99,33 @@ export async function* invokeDaemonRun(
     after = 0,
     terminal = false,
     attempts = 0;
-  let cancellationSent = false;
+  let cancellation: Promise<void> | undefined;
   const cancel = (): void => {
-    if (cancellationSent) return;
-    cancellationSent = true;
-    void callDaemon(socketPath, {
-      method: "agent_run.cancel",
-      params: { run_id: request.runId }
-    }).catch(() => undefined);
+    if (cancellation) return;
+    // ACK 在途时先核对真实身份，不能取消恰好使用同一 runId 的另一调用。
+    // 未接纳的请求由服务端接纳期 signal 取消，不重复 invoke 或无限重试。
+    cancellation = (async () => {
+      const accepted =
+        receipt ??
+        receiptFrom(
+          await callDaemon(socketPath, {
+            method: "agent_run.get",
+            params: { run_id: request.runId }
+          })
+        );
+      if (
+        accepted.run_id !== request.runId ||
+        accepted.invocation_id !== request.invocationId ||
+        accepted.agent_session_id !== request.sessionId ||
+        accepted.session_generation !== (request.sessionGeneration ?? 0) ||
+        accepted.protocol_mode !== (request.protocol_mode ?? "native")
+      )
+        return;
+      await callDaemon(socketPath, {
+        method: "agent_run.cancel",
+        params: { run_id: request.runId }
+      });
+    })().catch(() => undefined);
   };
   signal?.addEventListener("abort", cancel, { once: true });
   try {
@@ -204,6 +223,7 @@ export async function* invokeDaemonRun(
   } finally {
     signal?.removeEventListener("abort", cancel);
     if (!terminal) cancel();
+    await cancellation;
   }
 }
 

@@ -283,6 +283,12 @@ export async function enableFeature(
 
 `descriptor.module` 使用已安装模块的绝对入口；`runtimeModule("octo-runtime-extra-channel-gateway")` 可解析本指南的开发及正式包路径。重载传入最新完整 config，卸载失败时停止操作；同插件连接会重建，其他插件和 Host 继续运行。Extra 配置来源及字段按模块 README 与 schema 处理。
 
+需要将宿主函数传给插件时，使用 `await runtime.loadExtra(module, jsonConfig, dependencies)`：module 是导入的 Extra 模块对象，dependencies 可包含 Gateway 的 `loadContexts`。SDK 在宿主 Node 进程装配完整 Extra，并连接原 daemon 和独立 AdapterHost；宿主无需创建内部 loader、执行端口或操作 Bot 对象。同一名称只选一种装配入口，不能同时提交 JSON descriptor。
+
+这种设计用于让宿主保留内存、SQLite、HTTP 等数据源的管理权，同时让 Channel 每轮读取最新提示词和业务 Context。Extra 的 `extra(context, jsonConfig)` 同步返回 initializer，SDK 再向 initializer 注入独立的函数依赖并等待初始化完成；JSON 保持可持久化，函数不写入 JSON 或跨 IPC 传输。initializer 每次加载执行一次，loadContexts 每个已接纳轮次调用一次：更新业务数据无需重载连接，更换配置或函数引用时才整体卸载重载。
+
+loadContexts 可返回 `readonly ContextItem[]` 或 `Promise<readonly ContextItem[]>`，兼容同步与异步存储。同步 SQLite 查询仍会占用宿主线程，async 包装不会消除阻塞；异步 IO 按驱动实际能力接收 signal。退出、账号切换或 runner 退出后，SDK 清理旧实例，宿主在下一代次重新提交自己的函数。完整代码和失败处理见 [Channel Gateway 指南第 7 节](SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)，设计目的见[整体架构](.octospec/rules/architecture.md#宿主函数注入与逐轮业务数据读取)。本地 SDK 自动化已通过；第三方 App 和真实 IM 接入尚未验收。
+
 ## 3. 原生调用 Agent（可选）
 
 只使用 IM 时跳过本节，Channel Gateway 会接收消息并调用 Agent。需要自己的本地对话 UI 时，在主进程调用实际 SDK 方法 `runtime.invoke()`；当前没有名为 `agentRequest()` 的 SDK 方法。

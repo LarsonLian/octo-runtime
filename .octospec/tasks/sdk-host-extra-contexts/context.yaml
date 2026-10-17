@@ -1,0 +1,70 @@
+status: local-sdk-implemented-external-deferred
+baseline:
+  commit: f88b6b0e37fef71dc54bbf1d6b84e1dfe5a5737c
+  date: 2026-10-17
+  scope: Buddy 和自研 CLI 宿主通过统一 SDK 完成启动、加载、数据更新、状态、重载和退出；自带 CLI 保持 JSON 路径。
+scores:
+  requirement_necessity: 100
+  technical_feasibility: 100
+  maximum: 100
+  new_sdk_function_overload_implemented: 100
+  local_sdk_flow_verified: true
+  external_app_verified: false
+  method: 新增函数重载与本地 SDK 生命周期已实现，13 项 SDK 测试及 3 项取消测试通过；不以局部接口完成度代替真实 App、IM 或长期内存验收。
+rules:
+  - runtime-architecture
+  - runtime-protocol-design
+  - runtime-extras
+  - runtime-local-execution
+  - runtime-lifecycle
+  - runtime-context-input
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/protocol-design.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/collaboration.md
+  - .octospec/guides/channel-dynamic-contexts.md
+  - .octospec/tasks/extra-initializer-context-dependencies/design.md
+  - .octospec/tasks/extra-initializer-context-dependencies/assessment.md
+  - .octospec/journal/shared/2026-10-17-extra-initializer-delivery.md
+  - SDK_CHANNEL_GATEWAY_GUIDE.md
+  - /Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime-channel-gateway-register-demo/src/main/octo-runtime-daemon.ts
+  - /Users/lvsijia/codex.mlamp.cn/dmwork/octo-harness-ecosystem/octo-runtime-channel-gateway-register-demo/src/main/persona.ts
+  - packages/octo-runtime-daemon/src/runtime/types.ts
+  - packages/octo-runtime-daemon/src/runtime/daemon-runtime.ts
+  - packages/octo-runtime-daemon/src/runtime/local-extras.ts
+  - packages/octo-runtime-daemon/src/runtime/run-stream.ts
+  - packages/octo-runtime-daemon/src/runtime/supervisor.ts
+  - packages/octo-runtime-daemon/src/extras.ts
+  - packages/octo-runtime-daemon/src/context-loader.ts
+  - packages/octo-runtime-daemon/src/server.ts
+  - packages/octo-runtime-extra-channel-gateway/src/extra.ts
+  - public/extra.ts
+  - package.json
+  - scripts/pack-release.mjs
+  - test/context-loader.test.js
+  - test/extra-sdk-disposal.test.js
+  - test/extras.test.js
+  - test/embedded-invoke.test.js
+  - test/sdk-host-extras.test.js
+  - test/fixtures/sdk-extra-host.js
+decisions:
+  - 宿主只提供模块、JSON 和业务函数，通过 SDK 核心接口管理整个 Extra，不接触内部逻辑或自建执行桥。
+  - 新增通用 loadExtra 重载，函数保留在 HostApp Node 进程；现有 descriptor 和 CLI 保持 JSON 装配。
+  - 模型执行沿现有 daemon 和独立 AdapterHost；不改 Codex、模型逻辑或协议版本。
+  - 函数引用装配一次，数据每轮读取；函数引用或 JSON 变化仍整体卸载重载。
+  - SDK 必须完成取消、交互、唯一位置、状态日志、账号代次、进程退出及清理失败边界。
+  - 新专项承接此前延期 SDK 范围，不改写旧交付证据；本轮实施本地 SDK 与 daemon 自动化，第三方 App 和 demo 暂不修改。
+  - loadContexts 支持同步数组和 Promise；SQLite 驱动和连接归宿主，async 包装不会消除同步查询阻塞。
+  - 主要交付物为宿主 H01-H06 完整 SDK 流程，内部接线放附录，不由宿主创建 loader 或执行桥。
+  - 沿现有 submodule/workspace 接入，不把 npm 新导出或分发平台计为本次缺口。
+  - Buddy 和自研 Node CLI 走同一函数接口；自带 octo-runtime CLI 继续纯 JSON 静态装配。
+validation:
+  performed: pnpm typecheck、pnpm lint、pnpm test 通过；Node 1078 项中 1069 通过、9 条既有条件跳过、0 失败；WebUI 35 项通过。文档和链接校验以交付记录为准。
+  not_performed: 第三方 App 与 demo 修改或运行、真实 IM/Provider 联调、SDK 专项长期内存压力、发布、宿主迁移或进程重启。

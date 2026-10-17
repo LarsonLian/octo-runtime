@@ -14,7 +14,7 @@ HostApp 中的 Agent 提示词、项目说明或业务规则可能随时变化�
 
 采用 `extra(context, jsonConfig)(dependencies)`：宿主在初始化时注入一个 `loadContexts` 函数，Channel 在每个已接纳的普通任务真正开始准备时调用它。**函数只装配一次，业务数据每轮读取。** 宿主更新该函数读取的数据后，无需重启 Channel Gateway、daemon 或 AdapterHost，也无需调用内部 Bot 更新接口。
 
-共享 `ExtraPlugins.load(module, config, dependencies)`、Gateway/WeCom 的逐轮调用与覆盖已实施。CLI 三个 Extra 均使用两阶段入口，但 CLI JSON 装配传 `{}`，不提供 `loadContexts`，两渠道因此使用静态配置；WebUI 原有请求 Context 合同不变。**当前 `createDaemonRuntime` SDK 的 `loadExtra(descriptor)` 仍只接收 JSON，并在 runner 子进程加载 Extra；HostApp 函数装配尚未接通。** SDK 改造此前已明确延期，本说明不将其标为完成。具体宿主代码和初始化步骤见 [SDK 指南第 7 节](../../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)。
+共享 `ExtraPlugins.load(module, config, dependencies)`、Gateway/WeCom 的逐轮调用与覆盖已实施。CLI 三个 Extra 均使用两阶段入口，但 CLI JSON 装配传 `{}`，不提供 `loadContexts`，两渠道因此使用静态配置；WebUI 原有请求 Context 合同不变。createDaemonRuntime SDK 已新增 `loadExtra(module, config, dependencies)`，在 HostApp Node 进程装配函数；原 `loadExtra(descriptor)` 保持 JSON 和 runner 子进程路径。本轮完成本地 SDK 自动化，第三方 App 和真实 IM 接入尚未验证。具体宿主代码和初始化步骤见 [SDK 指南第 7 节](../../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)。
 
 ## 2. 所有权与封装
 
@@ -28,7 +28,7 @@ flowchart LR
   Kernel --> Provider[Provider Adapter]
 ```
 
-图表示职责和目标装配关系；当前 SDK 尚未把 Extra 移入 HostApp Node 组合层。模型执行仍走原 daemon/AdapterHost 执行链，不移动 Provider，不增加跨进程函数传输。
+图表示 SDK 三参数重载的装配关系；JSON descriptor 路径仍在 runner 加载。模型执行走原 daemon/AdapterHost 执行链，不移动 Provider，不增加跨进程函数传输。
 
 | 责任方 | 负责什么 | 不取得的控制权 |
 | --- | --- | --- |
@@ -139,6 +139,8 @@ interface ChannelDependencies {
 
 ## 7. 实施与验收入口
 
+2026-10-17 [宿主完整 SDK 接入专项](../tasks/sdk-host-extra-contexts/brief.md)已完成本地 SDK 实施，按 H01–H06 描述准备、启动、函数注入、数据更新、状态、重载和退出。数据流和生命周期接线放在 SDK 内部附录，宿主不创建 loader 或内部执行桥。第三方 App、demo 迁移及真实 IM 验证按用户要求留在后续范围。
+
 核心位置为 [共享加载与合并](../../packages/octo-runtime-daemon/src/context-loader.ts)、[Gateway 装配](../../packages/octo-runtime-extra-channel-gateway/src/extra.ts)、[Gateway 每轮准备](../../packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts)、[WeCom 每轮准备](../../packages/octo-runtime-extra-channel-wecom/src/application/im-channel.ts)。对应核心注释说明函数/数据边界、覆盖和资源所有权。
 
-已实施范围及既有自动化、GC、im-test 真实 Codex 证据见 [交付记录](../journal/shared/2026-10-17-extra-initializer-delivery.md)。当前 SDK 后续必须验收：同进程闭包实际执行、宿主更新数据后第二轮读取新值且连接不重建、正确的 invocationId 取消/交互接线、停止和账号切换清理，以及现有 JSON/CLI 路径不重复加载实例。完整 SDK 改造清单保留在 [设计 M0](../tasks/extra-initializer-context-dependencies/design.md#已确认选择extra-在调用方的-node-组合层执行)。
+共享 loader 与渠道的既有自动化、GC、im-test 真实 Codex 证据见[此前交付记录](../journal/shared/2026-10-17-extra-initializer-delivery.md)。SDK 本地自动化已覆盖同进程闭包、逐轮新值与 Host 不重建、取消/交互、停止和账号切换、JSON 路径名称冲突及恢复，见[SDK 交付记录](../journal/shared/2026-10-17-sdk-host-extra-contexts.md)。本轮不新增 SDK 长期内存压力或线上验收结论。完整 SDK 改造清单保留在[设计 M0](../tasks/extra-initializer-context-dependencies/design.md#已确认选择extra-在调用方的-node-组合层执行)。

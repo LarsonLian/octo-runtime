@@ -6,7 +6,7 @@ import type {
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { HostedAdapterMetadata } from "@mininglamp-oss/octo-runtime-adapter-host";
 import type { ExtraDescriptor } from "../extra-config.js";
-import type { ExtraStatus, JsonObject } from "../extras.js";
+import type { ExtraPluginModule, ExtraStatus, JsonObject } from "../extras.js";
 import type { RuntimeLoggingOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 export type { RuntimeLoggingOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 export interface DaemonModuleDescriptor {
@@ -100,7 +100,22 @@ export interface DaemonHealth {
 }
 
 export interface DaemonRuntime {
+  /** 加载可序列化声明；适用于 JSON 配置，由 daemon runner 装配插件。 */
   loadExtra(descriptor: ExtraDescriptor): Promise<Record<string, ExtraStatus>>;
+  /**
+   * 在宿主 Node 进程加载完整 Extra，可注入 loadContexts 等业务函数。
+   * 适用于 Buddy/自研 CLI 从内存、数据库或 HTTP 动态读取每轮 Context；
+   * 更新函数读取的数据无需重载插件，替换函数引用或 JSON 配置则先 unload 再 load。
+   * dependencies 不进入 JSON/IPC；SDK 提供执行端口，复用原 daemon 与独立 AdapterHost，
+   * 并负责状态、取消及卸载/退出清理。宿主不创建插件内部对象。
+   * .octospec/tasks/sdk-host-extra-contexts/brief.md
+   */
+  loadExtra<D extends object>(
+    module: ExtraPluginModule<D>,
+    config: JsonObject,
+    dependencies: Readonly<D>
+  ): Promise<Record<string, ExtraStatus>>;
+  /** 停止整个 Extra 并等待清理；清理失败不得继续加载同名实例。 */
   unloadExtra(name: string): Promise<Record<string, ExtraStatus>>;
   extraStatus(): Promise<Record<string, ExtraStatus>>;
   extraStatus(name: string): Promise<JsonObject>;

@@ -46,7 +46,9 @@
 
 ## 历史与取舍
 
-- [Extra 两阶段函数入口与动态 Context](tasks/extra-initializer-context-dependencies/brief.md)：共享 loader 和三个 CLI Extra 已实施，`extra(context, JSON config)(dependencies)`；同步异步动态加载、同 key 整项替换、超时占额及 5 秒卸载清理已验证。[内存合同](tasks/extra-initializer-context-dependencies/memory.md)和[逐模块评估](tasks/extra-initializer-context-dependencies/assessment.md)保留设计与历史评分；用户最新指定 SDK 接入先不改，HostApp 函数装配延期。实际回归、GC、安装及 im-test 证据见[交付记录](journal/shared/2026-10-17-extra-initializer-delivery.md)。
+- [宿主完整 SDK 接入与动态 Context](tasks/sdk-host-extra-contexts/brief.md)：通用三参数 loadExtra、SDK 内部装配与生命周期已实现，宿主不创建 loader 或执行桥；同步/异步 loadContexts 保留宿主数据源管理权并逐轮读取新值。13 项 SDK 与 3 项取消测试通过，全量 1069 通过、9 跳过，见[交付记录](journal/shared/2026-10-17-sdk-host-extra-contexts.md)。必要性和可执行性均 100；[现状评估](tasks/sdk-host-extra-contexts/assessment.md)不以接口完成代替整个产品验收。第三方 App、demo 与真实 IM 本轮暂不进行，自带 CLI 保持 JSON 路径。
+
+- [Extra 两阶段函数入口与动态 Context](tasks/extra-initializer-context-dependencies/brief.md)：共享 loader 和三个 CLI Extra 已实施，`extra(context, JSON config)(dependencies)`；同步异步动态加载、同 key 整项替换、超时占额及 5 秒卸载清理已验证。[内存合同](tasks/extra-initializer-context-dependencies/memory.md)和[逐模块评估](tasks/extra-initializer-context-dependencies/assessment.md)保留设计与历史评分。此前延期的 SDK 已由后续专项完成本地实施；此前回归、GC、安装及 im-test 证据仍见[原交付记录](journal/shared/2026-10-17-extra-initializer-delivery.md)，不混作新 SDK 线上证据。
 
 - [IM Agent 默认人设与 Context v3 简化评估](tasks/im-agent-persona-and-context-audit/brief.md)：三个 Extra 的 Schema 和完整配置示例已显式包含“我是明略科技的Octo助理”；instructions 已仅保留 text，无旧 source 兼容。不自动改写已有空 Context、配置或历史快照；[逐项评估](tasks/im-agent-persona-and-context-audit/assessment.md)中的其他简化候选仍待决，SDK 消费者迁移延期。证据见[交付记录](journal/shared/2026-10-17-extra-initializer-delivery.md)。
 

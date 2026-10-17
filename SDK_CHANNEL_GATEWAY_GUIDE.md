@@ -104,7 +104,7 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 
 **`config.bots` 是数组：一个 Bot 填一项，多个 Bot 填多项。** 下例配置两个 Bot；只接一个时保留一项即可，每项填写对应 Bot 的凭据和执行配置。
 
-注意: 此处的每个 octo.control/instructions 是load channel-gateway时候的默认提示词，启动时加载，可以不设置，可以不设置，而是后续通过loadContexts动态加载；对于宿主APP,需要实现  LoadContexts 来进行动态加载这个系统提示词context
+`config.bots[i].context` 是加载 Gateway 时传入的静态 Context，可以省略。需要每轮取得宿主最新提示词或业务材料时，由宿主提供 `loadContexts` 函数；SDK 已提供函数装配，使用方式和本地验证范围见第 7 节。函数不写入 JSON。
 
 ```json
 {
@@ -419,6 +419,8 @@ resources/octo-runtime/
 
 ### 7.1 使用场景与实现状态
 
+SDK 同进程函数装配已完成本地实现和自动化，见[独立专项](.octospec/tasks/sdk-host-extra-contexts/brief.md)。SDK 完成内部 loader、执行端口及完整生命周期，宿主仅调用通用 loadExtra 并提供 JSON 和业务函数。第三方 App 和真实 IM 接入本轮暂不进行；下文不是这些产品已通过验收的声明。
+
 复杂 HostApp 通常自行管理 Agent 定义：用户编辑系统提示词、项目说明或业务规则后，下一次 IM 任务应读取更新后的值。仅在启动时将这些值放入 `config.bots[i].context`，运行实例仍持有旧快照；每次编辑都重载 Gateway 会重建它管理的连接。
 
 因此两阶段 Extra 支持在初始化时独立注入 `loadContexts` 函数。函数由宿主实现，Channel 每轮调用；宿主保存新数据后，无需重启或重载 Channel Gateway。插件仍以整个 Extra 为封装和生命周期单位，不向宿主开放内部 Bot、manager、连接或队列。完整架构与合同见 [Octospec 专题](.octospec/guides/channel-dynamic-contexts.md)。
@@ -430,11 +432,22 @@ resources/octo-runtime/
 | `ExtraPlugins.load(module, jsonConfig, { loadContexts })` | 已实现的同进程代码装配接口 |
 | Gateway/WeCom 的每轮调用与静态动态合并 | 已实现；未提供函数时使用静态配置 |
 | 第 4、5 节 `createDaemonRuntime` / `runtime.loadExtra(descriptor)` | 当前只接收 JSON descriptor，在 runner 子进程加载 Extra，不能直接传闭包 |
-| SDK 在 HostApp Node 主进程装配 Extra 和业务函数 | 已选定的后续改造，此前按要求延期，尚未接通 |
+| runtime.loadExtra(module, config, dependencies) | 已实现；Extra 与函数在宿主 Node 主进程，执行复用原 daemon 与独立 Host |
 
-本节提供实际底层接口示例和 SDK 后续初始化方案。**不能把第 4.3 节的 `runtime.loadExtra(descriptor)` 改成多传一个函数就认为已经支持。** 保持已有静态接入可用，SDK 改造前不把函数、函数源码或函数名写入 descriptor/config。
+本节提供宿主业务函数示例和完整 SDK 流程。第 4.3 节的 `runtime.loadExtra(descriptor)` 继续只接收 JSON；注入函数使用三参数重载，不把函数、函数源码或函数名写入 descriptor/config。
 
 ### 7.2 宿主提供什么函数
+
+**普通函数和 async 函数都支持。** 返回类型是 `readonly ContextItem[] | Promise<readonly ContextItem[]>`，由宿主按自己的数据源选择：
+
+| 数据源 | 宿主实现方式 | 注意事项 |
+| --- | --- | --- |
+| 内存中的当前 Agent 配置 | 普通函数直接返回数组 | 每次读当前值，不在初始化时永久捕获旧结果 |
+| 同步 SQLite 驱动 | 普通函数查询后返回数组 | 查询占用宿主线程；async 包装不会消除同步阻塞 |
+| 异步 SQLite 驱动或宿主数据库服务 | async 查询后返回数组，或直接返回 Promise | 保留宿主自己的连接和授权；按驱动实际能力取消查询 |
+| HTTP 等异步 IO | async 读取并构造本轮 item | 将 signal 传给支持取消的 IO，传播真实失败 |
+
+这种设计让宿主保留 SQLite/文件/远端服务的管理权，同时使 Channel 每轮取得最新业务数据，无需重载其连接。`extra(ctx, config)` 返回 initializer 是装配阶段；initializer 接收 loadContexts 等函数依赖，每次加载执行一次。loadContexts 则由 Channel 每轮调用，两者不能混为“初始化时读一次”。整体理由见[架构约定](.octospec/rules/architecture.md#宿主函数注入与逐轮业务数据读取)。
 
 业务函数类型从 workspace 的 daemon 包导入，ContextItem 从 protocol 包导入。本节直接引用协议包，宿主还需在第 2 节的 dependencies 中增加 `"@mininglamp-oss/octo-runtime-protocol": "workspace:*"`；它已包含在 Gateway 的预编译依赖闭包中。
 
@@ -487,45 +500,39 @@ export class CurrentAgentContexts {
 
 该类只是宿主内存存储示意，不是 Extra 对象。多 Bot 时由宿主按配置映射到各自当前值。更新时调用宿主自己的 `replace`，Extra 下次调用同一个函数就读取新值；不是重新调用 initializer。读取 HTTP/数据库时使用上一例的 async 形式，将 `signal` 传到底层 IO，并在宿主完成返回值校验和授权；不要捕获错误后返回旧缓存或 `[]`，把真实读取失败伪装成成功。
 
-### 7.3 如何装配到 Extra，SDK 后续如何初始化
+### 7.3 宿主完整流程与 SDK 调用
 
-下面是**当前已实现的同进程 loader 接口**，用于说明 SDK 组合层如何接线。`executionPort` 必须由框架提供，并完整遵循 `ExtraAdapterHost` 的 invocation 语义；业务团队只实现上一节的取值函数。
+三参数 loadExtra 已实现，下面展示用法；静态 JSON 接入继续按第 4、5 节使用。宿主接入函数时只需多提供 `loadContexts`，内部加载器、执行端口、取消和清理由 SDK 完成。本地单测已覆盖该流程，第三方 App 与真实 IM 待后续接入。
 
 ```ts
 import * as gatewayModule from "@mininglamp-oss/octo-runtime-extra-channel-gateway";
-import {
-  ExtraPlugins,
-  type ExtraAdapterHost,
-  type JsonObject,
-  type LoadContexts
-} from "@mininglamp-oss/octo-runtime-daemon";
 
-// 组合层创建并持有 loader，负责退出时 close；这不是由 Extra 返回管理对象。
-export function createHostExtraLoader(executionPort: ExtraAdapterHost): ExtraPlugins {
-  return new ExtraPlugins([], executionPort);
-}
+// runtime 已按第 4 节创建并 startAccount；jsonConfig 为第 3 节的 config 对象。
+// agentContexts 是宿主自己的数据读取对象，例如第 7.2 节 CurrentAgentContexts。
+await runtime.loadExtra(gatewayModule, jsonConfig, {
+  loadContexts: agentContexts.loadContexts
+});
 
-export async function loadAgentGateway(
-  extras: ExtraPlugins,
-  jsonConfig: JsonObject,
-  loadContexts: LoadContexts
-): Promise<void> {
-  // config 仅传第 3 节对象中的 config 部分；函数在独立的第三参数中。
-  await extras.load(gatewayModule, jsonConfig, { loadContexts });
-}
+const status = await runtime.extraStatus("channel-gateway");
+
+// 应用退出时等待 SDK 清理；插件内部资源不由宿主逐项操作。
+await runtime.stop("quit");
 ```
 
-loader 的拥有者负责 `await extras.unload("channel-gateway")`、状态查询和最终 `await extras.close()`，包括加载失败后的清理检查。不要在每条消息时创建一个新 loader 或新 Extra。更换函数读取的数据不调用 unload；要更换函数引用或 JSON 配置，才整体卸载后加载。
+| 阶段 | Buddy / 自研 Node CLI 宿主的操作 | 运行结果 |
+| --- | --- | --- |
+| 准备与启动 | 沿第 1–4 节安装、构建，创建 runtime 并 startAccount | 原有 daemon 与独立 AdapterHost 就绪 |
+| 加载 | 传入模块、JSON config 和业务函数 | SDK 装配完整 Extra，宿主不创建 loader 或模型执行桥 |
+| 修改业务数据 | 更新第 7.2 节函数读取的内存、文件或数据库当前值 | 下一任务调用同一函数读取最新数据，无需重载连接 |
+| 查询状态 | extraStatus/health | 取得公开生命周期和业务状态；初始化完成不等于每个 Bot 在线 |
+| 更换配置或函数引用 | await unloadExtra 后重新 loadExtra 完整新值 | 只重载整个 Gateway，复用共享独立 Host；卸载失败先处理错误，不强行替换 |
+| 退出或切账号 | await stop；新账号启动后重新提交自己的配置和函数 | SDK 清理旧实例、所属调用和旧函数引用，宿主不逐 Bot 清理 |
 
-当前 SDK **尚未向此组合层接好执行端口**。`runtime.cancelRun/respondRun` 使用 runId，而 Extra 的取消/交互使用 invocationId，不能简单改名充当端口，也不应交给业务团队补一套模型执行器。SDK 后续改造须做到：
+这些步骤适用于调用 SDK 的 Buddy 和自研 Node CLI。自带 `octo-runtime` CLI 保持现有纯 JSON 装配，使用静态 Context；它不从 JSON 读取函数。函数方式运行在宿主 Node 主进程，Provider 和 AdapterHost 保持原执行链，宿主无需直接处理 invocationId/runId 转换。
 
-1. 延续第 4 节的独立 AdapterHost 启动和原有账号/Home 管理，先确保执行服务就绪。
-2. SDK 在 HostApp 的 Node main 组合层创建并持有 `ExtraPlugins`，由 SDK 接好 invoke/cancel/respondInteraction 端口。
-3. 宿主 import Gateway 模块，准备纯 JSON 配置及 `loadContexts`；通过拟提供的 `runtime.loadExtra(module, jsonConfig, dependencies)` 装配。此三参数 SDK 方法是目标接口，当前不可直接使用。
-4. 此 Extra 不再同时作为 runner JSON descriptor 加载，避免同一 Bot 建立两组连接。CLI 仍走自己的 daemon JSON 装配，不提供业务闭包。
-5. 宿主保存 Agent 数据后不操作插件；下一轮准备读取新值。整体卸载、账号切换和退出由宿主通知，SDK 先 abort/清理本地 Extra，再关闭所拥有的 daemon。
+同一 Gateway 只通过一种入口加载，不同时再提交同名 JSON descriptor。不要在每条消息时重新 load；业务数据更新与 JSON/函数引用替换的区别见上表。动态读到系统指令也不等于旧 Provider 会话立即更换 system，继续按第 7.6 节的会话边界处理。
 
-这一改造只改变 SDK 的装配位置，Provider 和 AdapterHost 继续沿现有执行链工作。函数始终留在宿主 Node 进程中，不经过 renderer、JSON 文件或跨进程函数代理。完整待实施项见 [SDK M0 设计](.octospec/tasks/extra-initializer-context-dependencies/design.md#已确认选择extra-在调用方的-node-组合层执行)。
+本次接线与验收见[宿主完整 SDK 接入计划](.octospec/tasks/sdk-host-extra-contexts/brief.md)。[内部实现附录](.octospec/tasks/sdk-host-extra-contexts/flows.md)仅供 SDK 实现者阅读，不能要求接入方照着创建 ExtraPlugins、执行端口或插件内部对象。
 
 ### 7.4 静态与动态的覆盖规则
 
