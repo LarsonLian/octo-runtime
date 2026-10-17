@@ -8,12 +8,12 @@ timestamp: 2026-10-17T00:00:00Z
 
 # 第二轮评审
 
-两份新评审均针对 55e977f249b6b0fae85d43c79748db1ff35bb719。当前状态为两项待修复；此前本地测试通过记录仍有效，但不表示已覆盖以下新发现。此次只更新分析与计划，不修改产品代码或 workflow，也不发送评审回复。
+两份新评审均针对 55e977f249b6b0fae85d43c79748db1ff35bb719。当前状态：R06b 待修复；R07 经公司规范核对后改为证据回应，保留 @v1；此前本地测试通过记录仍有效，但不表示已覆盖以下新发现。此次只更新分析与计划，不修改产品代码或 workflow，也不发送评审回复。
 
 | 编号 | 来源及问题 | 与上一轮的关系 | 严重程度 | 修改必要性 / 100 | 技术可执行性 / 100 | 处理目标与状态 |
 | --- | --- | --- | --- | --- | --- | --- |
 | R06b | Jerry-Xin：Codex app-server 退出后，close 提前返回，未完成本次进程组回收 | R06 的遗漏路径；之前 Codex S01 只修了管道错误隔离 | P1，真实执行资源隔离缺陷 | 100 | 100 | 修复；待实施、待本地新增回归 |
-| R07 | yujiawei：11 个共享 workflow 使用可移动的 @v1 | 新发现的 CI 依赖固定问题，与已删除 API 无关 | 评审 P1；同意合入前处理，实际利用依赖上游引用变更或受损 | 90 | 100 | 修复；待核对目标内容并固定完整 SHA |
+| R07 | yujiawei 建议将 11 个公司共享 workflow 固定 SHA；公司规范明确使用滚动 @v1 | 新评审建议，与已删除 API 无关；已补组织合同核对 | 评审 P1；本次不认定为偏离公司规范的本仓 P1 缺陷 | 0（本仓单独改 SHA） | 100（证据回应） | 与组织对齐，保留 @v1；评审讨论未关闭 |
 
 分数含义沿用[原评分口径](assessment.md)：可执行性 100 表示处理方式清楚，不表示实现、目标 SHA 内容审查或验证已完成。当前没有新的产品决策需求。
 
@@ -37,7 +37,7 @@ reviewer 通过 public runCodexAppServerTurn、生产 defaultSpawn 与合成 app
 4. 两个回归分别覆盖取消和正常完成：父进程先退出，后代忽略 TERM 且使用独立 stdio。调用返回后后代不存在、文件不再写入；覆盖重复 close、兄弟调用隔离。
 5. 运行 Codex/Host 相关及完整门禁；Windows 已有实现、待真机验收，沿[Windows 跟踪](windows-validation.md)记录，不降低支持要求。
 
-## R07：共享 workflow 固定完整提交
+## R07：与公司共享 workflow 版本策略对齐
 
 来源：[yujiawei 新评审](https://github.com/Mininglamp-OSS/octo-runtime/pull/1#pullrequestreview-5556602456)，北京时间 2026-10-17 14:16:37。
 
@@ -45,20 +45,29 @@ reviewer 通过 public runCodexAppServerTurn、生产 defaultSpawn 与合成 app
 
 通俗解释：本仓未改一行，中央仓库只要移动 v1，下一次触发就可能运行不同的共享流程。部分调用授予 contents:write、issues:write 或 pull-requests:write，因此这不只是构建结果可重复性问题。公司共享仓库是可信来源，但信任来源和固定实际执行版本是两个不同要求。
 
-意见成立；当前没有上游被攻击、引用已恶意移动或凭据已泄露的证据，不应表述为已发生安全事故。使用 @v1 也有集中升级的收益；固定 SHA 的代价是升级需显式提交评审，这是本次建议接受的治理成本。旧 R01/R02 的删除没有被此次评审否定。
+初评接受固定 SHA 的方案前，没有核对公司共享流程的正式版本策略，判断依据不完整。用户要求与其他项目对齐后，已查询以下仓库默认 main 的全部 .github/workflows 文件；仅统计 Mininglamp-OSS/.github 共享 workflow 引用，不统计第三方 action，不声称穷尽全组织。
 
-本轮只读查询 v1 得到候选 8feb64b77fcd794571ba9a959f7f745bc7a0650c。解析成功不等于已审查该提交内容；不得据此把它直接记为可信或已批准版本。
+| 仓库 | 检查提交 | 共享 workflow 引用 | 引用方式 |
+| --- | --- | --- | --- |
+| octo-cli | d564a63bbd8ec2dd4305a40a64fe0179ca9c667f | 9 | 全部 @v1 |
+| octo-server | 8326c67afdcd0fb8cd3b9f98548e2ed40ed49a62 | 14 | 全部 @v1 |
+| openclaw-channel-octo | b6d6fdf83e6f186a61044eb5bba7d727ea762b21 | 12 | 全部 @v1 |
+| codex-channel-octo | f3ca7657f82a069a4b357a6ec6cdc1295c432c05 | 0 | 当前只有自有 ci.yml，不能算 SHA 固定的先例 |
 
-方案与验收：
+证据：[octo-cli](https://github.com/Mininglamp-OSS/octo-cli/tree/d564a63bbd8ec2dd4305a40a64fe0179ca9c667f/.github/workflows)、[octo-server](https://github.com/Mininglamp-OSS/octo-server/tree/8326c67afdcd0fb8cd3b9f98548e2ed40ed49a62/.github/workflows)、[openclaw-channel-octo](https://github.com/Mininglamp-OSS/openclaw-channel-octo/tree/b6d6fdf83e6f186a61044eb5bba7d727ea762b21/.github/workflows)、[codex-channel-octo](https://github.com/Mininglamp-OSS/codex-channel-octo/tree/f3ca7657f82a069a4b357a6ec6cdc1295c432c05/.github/workflows)。
 
-1. 审查候选提交中的 11 个目标 workflow，核对路径、workflow_call 输入、secrets、权限及其嵌套依赖；记录实际使用的完整 SHA 和选择依据。
-2. 将本仓 11 处 @v1 改为审查过的完整 SHA，保留公司共享流程；后续升级通过显式依赖变更评审，不静默追踪可移动引用。
-3. 固定入口 SHA 不等于所有传递依赖均不可变。发现嵌套可移动引用时单独记录归属与处理，不声称固定一层已解决所有供应链风险。
-4. 检查 YAML、actionlint、diff、工作流输入和权限；推送后验证安全检查及 workflow sanity。发布相关流程做静态或安全验证，不为验收实际发布版本或包。
-5. 全量检索共享 workflow uses，确认没有漏掉可移动引用；不机械替换项目版本或 release tag。
+更直接的依据是组织仓库的[workflow 架构第 5 节](https://github.com/Mininglamp-OSS/.github/blob/47f5d8daba096ded76ff24b07a21199a3cb460d7/docs/workflow-architecture.md#5-foundation-versioning--distribution-p0--everything-rests-on-this)：明确要求所有调用方使用滚动 @v1，采用 vX.Y.Z 版本标签及 vX 主版本别名。[release.yml](https://github.com/Mininglamp-OSS/.github/blob/47f5d8daba096ded76ff24b07a21199a3cb460d7/.github/workflows/release.yml) 实现稳定版本发布后移动主版本别名，预发布不移动。该文档将第三方 actions 固定 SHA 另列要求，不应将两类引用混同。
+
+**当前决定：octo-runtime 保留公司共享 workflow 的 @v1，与现行规范及已核对项目一致。本项从本仓代码修复改为基于组织合同的评审回应；不单独固定 SHA，不降低现有第三方 action 的 SHA 固定要求。**
+
+风险判断仍保留：v1 可移动并且上游共享代码可能带写权限；组织滚动版本策略不等于引用不可变，也不等于风险为零。正式发布机制有意让下游接收同一主版本更新。若要改为每仓固定 SHA，应在组织共享 workflow 的版本治理中统一评审、实施和迁移，不在本仓孤立改制。没有证据表明上游已遭攻击或本仓已泄露凭据。
+
+R07 的本仓单独修改必要性由 90 调整为 0；证据回应可执行性 100。reviewer 是否接受尚未确认，不能把本地决定写成 GitHub Changes Requested 已解除。本轮未发送评审回复、未修改 workflow。
+
+后续处理：提供上述正式策略和项目快照作为讨论依据；如维护者决定调整组织政策，再统一确定 SHA 更新与迁移机制。现阶段无需选择或审查一个用于本仓替换的新 SHA。
 
 ## 其他观察与关闭条件
 
 Jerry 提到隔离 checkout 下有 14 个指向兄弟仓库的文档链接缺失，属于原有记录，不是本轮新增阻塞。需要后续区分生态工作区导航与独立仓库可用性；不写成当前两项 P1，也不把本地生态目录的检查通过等同于独立 checkout 的文档完整性。
 
-R06b 和 R07 修复后分别提交，正文写明 reviewer、编号、决策和验证；不得以第一轮全绿关闭第二轮问题。原 R01/R02/R03/S01 等已完成项保持完成；R06 总项因 Codex 遗漏恢复为部分完成。Windows 真机测试按用户计划继续跟踪。
+R06b 修复后单独提交，正文写明 reviewer、编号、决策和验证；R07 按公司合同证据回应，等待评审达成一致，不制造 workflow 变更。不得以第一轮全绿关闭第二轮问题。原 R01/R02/R03/S01 等已完成项保持完成；R06 总项因 Codex 遗漏恢复为部分完成。Windows 真机测试按用户计划继续跟踪。

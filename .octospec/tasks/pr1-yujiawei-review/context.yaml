@@ -141,6 +141,6 @@ second_review:
   R07:
     author: yujiawei
     url: https://github.com/Mininglamp-OSS/octo-runtime/pull/1#pullrequestreview-5556602456
-    status: 待修复；新问题，与删除 API 无关。
-    evidence: 本轮确认 11 处 @v1 及部分写权限；候选 SHA 已解析，内容审查待完成。
+    status: 与公司规范对齐，保留 @v1；改为证据回应，尚未发送评审回复。
+    evidence: 公司 workflow-architecture 第 5 节明确滚动 @v1；octo-cli 9 处、octo-server 14 处、openclaw-channel-octo 12 处全部 @v1；codex-channel-octo 无此类引用。
   current_scope: 更新原 OKF 计划与状态，未修改产品代码或 workflow，未发送评审回复。
