@@ -8,6 +8,8 @@ Read [ARCHITECTURE.md](ARCHITECTURE.md) and the
 
 - **Node.js 24.x** is required. Use `nvm use` with the checked-in `.nvmrc`.
 - Use the exact pnpm version declared in `package.json#packageManager`.
+- Install ripgrep (`rg`) for the naming check: `brew install ripgrep` on macOS or
+  `sudo apt-get install ripgrep` on Ubuntu. CI installs this prerequisite explicitly.
 - Install and authenticate a Provider CLI only for explicitly requested live runs.
   Automated tests use fake Providers and do not require real models.
 

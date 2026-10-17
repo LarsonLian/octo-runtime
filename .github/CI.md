@@ -11,7 +11,8 @@ PRs, pushes to `main`, manual dispatches and validated release calls. It has no 
 filter that could leave its required check waiting indefinitely.
 
 Both Ubuntu and macOS use **Node.js 24.x**, read from `.nvmrc`, and the pnpm version
-declared in `package.json#packageManager`. Each runner executes:
+declared in `package.json#packageManager`. CI explicitly installs ripgrep for the
+naming check rather than relying on the runner image. Each runner executes:
 
 1. `pnpm install --frozen-lockfile`.
 2. `pnpm lint`, `pnpm lint:names` and `pnpm format:check`.

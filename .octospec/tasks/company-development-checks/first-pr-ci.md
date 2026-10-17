@@ -22,6 +22,8 @@ timestamp: 2026-10-17T00:00:00Z
 
 本地验证已通过：冻结安装及全工作区构建；ESLint、命名、格式、根 TypeScript 检查；WebUI 35 项通过；Node 1083 项中 1074 项通过、9 项条件跳过、0 项失败；单包打包及空缓存离线安装、公开 API、Extra 加载和卸载保留 Home 验证通过。实际锁定 happy-dom 20.14.6、brace-expansion 5.0.12。远端结果以当前 PR 最新提交的 Checks 为准。
 
+28e018e 的远端 Dependency Review 已通过，依赖图 compare 未发现漏洞；两个平台均通过冻结安装和 ESLint。随后命名检查报 spawnSync rg ENOENT，确认 runner 缺少脚本依赖的 ripgrep。在 CI 中用平台包管理器显式安装，并在英文协作说明声明本地前置依赖；保留现有命名扫描规则。
+
 ## 自动评审
 
 参考 octo-server 的 CODEOWNERS 原生机制，本仓对所有路径配置三位指定用户，不增加自动请求评审的工作流。三位均已核验具备仓库写权限，并在 PR #1 请求成功。GitHub 按目标分支的 CODEOWNERS 自动请求，因此首个 PR 手动请求；文件经评审合入 main 后，后续非草稿 PR 或草稿转为可评审时自动请求。作者本人不作为自己的评审人。请求三人不等于要求三票通过，main 仍要求至少一位批准；未改为三位全部批准。

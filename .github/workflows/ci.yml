@@ -39,6 +39,18 @@ jobs:
           node-version-file: .nvmrc
       - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
         # Read the pnpm version from package.json's packageManager field.
+      - name: Install naming-check prerequisite
+        shell: bash
+        run: |
+          if ! command -v rg >/dev/null 2>&1; then
+            if [ "$RUNNER_OS" = "macOS" ]; then
+              brew install ripgrep
+            else
+              sudo apt-get update
+              sudo apt-get install --yes ripgrep
+            fi
+          fi
+          rg --version
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Lint
