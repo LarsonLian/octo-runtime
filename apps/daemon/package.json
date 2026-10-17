@@ -22,7 +22,7 @@
   },
   "scripts": {
     "start": "node dist/launcher.js",
-    "build": "tsc -p tsconfig.json && chmod +x dist/launcher.js"
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/launcher.js', 0o755)\""
   },
   "dependencies": {
     "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",

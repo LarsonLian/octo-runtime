@@ -10,7 +10,7 @@ The `CI` workflow runs for every PR targeting `main`, including draft and docume
 PRs, pushes to `main`, manual dispatches and validated release calls. It has no path
 filter that could leave its required check waiting indefinitely.
 
-Both Ubuntu and macOS use **Node.js 24.x**, read from `.nvmrc`, and the pnpm version
+Ubuntu, macOS, and Windows use **Node.js 24.x**, read from `.nvmrc`, and the pnpm version
 declared in `package.json#packageManager`. CI explicitly installs ripgrep for the
 naming check rather than relying on the runner image. Each runner executes:
 
@@ -23,8 +23,9 @@ naming check rather than relying on the runner image. Each runner executes:
 
 The complete test entry point includes the existing local debugging WebUI plugin
 tests. No production UI or new browser end-to-end gate is introduced. Provider tests
-use fakes unless their existing live-test opt-in is explicitly enabled. Windows is
-not included in this runner matrix.
+use fakes unless their existing live-test opt-in is explicitly enabled. On Windows,
+the package verifier executes the installed `.cmd` daemon shim and terminates its full
+process tree before uninstalling the package.
 
 `CI Gate` is the stable required check. It runs after the entire matrix, including
 on failure, and rejects any aggregate result other than `success`. Branch protection
@@ -58,7 +59,7 @@ required before they can actually run. A missing, failed or cancelled `CI Gate` 
 merging; do not bypass protection to compensate for a failed bootstrap.
 
 Hosted results must be verified on the actual PR. Local checks do not establish that
-Linux/macOS hosted runners or organization reusable workflows have succeeded.
+Linux, macOS, Windows or organization reusable workflows have succeeded.
 
 ## Automatic Review Requests
 
@@ -82,7 +83,12 @@ tag，例如自动运行在 npm 上传前被取消或失败时进行诊断；创
 推送 tag 后，`Release Publish` 校验 tag 及其 `main` 祖先关系，在该提交上调用完整 CI 矩阵，
 把 `X.Y.Z` 写入生成包，发布已验证的归档到 npm，再用同一归档创建或修复 GitHub Release。
 失败后可通过手工 tag 输入选择 `recover` 重试。npm 已存在的不可变版本会先核对完整性，一致
-则跳过而不是覆盖。恢复旧版本时使用独立 dist-tag，不回退 npm 的 `latest`。
+则跳过而不是覆盖。新版本先使用版本专属 dist-tag 交付，GitHub Release 就绪后由包级
+promotion 协调器重新读取两端状态，把 npm 与 GitHub latest 收敛到已完整交付的最高稳定版。
+因此恢复当前或旧版本、不同 tag 并发完成以及 promotion 等待项被取代都不会回退 latest。
+`dry-run` 读取同一份 npm 与 GitHub 状态，并把本次已验证版本作为只读候选执行相同决策；它只
+输出拟执行的 promotion，不创建版本、dist-tag、Release 或资产。dry-run 使用独立的运行级
+并发组，不能替换等待中的正式 promotion。
 
 发布需要具备 package publish 权限的 `NPM_TOKEN`，job 同时获得生成 provenance 所需的 OIDC
 权限。普通 PR 检查不读取该 secret。所有内部 app 和 package 都是 private，永不独立发布；
@@ -93,7 +99,8 @@ tag，例如自动运行在 npm 上传前被取消或失败时进行诊断；创
 
 Release Drafter 继续在版本之间准备说明。tag 触发的发布工作流仅在 npm 发布成功后创建正式
 Release，并上传同一个已验证 tgz。如果 npm 已发布而 Release 创建失败，选择 `recover` 重跑
-会跳过一致的 npm 不可变版本并修复 Release；恢复旧版本不会把它标为 latest。
+会跳过一致的 npm 不可变版本并修复 Release；修复现有 Release 不主动清除 latest，最终状态由
+包级协调器统一复核。
 
 仓库使用 Apache-2.0，并保留第三方许可证通知。远端发布与 Release 创建仍需单独核验，参见
 [初始 CI 记录](../.octospec/journal/shared/2026-10-15-github-open-source-ci.md)。

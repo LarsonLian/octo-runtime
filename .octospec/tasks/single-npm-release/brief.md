@@ -29,7 +29,8 @@ workspace 清单。内部 workspace 全部 `private: true`，不进入 npm regis
 - **发布门禁：** npm 发布只消费同一次精确 tag 验证生成的 artifact。构建、静态检查、测试、
   离线安装、公开入口和真实全局命令验证任一失败都不得发布。
 - **重试行为：** npm 已存在同版本时不尝试覆盖不可变版本；工作流继续核对 registry 版本并
-  可补齐 GitHub Release。不同 tag 使用独立并发键，同 tag 不并发发布。
+  可补齐 GitHub Release。不同 tag 的不可变版本交付可以独立执行；共享 latest 由包级协调器
+  根据已完整交付的最高稳定版本收敛，同 tag 不并发发布。
 - **触发方式：** 稳定版 tag push 自动启动正式发布；手工入口统一位于 `Release Publish`，只能
   对已存在 tag 选择 dry-run 或同 tag 故障恢复，不能形成仅发布 npm 的第二条正式路径。普通
   PR、`main` push 和手工 CI 仍生成 `0.0.0` 测试包，不发布。
@@ -58,6 +59,6 @@ workspace 清单。内部 workspace 全部 `private: true`，不进入 npm regis
   commit 为 tag commit，且不带 dirty 标记。
 - tag 工作流拒绝格式错误、非 `main` 历史、源码模板不合规或构建证据不一致的发行。
 - npm 首次发布使用 public access 和 provenance；同版本重跑不覆盖 npm 版本，并能恢复或补齐
-  GitHub Release。
+  GitHub Release；并发发布无论完成顺序如何，npm 与 GitHub latest 都不回退。
 - 运行 `pnpm lint`、`pnpm lint:names`、`pnpm format:check`、`pnpm typecheck`、`pnpm test`、
   动态版本打包及离线发行验证；检查 OKF、workflow 和补丁格式。

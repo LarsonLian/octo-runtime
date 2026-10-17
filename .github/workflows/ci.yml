@@ -33,7 +33,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
@@ -50,6 +50,8 @@ jobs:
           if ! command -v rg >/dev/null 2>&1; then
             if [ "$RUNNER_OS" = "macOS" ]; then
               brew install ripgrep
+            elif [ "$RUNNER_OS" = "Windows" ]; then
+              choco install ripgrep --yes
             else
               sudo apt-get update
               sudo apt-get install --yes ripgrep
@@ -71,6 +73,7 @@ jobs:
         run: pnpm test:suites
       - name: Pack single distribution
         id: pack
+        shell: bash
         env:
           RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
@@ -84,6 +87,7 @@ jobs:
           fi
           echo "archive=dist/release/mininglamp-oss-octo-runtime-$VERSION.tgz" >> "$GITHUB_OUTPUT"
       - name: Verify offline installation and public API
+        shell: bash
         env:
           ARCHIVE: ${{ steps.pack.outputs.archive }}
         run: |

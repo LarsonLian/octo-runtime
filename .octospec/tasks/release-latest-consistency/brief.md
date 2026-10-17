@@ -97,6 +97,8 @@ Release。写入后必须重新读取两端状态；若期间出现更高完整�
 5. 修正 `single-npm-release` brief、`.github/CI.md`、`DEPLOYMENTS.md` 和实施 journal 中关于不同
    tag 并发、恢复与 latest 的描述，明确独立构建不等于共享状态独立写入。
 6. 运行双轴 code review，确认实现同时满足仓库并发保护标准与本计划状态合同。
+7. Windows 发行验收继续执行全局 `.cmd` daemon shim，但停止时必须回收整个进程树并确认包装
+   进程退出，不能只终止可能留下子 daemon 的 shell。
 
 # 验收矩阵
 
@@ -112,6 +114,9 @@ Release。写入后必须重新读取两端状态；若期间出现更高完整�
 | `1.1.0` 与 `1.2.0` 并发，新版先完成 | 最终 `latest=1.2.0`         | 最终 `v1.2.0` 为 latest  |
 | promotion 等待项被更新版本取代      | 存活运行收敛最高完整版本    | 存活运行收敛对应 Release |
 | 任一 dry-run                        | 版本、dist-tags 零变化      | Release 与资产零变化     |
+
+Windows 验收还必须证明真实 `octo-runtime-daemon.cmd` 启动后使用 `taskkill /T /F` 或等价机制回收
+整棵进程树，后续卸载不被残留 daemon、端口或文件句柄阻塞。
 
 除状态 fixture 外，继续运行 workflow actionlint/YAML 检查、`pnpm format:check`、相关 Node 测试、
 动态版本打包和离线全局安装验证。不得用真实 tag、真实 npm 发布或真实 GitHub Release 变更完成

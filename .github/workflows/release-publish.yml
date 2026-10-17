@@ -61,20 +61,52 @@ jobs:
           test -f "$ARCHIVE"
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$TAG" "$ARCHIVE" --clobber --repo "$GITHUB_REPOSITORY"
-            if [ "${{ needs.publish-npm.outputs.dist_tag }}" = latest ]; then
-              gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
-            else
-              gh release edit "$TAG" --draft=false --latest=false --repo "$GITHUB_REPOSITORY"
-            fi
+            gh release edit "$TAG" --draft=false --repo "$GITHUB_REPOSITORY"
           else
-            latest_flag=--latest=false
-            if [ "${{ needs.publish-npm.outputs.dist_tag }}" = latest ]; then
-              latest_flag=--latest
-            fi
             gh release create "$TAG" "$ARCHIVE" \
               --verify-tag \
               --generate-notes \
               --title "$TAG" \
-              "$latest_flag" \
+              --latest=false \
               --repo "$GITHUB_REPOSITORY"
+          fi
+
+  promote-latest:
+    if: >-
+      always() &&
+      needs.publish-npm.result == 'success' &&
+      (needs.publish-release.result == 'success' ||
+      (github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run'))
+    needs: [publish-npm, publish-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: >-
+        ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run' &&
+        format('octo-runtime-latest-dry-run-{0}', github.run_id) ||
+        'octo-runtime-latest-promotion' }}
+      cancel-in-progress: false
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.publish-npm.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - name: Reconcile npm and GitHub latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run' }}
+          VERSION: ${{ needs.publish-npm.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$DRY_RUN" = true ]; then
+            node scripts/reconcile-release-latest.mjs --dry-run --candidate "$VERSION"
+          else
+            node scripts/reconcile-release-latest.mjs
           fi

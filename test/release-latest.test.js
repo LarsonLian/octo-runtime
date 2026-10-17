@@ -1,0 +1,228 @@
+import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
+import { resolve } from "node:path";
+import test from "node:test";
+import {
+  classifyVersion,
+  compareStableVersions,
+  createCommandClient,
+  reconcileLatest,
+  selectHighestCompleteVersion
+} from "../scripts/reconcile-release-latest.mjs";
+
+const root = resolve(import.meta.dirname, "..");
+
+function fixture(initial = {}) {
+  const state = {
+    completeVersions: [...(initial.completeVersions ?? [])],
+    npmLatest: initial.npmLatest ?? null,
+    githubLatest: initial.githubLatest ?? null
+  };
+  const actions = [];
+  return {
+    state,
+    actions,
+    client: {
+      async readState() {
+        return structuredClone(state);
+      },
+      async setNpmLatest(version) {
+        actions.push(["npm", version]);
+        state.npmLatest = version;
+      },
+      async setGitHubLatest(version) {
+        actions.push(["github", version]);
+        state.githubLatest = version;
+      }
+    }
+  };
+}
+
+test("稳定版本关系显式区分 first、newer、equal、older", () => {
+  assert.equal(classifyVersion("1.0.0", null), "first");
+  assert.equal(classifyVersion("1.2.0", "1.1.9"), "newer");
+  assert.equal(classifyVersion("1.2.0", "1.2.0"), "equal");
+  assert.equal(classifyVersion("1.1.9", "1.2.0"), "older");
+  assert.equal(compareStableVersions("100000000000000000000.0.0", "99999999999999999999.0.0"), 1);
+  assert.throws(() => classifyVersion("1.2.0-beta.1", "1.1.0"), /稳定 SemVer/);
+});
+
+test("首次发布、升级和当前 latest 恢复均收敛且相等恢复零写入", async () => {
+  const first = fixture({ completeVersions: ["1.0.0"] });
+  assert.deepEqual(await reconcileLatest(first.client), {
+    target: "1.0.0",
+    relation: "first",
+    attempts: 1
+  });
+  assert.deepEqual(first.actions, [
+    ["npm", "1.0.0"],
+    ["github", "1.0.0"]
+  ]);
+
+  first.state.completeVersions.push("1.1.0");
+  assert.equal((await reconcileLatest(first.client)).relation, "newer");
+  assert.equal(first.state.npmLatest, "1.1.0");
+  assert.equal(first.state.githubLatest, "1.1.0");
+
+  first.actions.length = 0;
+  assert.equal((await reconcileLatest(first.client)).relation, "equal");
+  assert.deepEqual(first.actions, []);
+});
+
+test("历史版本补发或恢复不改变共享 latest", async () => {
+  const release = fixture({
+    completeVersions: ["1.0.0", "1.2.0"],
+    npmLatest: "1.2.0",
+    githubLatest: "1.2.0"
+  });
+  const result = await reconcileLatest(release.client);
+  assert.equal(result.target, "1.2.0");
+  assert.deepEqual(release.actions, []);
+});
+
+test("dry-run 使用同一决策并保持 npm 与 GitHub 零写入", async () => {
+  const release = fixture({
+    completeVersions: ["1.0.0"],
+    npmLatest: "1.0.0",
+    githubLatest: "1.0.0"
+  });
+  assert.deepEqual(
+    await reconcileLatest(release.client, {
+      dryRun: true,
+      candidate: "1.2.0"
+    }),
+    {
+      target: "1.2.0",
+      relation: "newer",
+      attempts: 1,
+      actions: [
+        ["npm", "1.2.0"],
+        ["github", "1.2.0"]
+      ]
+    }
+  );
+  assert.deepEqual(release.actions, []);
+  assert.equal(release.state.npmLatest, "1.0.0");
+  assert.equal(release.state.githubLatest, "1.0.0");
+});
+
+for (const order of [
+  ["1.1.0", "1.2.0"],
+  ["1.2.0", "1.1.0"]
+]) {
+  test(`两个版本按 ${order.join(" -> ")} 完成交付后 latest 不回退`, async () => {
+    const release = fixture();
+    for (const version of order) {
+      release.state.completeVersions.push(version);
+      await reconcileLatest(release.client);
+    }
+    assert.equal(release.state.npmLatest, "1.2.0");
+    assert.equal(release.state.githubLatest, "1.2.0");
+  });
+}
+
+test("写入期间出现更高完整版本时重新读取并在有界循环内修复", async () => {
+  const release = fixture({ completeVersions: ["1.1.0"] });
+  let injected = false;
+  const client = {
+    ...release.client,
+    async setGitHubLatest(version) {
+      await release.client.setGitHubLatest(version);
+      if (!injected) {
+        injected = true;
+        release.state.completeVersions.push("1.2.0");
+      }
+    }
+  };
+  const result = await reconcileLatest(client);
+  assert.equal(result.target, "1.2.0");
+  assert.equal(result.attempts, 2);
+  assert.equal(release.state.npmLatest, "1.2.0");
+  assert.equal(release.state.githubLatest, "1.2.0");
+});
+
+test("最高完整版本只接受稳定 SemVer 并拒绝空集合", () => {
+  assert.equal(selectHighestCompleteVersion(["1.9.0", "1.10.0", "1.10.0"]), "1.10.0");
+  assert.throws(() => selectHighestCompleteVersion([]), /没有同时完成/);
+});
+
+test("命令边界 fixture 只把最高完整版本提升为 npm 与 GitHub latest", async () => {
+  const calls = [];
+  let npmLatest = "1.0.0";
+  let githubLatest = "1.0.0";
+  const runCommand = async (command, arguments_) => {
+    calls.push([command, ...arguments_]);
+    if (command === "npm" && arguments_[0] === "view" && arguments_[2] === "versions") {
+      return JSON.stringify(["0.0.0", "1.0.0", "1.2.0", "1.3.0"]);
+    }
+    if (command === "npm" && arguments_[0] === "view" && arguments_[2] === "version") {
+      return JSON.stringify(npmLatest);
+    }
+    if (command === "npm" && arguments_[0] === "dist-tag") {
+      npmLatest = arguments_[2].split("@").at(-1);
+      return "";
+    }
+    if (command === "gh" && arguments_[1] === "list") {
+      return JSON.stringify(
+        ["1.0.0", "1.2.0", "1.3.0"].map((version) => ({
+          tagName: `v${version}`,
+          isDraft: false,
+          isPrerelease: false,
+          isLatest: version === githubLatest
+        }))
+      );
+    }
+    if (command === "gh" && arguments_[1] === "view") {
+      const version = arguments_[2].slice(1);
+      return JSON.stringify({
+        assets: version === "1.3.0" ? [] : [{ name: `mininglamp-oss-octo-runtime-${version}.tgz` }]
+      });
+    }
+    if (command === "gh" && arguments_[1] === "edit") {
+      githubLatest = arguments_[2].slice(1);
+      return "";
+    }
+    throw new Error(`未处理的 fixture 命令：${command} ${arguments_.join(" ")}`);
+  };
+  const client = createCommandClient({
+    packageName: "@mininglamp-oss/octo-runtime",
+    repository: "Mininglamp-OSS/octo-runtime",
+    runCommand
+  });
+  assert.equal((await reconcileLatest(client)).target, "1.2.0");
+  assert.equal(npmLatest, "1.2.0");
+  assert.equal(githubLatest, "1.2.0");
+  assert.ok(calls.some((call) => call.join(" ").includes("dist-tag add")));
+  assert.ok(calls.some((call) => call.join(" ").includes("release edit v1.2.0 --latest")));
+  assert.ok(!calls.some((call) => call.join(" ").includes("release edit v1.3.0 --latest")));
+});
+
+test("workflow 将不可变发布、Release 修复和共享 promotion 分离", async () => {
+  const npmWorkflow = await readFile(resolve(root, ".github/workflows/npm-publish.yml"), "utf8");
+  const releaseWorkflow = await readFile(
+    resolve(root, ".github/workflows/release-publish.yml"),
+    "utf8"
+  );
+  assert.match(npmWorkflow, /--tag "release-\$VERSION"/);
+  assert.doesNotMatch(npmWorkflow, /npm publish[^\n]+--tag latest/);
+  assert.match(releaseWorkflow, /'octo-runtime-latest-promotion'/);
+  assert.match(releaseWorkflow, /octo-runtime-latest-dry-run-/);
+  assert.match(releaseWorkflow, /node scripts\/reconcile-release-latest\.mjs/);
+  assert.match(releaseWorkflow, /--dry-run --candidate "\$VERSION"/);
+  assert.doesNotMatch(releaseWorkflow, /release edit "\$TAG"[^\n]+--latest=false/);
+});
+
+test("Windows 发行验收通过 taskkill 回收全局 daemon shim 的进程树", async () => {
+  const verifier = await readFile(resolve(root, "scripts/verify-release.mjs"), "utf8");
+  const workflow = await readFile(resolve(root, ".github/workflows/ci.yml"), "utf8");
+  const cliManifest = JSON.parse(await readFile(resolve(root, "apps/cli/package.json"), "utf8"));
+  const daemonManifest = JSON.parse(
+    await readFile(resolve(root, "apps/daemon/package.json"), "utf8")
+  );
+  assert.match(verifier, /execute\("taskkill", \["\/PID", String\(daemon\.pid\), "\/T", "\/F"\]/);
+  assert.match(verifier, /await stopDaemon\(\)/);
+  assert.match(workflow, /os: \[ubuntu-latest, macos-latest, windows-latest\]/);
+  assert.match(workflow, /node scripts\/verify-release\.mjs/);
+  assert.doesNotMatch(cliManifest.scripts.build, /\bchmod\b/);
+  assert.doesNotMatch(daemonManifest.scripts.build, /\bchmod\b/);
+});

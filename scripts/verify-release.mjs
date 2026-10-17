@@ -29,6 +29,28 @@ const npm = join(
 );
 let daemon;
 let daemonExit;
+async function stopDaemon() {
+  if (!daemon || daemon.exitCode !== null || daemon.signalCode !== null) return;
+  if (process.platform === "win32") {
+    try {
+      await execute("taskkill", ["/PID", String(daemon.pid), "/T", "/F"], {
+        windowsHide: true,
+        timeout: 10_000
+      });
+    } catch (error) {
+      if (daemon.exitCode === null && daemon.signalCode === null) throw error;
+    }
+  } else {
+    daemon.kill("SIGTERM");
+    const timer = setTimeout(() => daemon.kill("SIGKILL"), 10_000);
+    await daemonExit;
+    clearTimeout(timer);
+  }
+  await daemonExit;
+  assert.ok(daemon.exitCode !== null || daemon.signalCode !== null, "daemon 包装进程必须退出");
+  daemon = undefined;
+  daemonExit = undefined;
+}
 try {
   await execute(
     process.execPath,
@@ -380,10 +402,7 @@ try {
   const adapters = JSON.parse((await run(["adapter", "list"])).stdout);
   assert.ok(adapters.some((adapter) => adapter.type === "codex"));
   assert.ok(adapters.some((adapter) => adapter.type === "claude-code"));
-  daemon.kill("SIGTERM");
-  const stopTimer = setTimeout(() => daemon.kill("SIGKILL"), 10_000);
-  await daemonExit;
-  clearTimeout(stopTimer);
+  await stopDaemon();
   await execute(
     process.execPath,
     [
@@ -423,11 +442,6 @@ try {
     })
   );
 } finally {
-  if (daemon && daemon.exitCode === null && daemon.signalCode === null) {
-    daemon.kill("SIGTERM");
-    const timer = setTimeout(() => daemon.kill("SIGKILL"), 10_000);
-    await daemonExit;
-    clearTimeout(timer);
-  }
+  await stopDaemon();
   await rm(directory, { recursive: true, force: true });
 }
