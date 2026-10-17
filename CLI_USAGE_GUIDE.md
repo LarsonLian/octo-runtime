@@ -148,7 +148,7 @@ octo-runtime extraset channel-gateway <<'JSON'
               "payload": {
                 "entries": [
                   {
-                    "text": "我是明略科技的Octo助理"
+                    "text": "我是明略科技的OctoClaw助理"
                   }
                 ]
               }
@@ -192,7 +192,7 @@ octo-runtime extraset channel-gateway <<'JSON'
               "payload": {
                 "entries": [
                   {
-                    "text": "我是明略科技的Octo助理"
+                    "text": "我是明略科技的OctoClaw助理"
                   }
                 ]
               }
@@ -244,7 +244,7 @@ OpenClaw 自动发现由 CLI 启动编排负责，默认读取 `~/.openclaw/open
 
 使用 `octo-runtime extraset <name>`，从 stdin 提交完整的 `{ module, enabled?, config }` JSON 对象。Octo IM 使用 `channel-gateway` 插件，其配置为 `config.bots` 数组，可包含多个 Bot；插件级和 Bot 级的 `enabled` 均默认 `true`。
 
-三个内置 Extra 均采用两阶段入口，CLI 传空函数依赖。新配置示例显式包含固定人设“我是明略科技的Octo助理”：Gateway/WeCom 在 `config.bots[i].context`，WebUI 在 `config.context`，使用 octo.control/instructions 的 text-only entries 列表；省略或空列表不自动填充，旧 source 字段不再接受。企业微信和 WebUI 的完整 JSON 分别见[WeCom 配置](packages/octo-runtime-extra-channel-wecom/README.md)与[WebUI 配置](packages/octo-runtime-extra-webui/README.md)。业务动态函数不能通过 CLI JSON 传递；SDK HostApp 接线本轮暂缓。
+三个内置 Extra 均采用两阶段入口，CLI 传空函数依赖。上面的 Octo IM 示例在每个 Bot 的 `context` 中显式配置默认人设“我是明略科技的OctoClaw助理”，使用 `octo.context-envelope/v3` 的 `octo.control/instructions` 和仅含 `text` 的 entries 列表。Gateway/WeCom 的静态 Context 位于 `config.bots[i].context`，WebUI 位于 `config.context`；省略或空列表不自动填充，旧 source 字段不再接受。企业微信和 WebUI 的完整 JSON 分别见[WeCom 配置](packages/octo-runtime-extra-channel-wecom/README.md)与[WebUI 配置](packages/octo-runtime-extra-webui/README.md)。业务动态函数不能通过 CLI JSON 传递；需要逐轮读取宿主数据时，使用 [SDK 的函数装配入口](SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)。
 
 CLI 将完整对象保存到 `<home>/extras/<name>/config.json`，POSIX 文件权限为 `0600`，不回显配置或凭据。**每次保存整体替换同名插件配置，不按 `bot_id` 合并。** 增删或修改 Bot 时，提交需要保留的完整 `config.bots` 数组。不同名称的 Extra 配置互不覆盖。
 
