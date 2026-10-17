@@ -1,4 +1,4 @@
-status: implemented-local-validation-passed-windows-validation-pending
+status: second-review-remediation-pending
 decisions:
   R01: 删除 getGroupInfo 实现及公开导出；已实施并提交。
   R02a: 删除 getUploadPresign、uploadFileToPresignedUrl；已实施并提交。
@@ -130,3 +130,17 @@ windows_validation:
   implementation: Windows 已有执行和 child 关闭实现，不能表述为未实现。
   status: 本轮未真机验证，用户计划后续补测；后代回收疑点待核实。
   requirement: Windows 同等生命周期要求，发现问题必须修复；补 Windows CI，不能以不保证支持豁免。
+
+second_review:
+  head: 55e977f249b6b0fae85d43c79748db1ff35bb719
+  R06b:
+    author: Jerry-Xin
+    url: https://github.com/Mininglamp-OSS/octo-runtime/pull/1#pullrequestreview-5556594844
+    status: 待修复；R06 总项部分完成。
+    evidence: reviewer 协议 fixture 复现，本轮仅独立核对 Codex close 源码。
+  R07:
+    author: yujiawei
+    url: https://github.com/Mininglamp-OSS/octo-runtime/pull/1#pullrequestreview-5556602456
+    status: 待修复；新问题，与删除 API 无关。
+    evidence: 本轮确认 11 处 @v1 及部分写权限；候选 SHA 已解析，内容审查待完成。
+  current_scope: 更新原 OKF 计划与状态，未修改产品代码或 workflow，未发送评审回复。
