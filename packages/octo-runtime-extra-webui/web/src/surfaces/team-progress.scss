@@ -1,0 +1,60 @@
+.team-progress {
+  margin: 10px 0 18px;
+  color: var(--color-text-muted);
+  font-size: calc(13px * var(--ui-font-scale, 1));
+  line-height: 1.6;
+}
+.team-progress__current {
+  margin: 0 0 6px;
+  color: var(--color-text);
+  font-weight: 500;
+}
+.team-progress summary {
+  cursor: pointer;
+  width: fit-content;
+  color: var(--color-text-muted);
+  font-size: calc(12px * var(--ui-font-scale, 1));
+  user-select: none;
+}
+.team-progress summary:hover {
+  color: var(--color-text);
+}
+.team-progress ol {
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.team-progress li + li {
+  margin-top: 12px;
+}
+.team-progress__item {
+  padding-left: 2px;
+}
+.team-progress__handoff {
+  margin: 0 0 4px;
+  font-size: calc(11px * var(--ui-font-scale, 1));
+  color: var(--color-text-tertiary, var(--color-text-muted));
+}
+.team-progress__member-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.team-progress__member-label {
+  color: var(--color-text);
+  font-weight: 500;
+}
+.team-progress__item.is-waiting .team-progress__member-label {
+  color: var(--color-warning, #d97706);
+}
+.team-progress__item.is-failed .team-progress__member-label {
+  color: var(--color-danger, #dc2626);
+}
+.team-progress__summary {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--color-text-muted);
+  font-size: calc(12px * var(--ui-font-scale, 1));
+  line-height: 1.5;
+}

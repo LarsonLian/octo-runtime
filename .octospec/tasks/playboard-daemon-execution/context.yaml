@@ -1,0 +1,33 @@
+rules:
+  - runtime-architecture
+  - runtime-local-execution
+  - runtime-lifecycle
+  - runtime-openclaw
+  - runtime-engineering
+  - runtime-invoke-input
+  - commit
+sources:
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/openclaw.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/collaboration.md
+  - apps/cli/src/main.ts
+  - apps/cli/src/playboard.ts
+  - apps/daemon/src/index.ts
+  - apps/daemon/src/openclaw.ts
+  - packages/octo-runtime-adapter-host/src/process.ts
+  - packages/octo-runtime-adapter-host/src/rpc.ts
+  - packages/octo-runtime-adapter-openclaw/src/index.ts
+  - packages/octo-runtime-adapter-openclaw/src/local-gateway.ts
+  - packages/octo-runtime-daemon/src/server.ts
+  - packages/octo-runtime-daemon/src/runtime/run-stream.ts
+  - packages/octo-runtime-daemon/src/invocation-manifest.ts
+  - apps/daemon/src/runtime-options.ts
+  - packages/octo-runtime-core/src/invoke-input.ts
+  - packages/octo-runtime-protocol/src/run-protocol.ts
+  - test/playboard.test.js

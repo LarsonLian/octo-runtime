@@ -1,0 +1,62 @@
+status: planned
+baseline:
+  branch: feat/open-source-github
+  commit: d7e9dcd
+  note: 工作树已有其他任务改动，本轮仅增加计划和评估，增量更新目录与日志。
+rules:
+  - runtime-architecture
+  - runtime-context-input
+  - runtime-context-extensions
+  - runtime-channel
+  - runtime-extras
+  - runtime-invoke-input
+  - runtime-engineering
+  - commit
+sources:
+  - ../AGENTS.md
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/context-extensions.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/_brief.template.md
+  - .claude/commands/octospec-plan.md
+  - .octospec/tasks/unify-execution-and-simplify-instructions/brief.md
+  - .octospec/tasks/unify-execution-and-simplify-instructions/acceptance.md
+  - .octospec/tasks/unify-execution-and-simplify-instructions/context.yaml
+  - SDK_CHANNEL_GATEWAY_GUIDE.md
+  - packages/octo-runtime-extra-channel-gateway/README.md
+  - packages/octo-runtime-extra-channel-wecom/README.md
+  - packages/octo-runtime-extra-channel-gateway/src/transport/contexts.ts
+  - packages/octo-runtime-extra-channel-wecom/src/transport/channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts
+  - packages/octo-runtime-extra-channel-wecom/src/execution/dispatcher.ts
+  - packages/octo-runtime-protocol/schema/protocol.schema.json
+  - packages/octo-runtime-protocol/src/context.ts
+  - packages/octo-runtime-protocol/src/context-configuration.ts
+  - packages/octo-runtime-protocol/src/context-catalog.ts
+  - packages/octo-runtime-protocol/src/context-hash.ts
+  - packages/octo-runtime-protocol/src/model-context.ts
+  - packages/octo-runtime-adapter-host/src/model-input.ts
+  - packages/octo-runtime-core/src/context.ts
+  - packages/octo-runtime-core/src/invoke-input.ts
+  - /Users/lvsijia/.codex/skills/technical-writing-zh/SKILL.md
+decisions:
+  - 默认新建 IM 配置和完整示例逐 Bot 显式包含我是明略科技的Octo助理，不在通用执行层补人格。
+  - 正式类型为 octo.control/instructions，entries 保持列表，仅含 text。
+  - 用户确认本次支持破坏性更新；source 移除无旧结构兼容或自动迁移，生产者与当前示例同步，历史快照不改写。
+  - 动态 Context 与两阶段 Extra 初始化独立记录于 extra-initializer-context-dependencies 计划。
+  - 执行准备错误引用已有修复计划，不另建实现路线。
+  - 其他 Context 简化项仅评估，不直接扩大删除范围。
+  - 本轮仅文档，未改产品代码、运行配置或进程状态。
+validation:
+  - command: uv run --with pyyaml python .octospec/scripts/lint.py
+    result: 通过，170 个 OKF 单元、20 条规则、1377 个本地文件链接。
+  - command: git diff --check
+    result: 通过。

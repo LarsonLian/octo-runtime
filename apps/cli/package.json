@@ -1,0 +1,23 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-cli",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "octo-runtime": "dist/index.js"
+  },
+  "scripts": {
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.json && node scripts/copy-default-adapters.mjs && node ../../scripts/write-build-info.mjs && chmod +x dist/index.js"
+  },
+  "types": "./dist/index.d.ts",
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-openclaw": "workspace:*",
+    "@mininglamp-oss/octo-runtime-cross-service": "workspace:*",
+    "@mininglamp-oss/octo-runtime-daemon-app": "workspace:*",
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-runtime-core": "workspace:*"
+  }
+}

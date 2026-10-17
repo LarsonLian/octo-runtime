@@ -1,0 +1,230 @@
+// 基础组件层（components/ 目录的 TSX 引用）。
+// 视觉样式主要来自 Kimi 的 .ui-* 设计系统（kimi/_components.scss）；
+// 这里只放组件在 Kimi 体系之外需要的少量布局/变体类。
+// 约束：颜色/圆角/阴影一律走 var(--…) token，绝不硬编码；布局尺寸可用 px。
+
+// Button：icon 档方形按钮（沿用 sm 高度，清零内边距并等宽对齐）。
+.ui-dialog__overlay:has(.conversation-rename-dialog) {
+  background: color-mix(in srgb, var(--color-scrim) 40%, transparent);
+  -webkit-app-region: no-drag;
+}
+
+.conversation-rename-dialog {
+  box-sizing: border-box;
+  width: min(420px, 100%);
+
+  .ui-dialog__title {
+    margin: 0;
+    font-size: var(--text-20);
+    font-weight: 600;
+  }
+
+  .ui-dialog__desc {
+    margin: 6px 0 0;
+  }
+}
+
+.ui-button--square {
+  width: 30px;
+  padding-inline: 0;
+}
+
+// IconButton：outline 变体补一圈可见描边（ghost 常态描边透明）。
+.ui-icon-button--outline {
+  border-color: var(--color-line-strong);
+}
+
+// Spinner：驱动 Kimi 细环持续旋转（弧段形状仍由 CSS dasharray 决定）。
+@keyframes ui-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.ui-spin {
+  animation: ui-spin 0.7s linear infinite;
+}
+
+// SegmentedControl：fullWidth 让药丸铺满、各分段等分。
+//
+// **这里是 .ui-seg--full / .ui-seg__item--full 的唯一定义处，别再复制一份。**
+// 这组类由两个组件共同产出 —— components/SegmentedControl.tsx 与
+// chrome/KimiControls.tsx 的 UiSeg（SettingsView 在用）。因为分属两个目录层，
+// 历史上 _components.scss 与 _chrome.scss 各写了一份完全相同的规则，靠导入顺序
+// 后者生效；改其中一处会被另一处覆盖回去（box-sizing 那次就踩了）。类名相同，
+// 一份就够，统一归这层（index.scss 里 _components.scss = components/ 的样式层）。
+//
+// box-sizing 必须显式写死：本项目**没有**全局 `* { box-sizing: border-box }`
+// （全仓只有几个具体元素单独设过），.ui-seg 默认就是 content-box，于是
+// `width: 100%` 只等于父容器的内容盒宽度，自己的 padding(2px×2) + border
+// (--p-hairline .5px×2) 共 5px 全部溢出到**右边**。
+// 表现：侧栏「工作台 / 协作空间」胶囊左边留 --sb-inset（.shell-side__modes 的
+// padding-left），右边被溢出吃掉只剩 1~2px，与分隔线几乎贴上。
+.ui-seg--full {
+  box-sizing: border-box;
+  display: flex;
+  width: 100%;
+}
+.ui-seg__item--full {
+  flex: 1;
+  justify-content: center;
+}
+
+// SegmentedControl 物理质感强化（作用于 DS 基类 .ui-seg——侧栏模式切换 +
+// 账号弹层的外观/字号切换，保持「同一套控件只有一种长相」）：
+//   1) 底槽：在 DS 的 sunken 底色 + hairline 描边上，再叠一层 inset 阴影，
+//      铣出向内下沉的浅凹槽，摆脱扁平贴纸感（token 按明暗分别调，透出毛玻璃不发脏）；
+//   2) 活动片（.is-on）：顶部 1px 晶体高光 + 双层下投影，做出浮在槽里的悬浮键帽；
+//   3) 切换：用 DS 的苹果阻尼曲线 --ease-out 平滑过渡背景/阴影/文字，去掉生硬跳变。
+// 全部走 var(--seg-*) token（定义在 _base.scss，含 dark 覆盖）。
+.ui-seg {
+  box-shadow: var(--seg-trough-shadow);
+}
+.ui-seg__item {
+  transition:
+    color var(--duration-fast) var(--ease-out),
+    background var(--duration-base) var(--ease-out),
+    box-shadow var(--duration-base) var(--ease-out);
+}
+.ui-seg__item.is-on {
+  background: var(--seg-knob-bg);
+  box-shadow: var(--seg-knob-shadow);
+}
+
+// StatusDot：颜色 + 文字双信号；6px 圆点随 tone 取语义色。
+.status-dot {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+
+  &__dot {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: var(--radius-full);
+  }
+
+  &__label {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: var(--text-xs);
+  }
+
+  &--online {
+    .status-dot__dot { background: var(--color-success); }
+    .status-dot__label { color: var(--color-success); }
+  }
+  &--degraded {
+    .status-dot__dot { background: var(--color-warning); }
+    .status-dot__label { color: var(--color-warning); }
+  }
+  &--offline {
+    .status-dot__dot { background: var(--color-danger); }
+    .status-dot__label { color: var(--color-danger); }
+  }
+  &--accent {
+    .status-dot__dot { background: var(--color-accent); }
+    .status-dot__label { color: var(--color-accent); }
+  }
+  &--muted {
+    .status-dot__dot { background: var(--color-text-faint); }
+    .status-dot__label { color: var(--color-text-muted); }
+  }
+}
+
+// Input：标签行、输入包裹、尾部插槽定位与错误换行。
+.ui-field__label--row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+.ui-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.ui-input--has-trailing {
+  padding-right: 32px;
+}
+.ui-input__trailing {
+  position: absolute;
+  right: 4px;
+  display: flex;
+  align-items: center;
+}
+.ui-field__error--break {
+  word-break: break-all;
+}
+
+// Toast：右下角浮层宿主（不拦截指针）+ 卡片按钮左对齐并恢复指针。
+.toast-host {
+  position: fixed;
+  right: 12px;
+  bottom: 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  pointer-events: none;
+}
+.toast-item {
+  pointer-events: auto;
+  text-align: left;
+}
+
+// Popover：portal 容器固定定位；浮层框裁剪内容并去焦点描边（表面样式由 ui-menu 提供）。
+.popover-portal {
+  position: fixed;
+}
+.popover-frame {
+  overflow: hidden;
+  outline: none;
+}
+
+// ContextMenu：全屏透明捕获层。
+.context-menu-overlay {
+  position: fixed;
+  inset: 0;
+}
+
+.ui-tip__bubble.conversation-tooltip {
+  display: block;
+  width: 300px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  padding: var(--space-3);
+  border: var(--p-hairline) solid var(--color-line);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+  overflow: auto;
+  pointer-events: auto;
+}
+
+.conversation-tooltip__content {
+  strong {
+    display: block;
+    font-size: var(--text-sm);
+    font-weight: var(--weight-semibold);
+    line-height: var(--leading-normal);
+    overflow-wrap: anywhere;
+  }
+
+  dl {
+    display: grid;
+    gap: var(--space-2);
+    margin: var(--space-3) 0 0;
+  }
+
+  dl > div {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-3);
+  }
+
+  dt { color: var(--color-text-muted); }
+  dd { margin: 0; text-align: right; }
+}

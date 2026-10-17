@@ -1,0 +1,395 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "urn:mininglamp-oss:octo-runtime:extra:channel-gateway:config",
+  "title": "Octo IM Extra 完整配置声明",
+  "description": "描述 module、enabled 和 config 的完整 JSON 声明，供接入方参考、生成类型或自行构造校验器。加载入口仍接收 JsonObject，不自动执行本 schema、不转换配置、不填充 default。default 记录插件现有的省略行为，不代表宿主必须采用该业务选择。",
+  "$comment": "声明文件最多 1 MiB，POSIX 权限须为 0600；单 Bot JSON 最多 256 KiB。Bot 按规范化 api_url 与 bot_id 组合判重。路径可访问性、凭据、身份和 Space 授权、重试起点不大于上限等关系仍需运行时检查。Context 内部对象遵循 octo.context-envelope/v3，具体协议约束由现有运行时校验，本文件不重复展开。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["module", "config"],
+  "properties": {
+    "module": {
+      "type": "string",
+      "const": "@mininglamp-oss/octo-runtime-extra-channel-gateway",
+      "description": "必填。Octo IM Extra 的固定包入口；宿主须预先安装并确保模块可解析。此 schema 约束包名声明，宿主通过绝对路径加载同一模块时可自行调整该约束。插件实例名及 CLI 配置目录名为 channel-gateway。"
+    },
+    "enabled": {
+      "type": "boolean",
+      "default": true,
+      "description": "可选。是否加载整个 Octo IM 插件；省略视为 true，false 时加载器不导入插件。与 config.bots[].enabled 的单 Bot 开关不同。"
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "必填。传给 Octo IM Extra load 的原始 JSON 对象；来源由宿主决定。未识别的可选扩展字段当前保留并忽略，不代表该能力已经应用。",
+      "properties": {
+        "bots": {
+          "type": "array",
+          "maxItems": 64,
+          "default": [],
+          "description": "可选。完整 Bot 列表，最多 64 个；省略或空数组表示没有连接。多个 Bot 属于同一个 Extra；宿主保存时替换完整声明，不按 bot_id 追加、合并或补齐旧配置。同一规范化 api_url 与 bot_id 不可重复。",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["api_url", "bot_id", "adapter"],
+            "description": "一个 Octo Bot 的连接、准入、执行与投递设置；单项最多 256 KiB。允许暂存无凭据配置，但启用建联必须有有效 Bot Token；无效项单独报告，其他有效项继续初始化。未知可选扩展保留并忽略。",
+            "properties": {
+              "api_url": {
+                "type": "string",
+                "format": "uri",
+                "pattern": "^(?:https://[^/?#@\\s]+|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?)(?:/[^?#\\s]*)?$",
+                "description": "必填。当前 Bot 所属 Octo 环境的 REST API 基址，通常以 /api 结尾；必须填纯 URL，不能写 Markdown 链接或 WebSocket 地址。非本机使用 https；http 仅允许 localhost、127.0.0.1 或 [::1]。禁止 URL 凭据、query 和 fragment；Token 必须与该环境匹配。",
+                "examples": ["https://im-test.deepminer.com.cn/api"]
+              },
+              "bot_id": {
+                "type": "string",
+                "pattern": "\\S",
+                "description": "必填。Octo 平台分配的 Bot 业务 ID，须与 Bot Token 认证身份一致；不是展示名称、Runtime ID 或 OpenClaw Agent ID。省略 adapter.workdir 时还用于本地默认目录的一段，因此此时不得为 .、.. 或含斜杠、反斜杠、NUL 的值。",
+                "examples": ["<OCTO_BOT_ID>"]
+              },
+              "bot_name": {
+                "type": "string",
+                "pattern": "\\S",
+                "description": "可选。本地展示名称，省略时显示 bot_id；用于宿主区分多个 Bot，不修改服务端名称、不参与身份认证和消息 mention 匹配。",
+                "examples": ["项目助理"]
+              },
+              "enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "可选。是否启动此 Bot；省略为 true，false 时保留配置与 stopped 状态但不连接，不影响其他 Bot。"
+              },
+              "bf_token": {
+                "type": "string",
+                "writeOnly": true,
+                "anyOf": [
+                  {
+                    "pattern": "^\\s*$"
+                  },
+                  {
+                    "pattern": "^\\s*bf_[A-Za-z0-9_-]+\\s*$"
+                  }
+                ],
+                "description": "可选；实际启用建联时必需。宿主从自己的配置来源取得并传入的 Bot Token 值，由 Octo 为此 Bot 签发，以 bf_ 开头，用于 octo-auth、注册和消息 API；不是个人登录 Token、enroll token 或模型 API Key。去除首尾空白后须符合 ^bf_[A-Za-z0-9_-]+$；空值允许暂存但不能建联。插件不读取凭据文件或配置中心。不得进入模型文本、公开状态或日志。",
+                "examples": ["bf_REPLACE_WITH_REAL_BOT_TOKEN"]
+              },
+              "adapter": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "必填。本 Bot 的执行引擎与固定工作目录设置；宿主先装配对应 Provider，本字段不触发安装。 宿主已安装且已装配的执行引擎。未知扩展字段当前忽略；model 与 effort 由业务方选择，不使用 schema 替宿主决定引擎或模型目录。",
+                "properties": {
+                  "adapter_type": {
+                    "type": "string",
+                    "pattern": "\\S",
+                    "default": "codex",
+                    "description": "可选。宿主已装配的 Adapter 类型标识，本插件省略时默认 codex，例如 claude-code、codebuddy、openclaw。不是 npm 包名或模型 ID；选择 OpenClaw 时显式填 openclaw。",
+                    "examples": ["codex", "claude-code", "openclaw"]
+                  },
+                  "workdir": {
+                    "type": "string",
+                    "pattern": "^(?:/|[A-Za-z]:[\\\\/]|\\\\\\\\[^\\\\/]+[\\\\/][^\\\\/]+)",
+                    "description": "本地引擎可选，OpenClaw 禁止。本地引擎省略时，本业务入口使用并创建运行用户 Home 下的 octo-runtime/channels/{bot_id}；显式填写时须为运行机器绝对路径，不能写 ~。它是本 Bot 长期 Agent 的固定目录，任务、会话和 reset 均不改变，Context workspace 不得覆盖。OpenClaw 使用目标 Provider Agent 自己的工作区；路径可访问性仍需运行时检查。",
+                    "examples": ["/absolute/workspace"]
+                  },
+                  "model": {
+                    "type": "string",
+                    "pattern": "\\S",
+                    "description": "可选。所选 Provider 可识别的模型 ID，由业务方按自己的模型配置填写；不固定某个模型，也不在 schema 枚举模型目录。省略不传显式模型选择，按执行解析与 Provider 配置处理；填写不保证已授权或实际可用。",
+                    "examples": ["<PROVIDER_MODEL_ID>"]
+                  },
+                  "effort": {
+                    "type": "string",
+                    "enum": ["low", "medium", "high", "xhigh"],
+                    "description": "可选。统一推理强度档位，由业务方选择；省略不显式指定。实际应用、映射或不支持结果按 Adapter 与 Provider 合同处理。"
+                  },
+                  "provider_agent_id": {
+                    "type": "string",
+                    "pattern": "^[a-z0-9_][a-z0-9_-]{0,63}$",
+                    "description": "仅 adapter_type=openclaw 时可选。指向 OpenClaw Gateway 中已存在、预先配置好的目标 Agent；需要选择非默认 Agent 时填写，省略使用 main。不是 Octo bot_id、Runtime ID、Provider 会话 ID 或模型 ID。不会创建 Agent、切换为其他 Agent 或覆盖其工作区；目标不存在时执行失败。其他 Adapter 禁止设置。",
+                    "examples": ["main", "research_assistant"]
+                  }
+                },
+                "if": {
+                  "required": ["adapter_type"],
+                  "properties": {
+                    "adapter_type": {
+                      "const": "openclaw"
+                    }
+                  }
+                },
+                "then": {
+                  "not": {
+                    "required": ["workdir"]
+                  }
+                },
+                "else": {
+                  "not": {
+                    "required": ["provider_agent_id"]
+                  }
+                }
+              },
+              "context": {
+                "type": "object",
+                "description": "可选。遵循 octo-runtime 的 octo.context-envelope/v3 协议；配置后，IM Channel 在每次执行 AgentRun 时固定附带这些配置项。items 的内部对象结构不在本配置 schema 中展开，具体内容由现有 Context v3 协议校验。",
+                "additionalProperties": false,
+                "required": ["schema", "items"],
+                "properties": {
+                  "schema": {
+                    "type": "string",
+                    "const": "octo.context-envelope/v3",
+                    "description": "必填。固定使用 octo-runtime 的 Context v3 协议标识。"
+                  },
+                  "items": {
+                    "type": "array",
+                    "description": "必填。执行 AgentRun 时固定附带的 Context 项；允许空数组，每项为遵循 Context v3 协议的 JSON 对象，此处不展开内部字段。",
+                    "items": {
+                      "type": "object",
+                      "additionalProperties": true
+                    }
+                  }
+                }
+              },
+              "approval_mode": {
+                "type": "string",
+                "enum": ["ask", "assisted", "full_access"],
+                "default": "full_access",
+                "description": "可选。本 Bot 默认执行审批策略：ask 请求审批，assisted 使用辅助审批策略，full_access 请求完整访问策略。具体支持及行为由所选 Adapter 决定，不绕过平台身份与资源权限；本轮 Context 的审批项可按现有合同覆盖。"
+              },
+              "run_timeout_ms": {
+                "type": "integer",
+                "minimum": 100,
+                "maximum": 86400000,
+                "default": 86400000,
+                "description": "可选。本 Bot 默认单轮任务总时限，单位毫秒，范围 100..86400000，省略为一天。本轮 Context 的 limits 可按执行合同覆盖。所有重试共用剩余任务期限，不为每次尝试重新获得完整时长；不同于连续故障恢复预算。"
+              },
+              "codex_retry": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "可选。此 Octo IM 业务入口对 Codex 暂态失败的恢复策略；省略使用各字段所列当前默认值。只适用于 Codex，不让其他 Adapter 自动重跑；不表示工具执行后或结果未知时允许重放。 Octo IM 的 Codex 有界故障恢复预算，未知扩展字段当前忽略。计数不含首次尝试；非空文本增量或工具完成可结束连续故障段，但不会归零本轮累计重试。数值比较等关系需插件继续校验。",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "可选。是否启用此 Extra 的 Codex 自动恢复及恢复预算；false 不会关闭 Provider 自身的原生网络恢复，也不改变其他 Adapter。"
+                  },
+                  "max_consecutive_retries": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "default": 5,
+                    "description": "可选。一个连续故障段内允许的重试次数，范围 0..100，默认 5，不含首次调用；0 表示不允许额外重试。"
+                  },
+                  "max_total_retries": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100,
+                    "default": 20,
+                    "description": "可选。本轮任务累计允许的重试次数，范围 0..100，默认 20；成功产生进度不会重置累计值。"
+                  },
+                  "recovery_timeout_ms": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 3600000,
+                    "default": 120000,
+                    "description": "可选。连续故障恢复的最长预算，单位毫秒，范围 100..3600000，默认 120000。独立于整轮 run_timeout_ms；不能延长任务总期限。"
+                  },
+                  "initial_delay_ms": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 60000,
+                    "default": 2000,
+                    "description": "可选。指数退避起点，单位毫秒，范围 100..60000，默认 2000。解析默认值后必须不大于 max_delay_ms；实际等待还可能受最多 20% 抖动、服务端 retryAfterMs 和剩余预算影响。"
+                  },
+                  "max_delay_ms": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 300000,
+                    "default": 30000,
+                    "description": "可选。指数退避基准上限，单位毫秒，范围 100..300000，默认 30000。必须不小于解析默认值后的 initial_delay_ms；服务端要求的等待可长于此退避上限。"
+                  }
+                }
+              },
+              "allowed_sender_ids": {
+                "type": "array",
+                "description": "可选。允许触发本 Bot 的真实 Octo 发送者 ID 白名单；省略时仅允许服务端注册返回的 owner，显式名单替代默认 owner 名单，空数组拒绝所有发送者。不能使用展示名称代替身份；群/话题仍须满足真实 mention 和平台范围准入。",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "允许触发的 Octo 用户业务 ID。"
+                }
+              },
+              "groups_enabled": {
+                "type": "boolean",
+                "default": true,
+                "description": "可选。是否启用群及话题消息入口，省略为 true；false 拒绝所有群/话题，无论 group_ids 如何配置，但不影响私聊。启用仍需通过发送者、Space、群范围及真实 mention 校验。null 或非布尔值无效。"
+              },
+              "group_ids": {
+                "type": ["array", "null"],
+                "description": "可选。额外限制允许处理的 Octo 父群 ID；省略、null 或空数组均表示不增加群范围限制，非空数组只允许列出的父群及其话题。禁止所有群/话题须显式设置 groups_enabled=false，不能用空名单表示。话题按父群 groupNo 匹配，回复保留原话题地址；本项不影响私聊，也不绕过真实 mention、成员权限或发送者白名单。",
+                "items": {
+                  "type": "string",
+                  "minLength": 1,
+                  "description": "允许的群范围 ID（groupNo）。"
+                }
+              },
+              "cards": {
+                "type": "boolean",
+                "default": true,
+                "description": "可选。是否尝试使用服务端实际允许且提供模板的进度/推理卡片，省略为 true。false 关闭该插件的卡片呈现，普通文本回复仍可发送；true 不保证服务端已授权、模板存在或卡片投递成功。"
+              },
+              "typing": {
+                "type": "boolean",
+                "default": true,
+                "description": "可选。任务处理中是否向当前会话发送输入中状态，省略为 true；false 关闭 typing，不影响执行及最终回复，也不是 Bot 连接健康状态。"
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "adapter": {
+                      "not": {
+                        "required": ["workdir"]
+                      }
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "bot_id": {
+                      "not": {
+                        "anyOf": [
+                          {
+                            "enum": [".", ".."]
+                          },
+                          {
+                            "pattern": "[/\\\\\u0000]"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "authorized_space_ids": {
+          "type": "array",
+          "description": "可选。宿主允许此插件接入的 Space 业务 ID 白名单，按 octo-auth 实际认证得到的 Space 核对；省略不按本项限制，空数组不授权任何 Space。配置 ID 不是认证凭据，Bot 不能借此自行选择租户。",
+          "items": {
+            "type": "string",
+            "pattern": "\\S",
+            "description": "已授权的 Space 业务 ID，须含非空白字符。"
+          }
+        },
+        "context_loading": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "可选。宿主代码注入 loadContexts 时的回调预算；不是函数配置。每个 Extra 共用在途上限，超时但未结束的回调仍占用名额。",
+          "properties": {
+            "timeout_ms": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 30000,
+              "default": 5000,
+              "description": "单次动态加载超时，单位毫秒；到期取消本次等待和 signal，不保证外部 I/O 已停止。"
+            },
+            "max_in_flight": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 32,
+              "default": 8,
+              "description": "每个 Extra 尚未结束的回调数上限；达到上限直接拒绝当前轮次，不增加等待队列。"
+            }
+          }
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "module": "@mininglamp-oss/octo-runtime-extra-channel-gateway",
+      "enabled": true,
+      "config": {
+        "bots": [
+          {
+            "api_url": "https://im-test.deepminer.com.cn/api",
+            "bot_id": "<OCTO_BOT_ID>",
+            "bot_name": "项目助理",
+            "bf_token": "bf_REPLACE_WITH_REAL_BOT_TOKEN",
+            "enabled": true,
+            "adapter": {
+              "adapter_type": "codex",
+              "workdir": "/absolute/workspace",
+              "model": "<PROVIDER_MODEL_ID>",
+              "effort": "medium"
+            },
+            "context": {
+              "schema": "octo.context-envelope/v3",
+              "items": [
+                {
+                  "namespace": "octo.control",
+                  "name": "instructions",
+                  "payload": {
+                    "entries": [
+                      {
+                        "text": "我是明略科技的Octo助理"
+                      }
+                    ]
+                  }
+                }
+              ]
+            },
+            "approval_mode": "full_access",
+            "run_timeout_ms": 86400000,
+            "codex_retry": {
+              "enabled": true,
+              "max_consecutive_retries": 5,
+              "max_total_retries": 20,
+              "recovery_timeout_ms": 120000,
+              "initial_delay_ms": 2000,
+              "max_delay_ms": 30000
+            },
+            "allowed_sender_ids": ["<OCTO_USER_ID>"],
+            "group_ids": ["<OCTO_GROUP_NO>"],
+            "cards": true,
+            "typing": true
+          }
+        ],
+        "authorized_space_ids": ["<AUTHORIZED_SPACE_ID>"]
+      }
+    },
+    {
+      "module": "@mininglamp-oss/octo-runtime-extra-channel-gateway",
+      "config": {
+        "bots": [
+          {
+            "api_url": "https://im-test.deepminer.com.cn/api",
+            "bot_id": "<OCTO_BOT_ID>",
+            "adapter": {
+              "adapter_type": "openclaw",
+              "provider_agent_id": "research_assistant"
+            },
+            "bf_token": "bf_REPLACE_WITH_REAL_BOT_TOKEN",
+            "context": {
+              "schema": "octo.context-envelope/v3",
+              "items": [
+                {
+                  "namespace": "octo.control",
+                  "name": "instructions",
+                  "payload": {
+                    "entries": [
+                      {
+                        "text": "我是明略科技的Octo助理"
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

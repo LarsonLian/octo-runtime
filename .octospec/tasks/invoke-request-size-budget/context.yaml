@@ -1,0 +1,34 @@
+rules:
+  - runtime-architecture
+  - runtime-stateless
+  - runtime-invoke-input
+  - runtime-local-execution
+  - runtime-context-input
+  - runtime-engineering
+sources:
+  - AGENTS.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/engineering.md
+  - .octospec/tasks/channel-image-input/brief.md
+  - .octospec/tasks/channel-new-session-history/brief.md
+  - packages/octo-runtime-protocol/src/multimodal.ts
+  - packages/octo-runtime-adapter-host/src/rpc.ts
+  - packages/octo-runtime-daemon/src/runtime/run-stream.ts
+status: implemented-targeted-and-live-verified
+decisions:
+  max_request_bytes: 33554432
+  size_measurement: utf8-serialized-complete-request
+  max_image_bytes: 2097152
+  max_images_per_array: 4
+  image_history_selection_owner: business-caller
+  optional_history_image_priority: newest-first
+  silently_drop_current_images: false
+  automatic_im_history_images: false
+  oversize_error: INVOKE_REQUEST_TOO_LARGE
+  run_schema_version: 7
+  context_schema: octo.context-envelope/v3

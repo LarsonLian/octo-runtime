@@ -1,0 +1,86 @@
+status: implemented-cli-sdk-deferred
+baseline:
+  commit: aad4086
+  note: 已实施共享 loader、三个 CLI Extra、动态 Context 及 text-only 指令；SDK HostApp 装配按用户最新要求延期。保留旧设计基线 147ee40 的历史含义。
+rules:
+  - runtime-architecture
+  - runtime-extras
+  - runtime-context-input
+  - runtime-context-extensions
+  - runtime-channel
+  - runtime-invoke-input
+  - runtime-engineering
+  - runtime-lifecycle
+  - runtime-stateless
+  - runtime-session-reset
+  - commit
+sources:
+  - ../AGENTS.md
+  - AGENTS.md
+  - .claude/commands/octospec-plan.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/context-extensions.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/session-reset.md
+  - .octospec/rules/collaboration.md
+  - .octospec/guides/channel-dynamic-contexts.md
+  - SDK_CHANNEL_GATEWAY_GUIDE.md
+  - .octospec/tasks/_brief.template.md
+  - .octospec/tasks/im-agent-persona-and-context-audit/brief.md
+  - .octospec/tasks/unify-execution-and-simplify-instructions/brief.md
+  - packages/octo-runtime-daemon/src/extras.ts
+  - packages/octo-runtime-daemon/src/extra-config.ts
+  - packages/octo-runtime-daemon/src/server.ts
+  - packages/octo-runtime-daemon/src/runtime/types.ts
+  - packages/octo-runtime-daemon/src/runtime/supervisor.ts
+  - packages/octo-runtime-daemon/src/runtime/runner.ts
+  - packages/octo-runtime-daemon/src/runtime/daemon-runtime.ts
+  - packages/octo-runtime-extra-channel-gateway/src/extra.ts
+  - packages/octo-runtime-extra-channel-wecom/src/extra.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-wecom/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/contexts.ts
+  - packages/octo-runtime-protocol/src/context.ts
+  - public/extra.ts
+  - package.json
+  - test/extras.test.js
+  - test/im-extra-disposal.test.js
+  - test/im-session-scheduling.test.js
+  - /Users/lvsijia/.codex/skills/technical-writing-zh/SKILL.md
+decisions:
+  - 本次支持破坏性更新，不保留旧 Extra 接口兼容；不扩大为删除身份或配置数据的授权。
+  - config 始终为 JsonObject，函数依赖通过第二阶段独立参数注入。
+  - 外层同步返回初始化函数，初始化可异步，loadContexts 同时支持数组和 Promise 返回。
+  - 合并为无状态纯函数，同 key 动态整项替换，保留 base 位置，新项按动态顺序追加。
+  - 2026-10-17 用户同意 SDK 在 HostApp Node 组合层执行 Extra，需 M0 验证实现；不设计函数跨进程代理。
+  - 2026-10-17 用户同意 loader 调用并等待第二阶段初始化；config 与业务函数参数继续分开。
+  - 业务函数依赖是 loadContexts；模型执行端口是 SDK 提供的既有 invoke/cancel/respondInteraction，不要求业务实现执行内核。
+  - 用户对生命周期提出初步想法并要求评估；工程评估建议宿主决定通知、SDK 有界协调、Extra 自行清理，单个 unload 不关闭 daemon，不标成全部细节已获用户确认。
+  - 共享 loader 已实现先 abort、5 秒清理宽限、逆序释放及失败汇总；不合作回调清理超时后保留失败实例，禁止同名重载。SDK 整体停止装配延期。
+  - 用户同意不保存动态历史结果及有界在途；一万次动态加载和两个 Channel 各一万会话的强制 GC 回归已通过，不能扩大为任意业务函数的绝对 OOM 保证。
+  - 动态结果不缓存为历史；超时操作真正 settle 前继续计入并发，不靠重载绕过挂起操作。
+  - 默认 IM 人设正文为我是明略科技的Octo助理，动态 instructions 覆盖时不暗中拼接默认。
+  - 动态加载初值 5000ms、8 个在途；协议结果上限 32 项和 64KiB，预检深度与遍历预算限制额外校验开销。任意不合作 JS 不能承诺绝对 OOM 防护。
+  - 当前 CLI 三个 Extra 全部生效；SDK 接入先不修改。CLI 仍为纯 JSON，函数不跨进程传输。
+  - 2026-10-17 补充核心使用场景：同一个 loadContexts 每轮读取宿主最新业务数据，数据改变无需重载；JSON 配置或函数引用改变才整体卸载后加载，保持插件封装。
+  - SDK 指南新增同步和异步业务函数、实际 loader 装配、后续 SDK 初始化与覆盖示例；区分动态取到系统指令与 Provider 已有会话应用，SDK 函数装配继续延期。
+  - 不自动填充已有空 Context，不修改现有身份、Home、profile 或 Bot 配置。
+validation:
+  - scope: 2026-10-17 动态 Context 场景与 SDK 文档
+    result: 新增架构专题与 SDK 第 7 节，补充核心中文注释；typecheck、lint、3 个严格 TS 示例、25 项相关回归及单独 expose-gc 8 项通过。文档和链接核对见对应 journal；无 SDK 接线或运行行为变更。
+  - scope: 构建和回归
+    result: Runtime 构建、tsc、lint、名称检查及 WebUI 35 项通过；全量 Node 和最终检查以交付记录为准。
+  - scope: 内存及生命周期
+    result: 强制 GC 一万次加载和双渠道各一万会话通过；超时未结束占额、取消及卸载失败阻止重载通过。
+  - scope: 发行包与线上调试
+    result: 离线安装、公开严格 TS 类型、三个内置 Extra 实际加载及 WebUI HTTP 通过；im-test 真实 Codex 动态 Context 执行完成。
+  - scope: SDK 与其他消费者
+    result: SDK HostApp 函数装配延期；Worker、桌面构建通过，不表示桌面已迁移到新装配。详见交付记录。

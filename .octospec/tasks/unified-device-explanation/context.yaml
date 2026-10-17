@@ -1,0 +1,45 @@
+rules:
+  - runtime-architecture
+  - runtime-protocol-design
+  - runtime-lifecycle
+  - runtime-local-execution
+  - runtime-engineering
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/protocol-design.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/device-virtual-runtime-boundary/brief.md
+  - packages/octo-runtime-daemon/src/runtime/home.ts
+  - packages/octo-runtime-daemon/src/runtime/daemon-runtime.ts
+external_sources:
+  - ../../octo-daemon-old/docs/trd/01-octo-daemon-overall-design.md
+  - ../../octo-daemon-old/README.md
+  - ../../octo-daemon-old/internal/app/start.go
+  - ../../octo-daemon-old/internal/gateway/client.go
+  - ../../octo-daemon-old/internal/gateway/types.go
+decisions:
+  - 最新讲解：Loop daemon 是 Loop 中专家执行业务任务的专用执行程序；Buddy / IM 复用时须转换为 Loop 模型并绕经云端，同机调用也不满足本地直接 IPC。正文删除 checkout 与登记快照说明。
+  - 内置 Extra 的具体使用链接到 CLI_USAGE_GUIDE.md；webui-extra 仅供本地服务调试，不用于生产。
+  - 最新消歧：移动端 Buddy 分为经 wukong-im Server / IM Channel 的 IM 入口，以及类似桌面本地对话的 conversation 跨端入口；价值表和目标图分别表达，旧移动端待建链路仅指后者。
+  - 最新收敛：删除讲解中的 machineId / runtimeId 映射及业务归属段落；对外虚拟身份、归属及其认证授权模型属于可选 Extra，不是统一设备必备概念，不修改已有代码或状态。
+  - 最新表达：直接说明旧 Runtime 绑定 workspace_id、按 Workspace 重复登记导致设备身份与业务权限混合；目标是稳定本地身份与个人、组织、项目归属分开管理。不声称已核实加入 Workspace 后立即自动复制的具体实现。
+  - 最新目标归纳：本地 IPC 调用、wukong-im Server 消息经 IM Channel 触发执行、可选线上注册服务移动端 WorkBuddy 指定设备对话，三者为并列核心目标。
+  - 最新补充：设备登记与在线状态保持考虑由 Extra 层独立模块承载，使用独立设备 Token，具体方案仍待架构确认；远程服务不直接连接执行内核，经设备侧接入层后由本地调用。
+  - 最新澄清：可选接入模块主要为设备登记与在线状态保持，是否采用 Extra、模块分工及远程调用方案待架构确认，不预先指定授权、远程请求处理和结果回传职责。
+  - 用户补充旧桌面 OctoBuddy 直接本地启动 Codex App Server 并 IPC；Loop 使用另一个带业务流程的 daemon 轮询执行。图中分别画出，与 IM 内置 Channel 共为三条独立链路。
+  - 旧架构尚未提供移动端远程调用能力；以虚线框及节点标注需要额外实现一套远程接入、设备寻址与执行链路，不写无法实现，不把桌面已有 IPC 误写为缺失。
+  - 旧架构主图使用两层大框、三对执行节点竖直连接，执行实现不嵌套小框，避免下层重排造成交叉。
+  - 跨业务普适性是核心标准；IM / Buddy 不应被迫转换成 Loop 应用调用模型才能使用公共执行能力。
+  - 每 Workspace 注册 Runtime 是旧仓 TRD 记载且提出取消的历史模型；多个虚拟身份可以映射同一设备，一次定向调用不因多身份自动重复执行。
+  - 移动端远程 AgentRun 为核心目标之一，通过新增 Extra 支持；本地设备客观存在，云端登记失败只影响对应跨端寻址，不阻断本地内核。
+  - 三张流程图均使用 TB，上下布局，同类对象以 subgraph 大框分组。
+  - 用户补充旧 IM 走 OpenClaw 内置 Channel，没有统一设备概念；执行位置隐含于 Bot / Channel，旧 Loop daemon 是独立反例。
+  - 用户定义设备为机器上特定目录承载的实例，本地执行直连 IPC，异地经云端 WS/SSE 等通道发起任务。
+  - 文档解释目标，不把自动本地发现、统一远程寻址或待架构确认的设备接入模块声称为已实现。

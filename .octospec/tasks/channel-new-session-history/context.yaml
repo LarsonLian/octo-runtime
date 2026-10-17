@@ -1,0 +1,32 @@
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-session-reset
+  - runtime-stateless
+  - runtime-context-input
+  - runtime-context-extensions
+  - runtime-invoke-input
+  - runtime-engineering
+sources:
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/session-store.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/contexts.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/conversations.ts
+  - packages/octo-runtime-adapter-codex/src/app-server.ts
+status: design-selected-not-implemented
+decisions:
+  automatic_history_owner: im-channel
+  once_per_new_session: true
+  failed_fetch_consumes_attempt: true
+  fetch_on_continuation: false
+  reset_keeps_channel_history: true
+  max_messages: 15
+  max_text_codepoints: 1500
+  truncation_marker: '<历史已截断>'
+  preserve_newest_content: true
+  history_failure_blocks_execution: false
+  history_failure_notice: false
+  retry_reuses_frozen_context: true
+  new_persistence: false
+  legacy_history_limit_compatibility: false
+  legacy_history_migration: false

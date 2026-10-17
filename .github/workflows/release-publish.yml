@@ -1,0 +1,27 @@
+name: Release Publish
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已存在的发行 tag（vX.Y.Z）
+        required: true
+        type: string
+      validate_run_id:
+        description: 与 tag 同一提交的成功 CI run ID
+        required: true
+        type: string
+      draft:
+        description: 保持为草稿
+        type: boolean
+        default: true
+permissions: {}
+jobs:
+  publish:
+    uses: Mininglamp-OSS/.github/.github/workflows/reusable-release-publish.yml@v1
+    with:
+      tag: ${{ inputs.tag }}
+      validate_run_id: ${{ inputs.validate_run_id }}
+      draft: ${{ inputs.draft }}
+    permissions:
+      contents: write
+      actions: read

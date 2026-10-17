@@ -1,0 +1,20 @@
+rules:
+  - rules/architecture.md
+  - rules/protocol-design.md
+  - rules/output-protocol.md
+  - rules/adapter-metadata.md
+  - rules/context-input.md
+  - rules/engineering.md
+scope:
+  adapters: existing-only
+  product_policy_owner: caller
+  omitted_actmode: no-runtime-invented-policy
+  session_policy_owner: caller
+  plan_selection: explicit
+  context_schema: octo.context-envelope/v3
+  run_schema_version: 7
+  actmode_item: octo.execution/actmode
+  unsupported_optional_mode: default-with-honest-receipt
+  work_app_role: test-host
+  im_channel_gateway: excluded-default-only-product
+  new_adapters: excluded

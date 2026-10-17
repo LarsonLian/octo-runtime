@@ -1,0 +1,663 @@
+[
+  {
+    "name": "explicit",
+    "valid": true,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "candidates",
+    "valid": true,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "candidates",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        },
+        {
+          "runtime_id": "runtime-2",
+          "priority": 2,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "candidates"
+    }
+  },
+  {
+    "name": "candidates-no-failover",
+    "valid": true,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "candidates",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        },
+        {
+          "runtime_id": "runtime-2",
+          "priority": 2,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "explicit-fail-offline",
+    "valid": true,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "fail",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "schema-missing",
+    "valid": false,
+    "selection": {
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "schema-null",
+    "valid": false,
+    "selection": {
+      "schema": null,
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "schema-case",
+    "valid": false,
+    "selection": {
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none",
+      "SCHEMA": "octo.runtime-selection/v2"
+    }
+  },
+  {
+    "name": "selection_mode-missing",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "selection_mode-null",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": null,
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "selection_mode-case",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none",
+      "SELECTION_MODE": "explicit"
+    }
+  },
+  {
+    "name": "authorized_candidates-missing",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "authorized_candidates-null",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": null,
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "authorized_candidates-case",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "offline_behavior": "wait",
+      "failover": "none",
+      "AUTHORIZED_CANDIDATES": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "offline_behavior-missing",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "failover": "none"
+    }
+  },
+  {
+    "name": "offline_behavior-null",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": null,
+      "failover": "none"
+    }
+  },
+  {
+    "name": "offline_behavior-case",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "failover": "none",
+      "OFFLINE_BEHAVIOR": "wait"
+    }
+  },
+  {
+    "name": "failover-missing",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait"
+    }
+  },
+  {
+    "name": "failover-null",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": null
+    }
+  },
+  {
+    "name": "failover-case",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "FAILOVER": "none"
+    }
+  },
+  {
+    "name": "old-schema",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v1",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "mode",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "binding",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "explicit-failover",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "candidates"
+    }
+  },
+  {
+    "name": "offline",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "ignore",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "old-routing",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none",
+      "routing_mode": "bound"
+    }
+  },
+  {
+    "name": "old-binding",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none",
+      "binding_ref": {
+        "id": "binding-1",
+        "version": 1
+      }
+    }
+  },
+  {
+    "name": "empty-explicit",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "empty-candidates",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "candidate-runtime_id-",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "candidate-priority-0",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 0,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "candidate-priority-1.1",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1.1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "candidate-owner_subject_type-service",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "service",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "candidate-owner_subject_id-",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": ""
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "candidate-unknown-true",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "explicit",
+      "explicit_runtime_id": "runtime-1",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1",
+          "unknown": true
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "none"
+    }
+  },
+  {
+    "name": "top-null",
+    "valid": false,
+    "selection": null
+  },
+  {
+    "name": "top-array",
+    "valid": false,
+    "selection": []
+  },
+  {
+    "name": "top-string",
+    "valid": false,
+    "selection": "invalid"
+  },
+  {
+    "name": "top-bool",
+    "valid": false,
+    "selection": true
+  },
+  {
+    "name": "duplicate-runtime",
+    "valid": false,
+    "selection": {
+      "schema": "octo.runtime-selection/v2",
+      "selection_mode": "candidates",
+      "authorized_candidates": [
+        {
+          "runtime_id": "runtime-1",
+          "priority": 1,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        },
+        {
+          "runtime_id": "runtime-1",
+          "priority": 2,
+          "owner_subject_type": "user",
+          "owner_subject_id": "user-1"
+        }
+      ],
+      "offline_behavior": "wait",
+      "failover": "candidates"
+    }
+  }
+]

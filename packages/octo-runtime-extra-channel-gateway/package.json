@@ -1,0 +1,39 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-extra-channel-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./config-schema.json": "./config-schema.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./daemon-module": {
+      "types": "./dist/daemon-module.d.ts",
+      "import": "./dist/daemon-module.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "config-schema.json",
+    "dist",
+    "README.md",
+    "docs"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
+    "@mininglamp-oss/octo-runtime-core": "workspace:*",
+    "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
+    "mdast-util-from-markdown": "^2.1.0",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  }
+}

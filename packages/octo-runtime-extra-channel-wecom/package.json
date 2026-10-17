@@ -1,0 +1,37 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-extra-channel-wecom",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./config-schema.json": "./config-schema.json",
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./daemon-module": {
+      "types": "./dist/daemon-module.d.ts",
+      "import": "./dist/daemon-module.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "config-schema.json",
+    "dist",
+    "README.md",
+    "docs"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
+    "@mininglamp-oss/octo-runtime-core": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
+    "ws": "^8.18.3",
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  }
+}

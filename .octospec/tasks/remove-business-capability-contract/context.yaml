@@ -1,0 +1,22 @@
+rules:
+  - runtime-architecture
+  - runtime-adapter-metadata
+  - runtime-context-input
+  - runtime-context-extensions
+  - runtime-protocol-schema
+  - runtime-output-protocol
+  - runtime-invoke-input
+  - runtime-local-execution
+  - runtime-engineering
+  - commit
+sources:
+  - .octospec/rules/architecture.md
+  - .octospec/rules/adapter-metadata.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/context-extensions.md
+  - .octospec/rules/protocol-schema.md
+  - .octospec/rules/output-protocol.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md

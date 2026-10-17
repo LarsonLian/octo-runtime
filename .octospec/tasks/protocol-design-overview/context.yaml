@@ -1,0 +1,20 @@
+baseline: 836135d 与当前工作树
+rules:
+  - runtime-architecture
+  - runtime-invoke-input
+  - runtime-local-execution
+  - runtime-output-protocol
+  - runtime-protocol-schema
+  - runtime-context-input
+  - runtime-adapter-metadata
+  - runtime-stateless
+  - runtime-session-reset
+  - runtime-engineering
+sources:
+  - Core 公共请求准备
+  - daemon SDK、server 与 run-stream
+  - AdapterHost、HostRunService 与 RPC
+  - Protocol 类型、Schema 与校验器
+  - SDK NativeInteractionBridge、ACP 审批桥
+  - Codex app-server 交互请求与回答映射
+note: 文档整理的阅读记录，不是 Run Context envelope。

@@ -1,0 +1,37 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-daemon-app",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "octo-runtime-daemon": "dist/launcher.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    },
+    "./runtime-options": {
+      "types": "./dist/runtime-options.d.ts",
+      "import": "./dist/runtime-options.js"
+    },
+    "./openclaw": {
+      "types": "./dist/openclaw.d.ts",
+      "import": "./dist/openclaw.js"
+    }
+  },
+  "scripts": {
+    "start": "node dist/launcher.js",
+    "build": "tsc -p tsconfig.json && chmod +x dist/launcher.js"
+  },
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
+    "@mininglamp-oss/octo-runtime-extra-channel-gateway": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-openclaw": "workspace:*",
+    "json5": "2.2.3",
+    "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*"
+  },
+  "types": "./dist/server.d.ts"
+}

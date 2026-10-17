@@ -1,0 +1,93 @@
+name: npm Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 已存在的稳定版本 tag（vX.Y.Z），必须位于 main 历史中
+        required: true
+        type: string
+      dry_run:
+        description: 仅验证发布，不上传 npm
+        type: boolean
+        default: true
+
+permissions: {}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.release.outputs.sha }}
+      version: ${{ steps.release.outputs.version }}
+    steps:
+      - name: Validate tag format
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || {
+            echo '::error::Tag must be a stable version: vX.Y.Z'
+            exit 1
+          }
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Resolve release commit
+        id: release
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          SHA=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
+          git merge-base --is-ancestor "$SHA" origin/main
+          VERSION=$(git show "$SHA:package.json" | jq -r .version)
+          test "$TAG" = "v$VERSION"
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+  verify:
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+    with:
+      ref: ${{ needs.validate.outputs.sha }}
+    permissions:
+      contents: read
+
+  publish:
+    needs: [validate, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: octo-runtime-npm-publish
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "24"
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: octo-runtime-release
+          path: release
+      - name: Publish verified archive
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          set -euo pipefail
+          ARCHIVE="release/mininglamp-oss-octo-runtime-$VERSION.tgz"
+          test -f "$ARCHIVE"
+          if [ "$DRY_RUN" = true ]; then
+            npm publish "$ARCHIVE" --access public --tag latest --dry-run
+          else
+            npm publish "$ARCHIVE" --access public --tag latest --provenance
+          fi

@@ -1,0 +1,733 @@
+{
+  "baseline": "OCTO-RUN-DUAL-PROTOCOL-BL-01",
+  "valid": {
+    "HostInvokeOptions": [
+      {},
+      {
+        "protocolMode": "native"
+      },
+      {
+        "protocolMode": "canonical",
+        "protocol": "codex.app-server"
+      }
+    ],
+    "HostRunReceipt": [
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server"
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "canonical",
+        "protocol": "codex.app-server"
+      }
+    ],
+    "AdapterProtocolSupport": [
+      {
+        "protocol": "codex.app-server",
+        "modes": ["native", "canonical"],
+        "nativeMethods": ["item/commandExecution/requestApproval", "item/tool/requestUserInput"]
+      },
+      {
+        "protocol": "acp",
+        "modes": ["canonical"],
+        "nativeMethods": []
+      },
+      {
+        "protocol": "example.native",
+        "modes": ["native"],
+        "nativeMethods": []
+      }
+    ],
+    "NativeInteractionResponse": [
+      {
+        "requestId": 0,
+        "payload": {
+          "id": 0,
+          "result": {
+            "decision": "decline"
+          },
+          "extension": true
+        }
+      },
+      {
+        "requestId": "request-1",
+        "payload": {
+          "type": "control_response",
+          "response": {
+            "subtype": "success",
+            "request_id": "request-1",
+            "response": {
+              "behavior": "deny",
+              "message": "Declined",
+              "interrupt": false
+            }
+          }
+        }
+      }
+    ],
+    "HostControl": [
+      {
+        "type": "evidence",
+        "name": "session",
+        "payload": {
+          "providerSession": {
+            "sessionId": "native-session",
+            "resumable": true
+          }
+        }
+      },
+      {
+        "type": "state",
+        "state": "running"
+      },
+      {
+        "type": "state",
+        "state": "completed"
+      },
+      {
+        "type": "state",
+        "state": "failed"
+      },
+      {
+        "type": "state",
+        "state": "cancelled"
+      },
+      {
+        "type": "state",
+        "state": "lost"
+      },
+      {
+        "type": "error",
+        "code": "HOST_EXECUTION_FAILED",
+        "message": "Host process failed"
+      },
+      {
+        "type": "interaction",
+        "requestId": 1,
+        "status": "pending",
+        "expiresAt": 1791860000000
+      },
+      {
+        "type": "interaction",
+        "requestId": "r",
+        "status": "resolved"
+      },
+      {
+        "type": "interaction",
+        "requestId": 2,
+        "status": "expired"
+      },
+      {
+        "type": "interaction",
+        "requestId": 3,
+        "status": "invalidated"
+      },
+      {
+        "type": "gap",
+        "requested_after_seq": 0,
+        "oldest_seq": 5,
+        "latest_seq": 10
+      }
+    ],
+    "HostFrame": [
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 1,
+        "kind": "native",
+        "messageKind": "notification",
+        "payload": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": "item-1",
+            "delta": "answer",
+            "optionalExtension": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "claude-code.stream-json",
+        "seq": 1,
+        "kind": "native",
+        "messageKind": "message",
+        "payload": {
+          "type": "stream_event",
+          "event": {
+            "type": "content_block_delta",
+            "index": 0,
+            "delta": {
+              "type": "text_delta",
+              "text": "answer"
+            }
+          },
+          "extension": ["preserved"]
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "canonical",
+        "protocol": "codex.app-server",
+        "seq": 1,
+        "kind": "canonical",
+        "event": {
+          "protocolVersion": 2,
+          "type": "message.delta",
+          "payload": {
+            "channel": "final",
+            "text": "answer"
+          }
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 2,
+        "kind": "control",
+        "control": {
+          "type": "state",
+          "state": "completed"
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 2,
+        "kind": "native",
+        "messageKind": "response",
+        "payload": {
+          "id": 7,
+          "error": {
+            "code": -32001,
+            "message": "Provider rejected",
+            "data": {
+              "reason": "denied",
+              "optional": true
+            }
+          }
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 2,
+        "kind": "native",
+        "messageKind": "request",
+        "payload": {
+          "id": 8,
+          "method": "item/tool/requestUserInput",
+          "params": {
+            "questions": []
+          },
+          "extra": {
+            "retained": true
+          }
+        }
+      }
+    ]
+  },
+  "invalid": {
+    "HostInvokeOptions": [
+      null,
+      [],
+      {
+        "protocolMode": null
+      },
+      {
+        "protocolMode": ""
+      },
+      {
+        "protocolMode": "Canonical"
+      },
+      {
+        "protocolMode": 7
+      },
+      {
+        "protocol": ""
+      },
+      {
+        "protocolMode": "native",
+        "protocol_mode": "native"
+      }
+    ],
+    "HostRunReceipt": [
+      {},
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "auto",
+        "protocol": "codex.app-server"
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server"
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": -1,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server"
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 9007199254740992,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server"
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "extra": true
+      }
+    ],
+    "AdapterProtocolSupport": [
+      {},
+      {
+        "protocol": "codex",
+        "modes": [],
+        "nativeMethods": []
+      },
+      {
+        "protocol": "codex",
+        "modes": ["native", "native"],
+        "nativeMethods": []
+      },
+      {
+        "protocol": "codex",
+        "modes": ["auto"],
+        "nativeMethods": []
+      },
+      {
+        "protocol": "acp",
+        "modes": ["canonical"],
+        "nativeMethods": ["fake"]
+      }
+    ],
+    "NativeInteractionResponse": [
+      {},
+      {
+        "requestId": null,
+        "payload": {}
+      },
+      {
+        "requestId": 1.5,
+        "payload": {}
+      },
+      {
+        "requestId": 9007199254740992,
+        "payload": {}
+      },
+      {
+        "requestId": 1,
+        "payload": []
+      },
+      {
+        "requestId": 1,
+        "payload": {},
+        "interactionId": "mixed"
+      }
+    ],
+    "HostControl": [
+      {
+        "type": "state",
+        "state": "socket_closed"
+      },
+      {
+        "type": "error",
+        "code": "UNLISTED_HOST_ERROR",
+        "message": "failed"
+      },
+      {
+        "type": "interaction",
+        "requestId": 1,
+        "status": "pending"
+      },
+      {
+        "type": "interaction",
+        "requestId": 1,
+        "status": "pending",
+        "expiresAt": 0
+      },
+      {
+        "type": "interaction",
+        "requestId": null,
+        "status": "resolved"
+      },
+      {
+        "type": "state",
+        "state": "completed",
+        "payload": {
+          "type": "result"
+        }
+      },
+      {
+        "type": "gap",
+        "requested_after_seq": -1,
+        "oldest_seq": 5,
+        "latest_seq": 10
+      },
+      {
+        "type": "evidence",
+        "name": "context.applied",
+        "payload": {
+          "schema": "octo.context-application/v1",
+          "compiler_version": "octo.context-compiler/v4",
+          "catalog_version": "octo.context-catalog/v3",
+          "context_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "compiled_hash": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "run_id": "run-1",
+          "lease_id": "lease-1",
+          "fencing_token": 1,
+          "adapter_type": "codex",
+          "provider_session_id": "thread-native",
+          "provider_ack": "turn/start"
+        }
+      }
+    ],
+    "HostFrame": [
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "canonical",
+        "protocol": "codex.app-server",
+        "seq": 1,
+        "kind": "native",
+        "messageKind": "notification",
+        "payload": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": "item-1",
+            "delta": "answer",
+            "optionalExtension": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 1,
+        "kind": "canonical",
+        "event": {
+          "protocolVersion": 2,
+          "type": "message.delta",
+          "payload": {
+            "channel": "final",
+            "text": "answer"
+          }
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 1,
+        "kind": "native",
+        "messageKind": "notification",
+        "payload": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": "item-1",
+            "delta": "answer",
+            "optionalExtension": {
+              "enabled": true
+            }
+          }
+        },
+        "event": {
+          "protocolVersion": 2,
+          "type": "message.delta",
+          "payload": {
+            "channel": "final",
+            "text": "answer"
+          }
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "canonical",
+        "protocol": "codex.app-server",
+        "seq": 1,
+        "kind": "canonical",
+        "event": {
+          "protocolVersion": 2,
+          "type": "message.delta",
+          "payload": {
+            "channel": "final",
+            "text": "answer"
+          }
+        },
+        "payload": {}
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 0,
+        "kind": "native",
+        "messageKind": "notification",
+        "payload": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": "item-1",
+            "delta": "answer",
+            "optionalExtension": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 1.1,
+        "kind": "native",
+        "messageKind": "notification",
+        "payload": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": "item-1",
+            "delta": "answer",
+            "optionalExtension": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 9007199254740992,
+        "kind": "native",
+        "messageKind": "notification",
+        "payload": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": "item-1",
+            "delta": "answer",
+            "optionalExtension": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 1,
+        "kind": "unknown",
+        "messageKind": "notification",
+        "payload": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": "item-1",
+            "delta": "answer",
+            "optionalExtension": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 1,
+        "kind": "native",
+        "messageKind": "notification",
+        "payload": []
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 1,
+        "kind": "native",
+        "messageKind": "notification",
+        "payload": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": "item-1",
+            "delta": "answer",
+            "optionalExtension": {
+              "enabled": true
+            }
+          }
+        },
+        "control": {
+          "type": "state",
+          "state": "completed"
+        }
+      },
+      {
+        "run_id": "",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 1,
+        "kind": "native",
+        "messageKind": "notification",
+        "payload": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": "item-1",
+            "delta": "answer",
+            "optionalExtension": {
+              "enabled": true
+            }
+          }
+        }
+      },
+      {
+        "run_id": "run-1",
+        "invocation_id": "invoke-1",
+        "stream_id": "host:stream-1",
+        "agent_session_id": "session-1",
+        "session_generation": 3,
+        "protocol_mode": "native",
+        "protocol": "codex.app-server",
+        "seq": 1,
+        "kind": "native",
+        "messageKind": "notification",
+        "payload": {
+          "method": "item/agentMessage/delta",
+          "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "itemId": "item-1",
+            "delta": "answer",
+            "optionalExtension": {
+              "enabled": true
+            }
+          }
+        },
+        "extra": "outer"
+      }
+    ]
+  }
+}

@@ -1,0 +1,12 @@
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-session-reset
+  - runtime-stateless
+  - runtime-engineering
+sources:
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-wecom/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts
+  - test/im-runtime.test.js
+  - test/im-wecom.test.js

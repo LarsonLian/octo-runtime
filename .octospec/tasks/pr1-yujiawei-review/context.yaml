@@ -1,0 +1,146 @@
+status: r06b-implemented-local-validation-passed
+decisions:
+  R01: 删除 getGroupInfo 实现及公开导出；已实施并提交。
+  R02a: 删除 getUploadPresign、uploadFileToPresignedUrl；已实施并提交。
+  R02b: 随 R02a 清理，不建设 Channel 上传目的地策略；已实施并提交。
+  R03: 系统账号是本地信任边界，同账号客户端互信；现有设计符合目标，架构与本地执行规则已同步，两份 SDK 接入说明已同步；不新增 APP 鉴权、错误码或错误卡片。
+  preserve: 保留 files.ts 中原生图片尺寸解析及必要依赖，不整文件删除。
+  principle: 按职责、消费者及内置必要性判断；固定渠道逻辑可以调用 API，不以模型前后时点作绝对限制。
+  evidence: 用户确认 octo-cli 支持对应能力且端到端验收通过，本轮未独立重跑。
+baseline: 0eb8b8d8fe8be5829da74ec6e686bfa39432f521
+review:
+  url: https://github.com/Mininglamp-OSS/octo-runtime/pull/1#pullrequestreview-5556231591
+  author: yujiawei
+  state: CHANGES_REQUESTED
+additional_reviews:
+  - url: https://github.com/Mininglamp-OSS/octo-runtime/pull/1#pullrequestreview-5556251807
+    author: Jerry-Xin
+    state: CHANGES_REQUESTED
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-local-execution
+  - runtime-engineering
+  - runtime-output-protocol
+  - runtime-stateless
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/output-protocol.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/collaboration.md
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/conversations.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/files.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/index.ts
+  - packages/octo-runtime-extra-channel-gateway/src/index.ts
+  - packages/octo-runtime-daemon/src/server.ts
+  - packages/octo-runtime-acp-client/src/index.ts
+  - packages/octo-runtime-adapter-sdk/src/index.ts
+  - packages/octo-runtime-adapter-acp/src/index.ts
+  - packages/octo-runtime-adapter-host/src/index.ts
+  - packages/octo-runtime-adapter-host/src/serve.ts
+  - packages/octo-runtime-adapter-host/src/process.ts
+  - packages/octo-runtime-adapter-host/src/watchdog.ts
+  - packages/octo-runtime-adapter-codex/src/app-server.ts
+  - packages/octo-runtime-adapter-zcode-gui/src/app-server.ts
+  - packages/octo-runtime-adapter-sdk/src/native.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/events.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/mentions.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/contexts.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/connector.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/card-session.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/image-input.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/messages.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/rules.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/execution/task.ts
+  - packages/octo-runtime-extra-channel-gateway/src/presentation/run-projector.ts
+  - test/im-final-mention.test.js
+  - scripts/verify-channel-group-admission-live.mjs
+  - scripts/verify-channel-group-entrypoints-live.mjs
+  - scripts/verify-im-context-live.mjs
+  - test/antigravity-adapter.test.js
+  - test/runtime-fixture.js
+  - https://fetch.spec.whatwg.org/#http-redirect-fetch
+cross_repository_evidence:
+  repository: /Users/lvsijia/github.com/Mininglamp-OSS/octo-server
+  head: 5cf83f5725a6ce71f4944a9ce1a17038268375cf
+  files:
+    - modules/bot_api/groups.go
+    - modules/bot_api/file.go
+    - modules/file/service_minio.go
+    - modules/file/service_s3.go
+    - modules/file/service_cos_integration_test.go
+  limitation: 源码证据不代表 im-test 实际部署合同或本轮线上验收。
+legacy_plugin_evidence:
+  repository: /Users/lvsijia/github.com/Mininglamp-OSS/openclaw-channel-octo
+  head: 2e710e903fa43ac9440723746f7395d2f7b4347e
+  files:
+    - src/actions.ts
+    - src/agent-tools.ts
+    - src/channel.ts
+    - src/inbound.ts
+    - src/api-fetch.ts
+  upload_origin_commit: 7ef1e25036cf62440e14cb1bbab44b3b11535526
+  conclusion: 旧查群工具与媒体投递链有真实调用；当前 Runtime 仅保留 helper，公共消费者与删除义务须另核实。
+validation:
+  channel_consumer_audit: Runtime 产品/测试/脚本与本地 Work App、SDK demo 未发现三项上传/查群 helper 的消费者；fetchBotGroups 被三个联调脚本使用。
+  final_mention_regression: Node 24 运行既有 test/im-final-mention.test.js，5 项通过；mock 网络，不是线上联调。
+  construction_probe: Node v24.19.0，fetch 内存捕获，合成数据，无网络与凭据。
+  hosted_ci: https://github.com/Mininglamp-OSS/octo-runtime/actions/runs/39001794839
+  hosted_ci_result: 同一评审 SHA 的 Ubuntu/macOS 完整矩阵与 CI Gate 成功。
+  lifecycle_probe:
+    environment: macOS，Node v24.19.0，当前构建产物，隔离的假 Provider 进程。
+    script: /tmp/octo-runtime-pr1-lifecycle-probe.mjs
+    acp_error: 缺失命令导致共享 AdapterHost 所在探针退出码 1；已启动兄弟任务未完成，无 run.failed。
+    ndjson_cleanup: 父进程已退出，关闭 1.3 秒后后代仍活跃，随后 150 ms 新写入 6 字节。
+    acp_cleanup: 父进程已退出，关闭 1.3 秒后后代仍活跃，随后 150 ms 新写入 6 字节。
+    fixture_cleanup: 两组后代均已显式终止并确认消失；未触碰现有 Runtime 状态。
+    limitations: 本轮未独立重复跨 Host RPC 探针、未验证 Windows 或真实 Provider，不是线上业务验收。
+  adjacent_probe:
+    script: /tmp/octo-runtime-pr1-adjacent-probe.mjs
+    host_cleanup: public launcher 关闭约 1 ms 返回，1.3 秒后后代仍工作，随后 150 ms 新写入 6 字节。
+    codex_stdin: public turn 入口与真实 OS 管道，合成 peer 关闭 stdin 后未处理 EPIPE，所在 Node 进程退出码 1。
+    fixture_cleanup: 已复查所有专属后代和 peer 不存在，没有修改现有 Runtime 状态。
+    limitations: ZCode 完整调用和缓冲内存曲线未实测；无线上 API 调试，不代表真实 Provider 或 Windows 验收。
+scope:
+  - 用户已授权按问题修复并单独提交，提交正文注明 reviewer 与决策；本轮不推送、不合并。
+  - 不在 GitHub 发送评审回复，不请求重新评审。
+
+implementation_validation:
+  node: v24.19.0
+  platform: macOS
+  typecheck_build: passed
+  lint_names_format: passed
+  node_tests: 1113 total, 1104 passed, 9 skipped, 0 failed
+  ui_tests: 35 passed
+  okf_diff: passed
+  remote_ci: 新提交未推送，尚未运行；不使用原 SHA 通过结果代替本次验证。
+  boundaries: 假 Provider 与真实 OS 管道/进程组；无真实模型或 im-test API 调用，Windows 未实测。
+
+windows_validation:
+  issue: https://github.com/Mininglamp-OSS/octo-runtime/issues/2
+  implementation: Windows 已有执行和 child 关闭实现，不能表述为未实现。
+  status: 本轮未真机验证，用户计划后续补测；后代回收疑点待核实。
+  requirement: Windows 同等生命周期要求，发现问题必须修复；补 Windows CI，不能以不保证支持豁免。
+
+second_review:
+  head: 55e977f249b6b0fae85d43c79748db1ff35bb719
+  R06b:
+    author: Jerry-Xin
+    url: https://github.com/Mininglamp-OSS/octo-runtime/pull/1#pullrequestreview-5556594844
+    status: 已实现；本轮全量 Node 1114 通过、9 跳过，UI 35 通过；构建、类型、lint、命名、格式通过。
+    evidence: 本轮通过 production defaultSpawn 独立复现旧代码 4 项失败；修复后新增 10 项及相关共 50 项通过。
+  R07:
+    author: yujiawei
+    url: https://github.com/Mininglamp-OSS/octo-runtime/pull/1#pullrequestreview-5556602456
+    status: 与公司规范对齐，保留 @v1；已按用户授权发送 issuecomment-6230666277。
+    evidence: 公司 workflow-architecture 第 5 节明确滚动 @v1；octo-cli 9 处、octo-server 14 处、openclaw-channel-octo 12 处全部 @v1；codex-channel-octo 无此类引用。
+  current_scope: 按用户授权实施 Codex R06b 并单独提交，未修改 workflow；不自动推送。

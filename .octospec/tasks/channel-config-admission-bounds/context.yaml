@@ -1,0 +1,34 @@
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-extras
+  - runtime-stateless
+  - runtime-engineering
+sources:
+  - AGENTS.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/engineering.md
+  - .octospec/tasks/channel-no-context-persistence/brief.md
+  - packages/octo-runtime-extra-channel-gateway/src/lifecycle/manager.ts
+  - packages/octo-runtime-extra-channel-gateway/src/extra.ts
+  - packages/octo-runtime-extra-channel-gateway/src/daemon-module.ts
+status: implemented-targeted-and-im-test-verified
+confirmed_limits:
+  max_bots_per_extra_instance: 64
+proposed_limits:
+  max_operations_including_active: 64
+  max_single_config_bytes: 262144
+derived_bounds:
+  max_admitted_config_snapshot_bytes: 16777216
+  max_active_endpoint_config_bytes: 16777216
+decisions:
+  independent_aggregate_byte_admission: false
+  admission_before_clone: true
+  automatic_same_bot_coalescing: false
+  close_requires_queue_slot: false
+  new_hot_update_feature: false
+  persistence: false

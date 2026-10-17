@@ -1,0 +1,139 @@
+{
+  "workdir": "/var/folders/76/39mbswr923z8ykj89093khl00000gp/T/octo-actmode-live-WrlVKj",
+  "results": [
+    {
+      "type": "codex",
+      "mode": "plan",
+      "runId": "actmode_3c186e2b-f826-4780-b47c-0b82b807f900",
+      "resumed": false,
+      "evidence": [
+        {
+          "requested": "plan",
+          "effective": "plan",
+          "status": "applied",
+          "nativeMode": "plan"
+        }
+      ],
+      "text": "MODE_PASS",
+      "terminal": "run.completed",
+      "providerSessionId": "01a1410c-fb6a-73e0-886c-5509805ce737",
+      "passed": true
+    },
+    {
+      "type": "codex",
+      "mode": "default",
+      "runId": "actmode_7e0304ba-0b04-4b8d-9a54-00bb34ce3733",
+      "resumed": true,
+      "evidence": [
+        {
+          "requested": "default",
+          "effective": "default",
+          "status": "applied",
+          "nativeMode": "default"
+        }
+      ],
+      "text": "MODE_PASS",
+      "terminal": "run.completed",
+      "providerSessionId": "01a1410c-fb6a-73e0-886c-5509805ce737",
+      "passed": true
+    },
+    {
+      "type": "codex",
+      "mode": "omitted",
+      "runId": "actmode_7e41c1df-79c3-400f-ac2d-e1ec5fb83254",
+      "resumed": true,
+      "evidence": [],
+      "text": "MODE_PASS",
+      "terminal": "run.completed",
+      "providerSessionId": "01a1410c-fb6a-73e0-886c-5509805ce737",
+      "passed": true
+    },
+    {
+      "type": "claude-code",
+      "mode": "plan",
+      "runId": "actmode_d133db45-beaa-4f76-9acf-96478082aa6e",
+      "resumed": false,
+      "evidence": [
+        {
+          "requested": "plan",
+          "effective": "plan",
+          "status": "applied",
+          "nativeMode": "plan"
+        }
+      ],
+      "text": "MODE_PASS",
+      "terminal": "run.completed",
+      "providerSessionId": "e87bbbbc-3053-4e80-b1cd-e429a6507e8c",
+      "passed": true
+    },
+    {
+      "type": "claude-code",
+      "mode": "default",
+      "runId": "actmode_3402c38f-d060-4bb8-a1c8-8494f63c4e9a",
+      "resumed": true,
+      "evidence": [
+        {
+          "requested": "default",
+          "effective": "default",
+          "status": "applied",
+          "nativeMode": "default"
+        }
+      ],
+      "text": "MODE_PASS",
+      "terminal": "run.completed",
+      "providerSessionId": "e87bbbbc-3053-4e80-b1cd-e429a6507e8c",
+      "passed": true
+    },
+    {
+      "type": "claude-code",
+      "mode": "omitted",
+      "runId": "actmode_db183a7d-f503-4495-b30e-d22bc5509970",
+      "resumed": true,
+      "evidence": [],
+      "text": "MODE_PASS",
+      "terminal": "run.completed",
+      "providerSessionId": "e87bbbbc-3053-4e80-b1cd-e429a6507e8c",
+      "passed": true
+    },
+    {
+      "type": "opencode",
+      "mode": "plan",
+      "runId": "actmode_304c3c9b-c48a-4b45-b6e9-fdff839a6109",
+      "resumed": false,
+      "evidence": [
+        {
+          "requested": "plan",
+          "effective": "plan",
+          "nativeMode": "plan",
+          "status": "applied"
+        }
+      ],
+      "text": "MODE_PASS",
+      "terminal": "run.completed",
+      "providerSessionId": "ses_ebef29ee8ffeHf6AcwJjj8UfHW",
+      "passed": true
+    },
+    {
+      "type": "opencode",
+      "mode": "default",
+      "runId": "actmode_55f17de9-3814-47d7-8bb0-fd1abf642219",
+      "resumed": true,
+      "evidence": [
+        {
+          "requested": "default",
+          "effective": "default",
+          "nativeMode": "build",
+          "status": "applied"
+        }
+      ],
+      "text": "",
+      "terminal": "run.failed",
+      "failure": {
+        "code": "ADAPTER_RUN_DEADLINE",
+        "message": "adapter watchdog exceeded run_deadline budget"
+      },
+      "passed": false,
+      "error": "The operation was aborted due to timeout"
+    }
+  ]
+}

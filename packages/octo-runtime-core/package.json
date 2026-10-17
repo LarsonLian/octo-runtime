@@ -1,0 +1,17 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-core",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./dist/index.js",
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

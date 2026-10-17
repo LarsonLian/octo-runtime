@@ -1,0 +1,22 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-adapter-openclaw",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./dist/index.js",
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.18.1"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

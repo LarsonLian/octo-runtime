@@ -1,0 +1,22 @@
+rules:
+  - runtime-architecture
+  - runtime-lifecycle
+  - runtime-extras
+  - commit
+guides:
+  - workspace
+sources:
+  - AGENTS.md
+  - .octospec/rules/_index.yaml
+  - SDK_NATIVE_INTEGRATION_GUIDE.md
+  - packages/octo-runtime-daemon/src/runtime/types.ts
+  - packages/octo-runtime-daemon/src/runtime/supervisor.ts
+  - packages/octo-runtime-daemon/src/runtime/home.ts
+  - packages/octo-runtime-daemon/src/runtime/runner.ts
+  - packages/octo-runtime-daemon/src/extra-config.ts
+  - packages/octo-runtime-adapter-openclaw/src/local-gateway.ts
+  - packages/octo-runtime-extra-channel-gateway/src/contracts.ts
+decisions:
+  - 完整指南先启动再配置特性，直接调用 Agent 为可选步骤。
+  - OctoBuddy 推荐仅 Channel Gateway 接入指南。
+  - submodule 包纳入宿主 pnpm workspace，依赖与加载集合分别说明。

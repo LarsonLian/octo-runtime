@@ -1,0 +1,27 @@
+rules:
+  - runtime-architecture
+  - runtime-extras
+  - runtime-engineering
+  - runtime-protocol-design
+  - runtime-protocol-schema
+  - runtime-output-protocol
+  - runtime-invoke-input
+  - runtime-adapter-metadata
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/protocol-design.md
+  - .octospec/rules/protocol-schema.md
+  - .octospec/rules/output-protocol.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/adapter-metadata.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/adapter-composition-ownership/brief.md
+decisions:
+  - 单一 npm 发行包公开子入口，所有传递类型依赖随包携带。
+  - Extra 复用注入的执行实例，Adapter 追加机制作为后续实施目标。

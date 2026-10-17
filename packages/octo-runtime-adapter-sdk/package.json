@@ -1,0 +1,20 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-adapter-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./process-cleanup": "./dist/process-cleanup.js"
+  },
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

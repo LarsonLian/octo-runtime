@@ -1,0 +1,8 @@
+rules:
+  - runtime-architecture
+  - runtime-adapter-metadata
+  - runtime-lifecycle
+  - runtime-local-execution
+  - runtime-engineering
+guides:
+  - workspace

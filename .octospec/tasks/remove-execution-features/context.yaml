@@ -1,0 +1,13 @@
+rules:
+  - runtime-architecture
+  - runtime-adapter-metadata
+  - runtime-protocol-design
+  - runtime-local-execution
+  - runtime-output-protocol
+  - runtime-stateless
+  - runtime-engineering
+  - runtime-environment
+  - runtime-mcp
+  - commit
+guides:
+  - adapter-authoring

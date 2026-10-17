@@ -1,0 +1,13 @@
+baseline: df63c8f
+rules:
+  - runtime-architecture
+  - runtime-engineering
+  - commit
+  - security
+  - comprehension-gate
+sources:
+  - 当前源码与测试
+  - Git 提交及文件演进
+  - 全部根 docs 文档
+  - 协议包 InvokeInput 指南
+note: 编码任务的阅读记录，不是 Runtime Context envelope，也不注入产品模型输入。

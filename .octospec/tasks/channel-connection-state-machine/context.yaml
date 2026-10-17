@@ -1,0 +1,54 @@
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-extras
+  - runtime-stateless
+  - runtime-engineering
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/channel-rate-limit-retry/brief.md
+  - .octospec/tasks/im-long-running-retry/brief.md
+  - .octospec/tasks/extra-startup-diagnostics/brief.md
+  - packages/octo-runtime-extra-channel-gateway/src/contracts.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/wukong.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/auth.ts
+  - packages/octo-runtime-extra-channel-gateway/src/lifecycle/manager.ts
+  - packages/octo-runtime-extra-channel-gateway/src/extra.ts
+  - packages/octo-runtime-extra-channel-gateway/src/daemon-module.ts
+  - test/im-runtime.test.js
+  - test/im-protocol.test.js
+  - test/im-extra-disposal.test.js
+  - ../octo-work-app/src/shared/im-channels.ts
+  - ../octo-work-app/src/main/im-channel-service.ts
+  - ../octo-work-app/src/renderer/src/settings/ImChannelsSettings.tsx
+status: implemented-partially-validated
+decisions:
+  scope: octo-channel-gateway
+  initial_attempt_auto_retry: false
+  recovery_requires_online_in_current_start_cycle: true
+  healthy_state: online
+  states: [stopped, connecting, online, retrying, failed]
+  error_field: error
+  reconnect_delays_ms: [5000, 10000, 20000, 30000]
+  repeat_last_delay: true
+  reset_backoff_after_full_connection: true
+  clear_connection_error_after_full_connection: true
+  retrying_during_recovery_attempt: true
+  connection_and_business_diagnostics_separate: true
+  terminal_errors_stop_recovery: true
+  server_occupancy_contract: im-test-second-accepted-old-disconnected-reason-12
+  physical_macbook_sleep_wake: pending-manual-verification
+  persistence: false
+  run_schema_version: 7
+  context_schema: octo.context-envelope/v3

@@ -1,0 +1,82 @@
+:root {
+  --radius-panel: 16px;
+  --radius-composer: 22px;
+  --radius-menu: 14px;
+  --radius-menu-item: 8px;
+  --radius-control: 8px;
+  --radius-card: 8px;
+  --radius-dialog: 16px;
+  --radius-md: var(--radius-control);
+  --radius-lg: var(--radius-card);
+  --radius-xl: var(--radius-dialog);
+  --radius-2xl: var(--radius-composer);
+
+  --control-height-sm: 28px;
+  --control-height: 32px;
+  --control-height-md: 36px;
+  --control-height-lg: 44px;
+  --menu-row-height: 34px;
+  --density-row-height: 36px;
+  --density-gap: 8px;
+
+  // Transitional aliases consume the existing theme; they never define a second palette.
+  --color-octo-blue: var(--color-accent);
+  --color-octo-blue-hover: var(--color-accent-hover);
+  --color-octo-blue-active: var(--color-accent-text);
+  --color-octo-blue-light: var(--color-accent-soft);
+  --color-octo-blue-ring: var(--color-accent-bd);
+  --color-text-slate-primary: var(--color-text);
+  --color-text-slate-secondary: var(--color-text-muted);
+  --color-text-slate-muted: var(--color-text-tertiary, var(--color-text-muted));
+  --color-text-slate-faint: var(--color-text-faint);
+  --color-canvas-slate: var(--color-bg);
+  --color-surface-card: var(--color-surface-raised);
+  --color-surface-sunken: var(--color-surface);
+  --color-border-slate-subtle: var(--color-line);
+  --color-border-slate-default: var(--color-line-strong);
+  --color-border-slate-hover: var(--color-line-strong);
+  --elevation-0: none;
+  --elevation-1: var(--shadow-control);
+  --elevation-2: var(--shadow-panel);
+  --elevation-3: var(--shadow-menu);
+  --elevation-4: var(--shadow-dialog);
+
+  --surface-menu: var(--color-surface-raised);
+  --surface-control: var(--color-bg);
+  --surface-control-hover: var(--color-hover);
+  --surface-control-selected: var(--color-selected);
+  --surface-border: var(--color-line);
+  --elevation-ink: #000;
+  --shadow-control: 0 1px 2px color-mix(in srgb, var(--elevation-ink) 4%, transparent);
+  --shadow-panel: 0 1px 3px color-mix(in srgb, var(--elevation-ink) 6%, transparent),
+    0 4px 10px color-mix(in srgb, var(--elevation-ink) 5%, transparent);
+  --shadow-composer: 0 1px 3px color-mix(in srgb, var(--elevation-ink) 4%, transparent),
+    0 5px 16px color-mix(in srgb, var(--elevation-ink) 4%, transparent);
+  --shadow-menu: 0 2px 6px color-mix(in srgb, var(--elevation-ink) 5%, transparent),
+    0 8px 24px color-mix(in srgb, var(--elevation-ink) 9%, transparent);
+  --shadow-dialog: 0 3px 8px color-mix(in srgb, var(--elevation-ink) 7%, transparent),
+    0 12px 32px color-mix(in srgb, var(--elevation-ink) 12%, transparent);
+  --shadow-xs: var(--shadow-control);
+  --shadow-sm: var(--shadow-panel);
+  --shadow-md: var(--shadow-menu);
+  --shadow-lg: var(--shadow-dialog);
+  --shadow-xl: var(--shadow-dialog);
+}
+
+html[data-color-scheme='dark'] {
+  --elevation-ink: #000;
+  --shadow-panel: 0 1px 3px rgb(0 0 0 / 18%), 0 4px 10px rgb(0 0 0 / 16%);
+  --shadow-composer: 0 1px 3px rgb(0 0 0 / 12%), 0 5px 16px rgb(0 0 0 / 12%);
+  --shadow-menu: 0 2px 6px rgb(0 0 0 / 20%), 0 8px 24px rgb(0 0 0 / 24%);
+  --shadow-dialog: 0 3px 8px rgb(0 0 0 / 22%), 0 12px 32px rgb(0 0 0 / 28%);
+}
+
+// State remains visible when users opt out of nonessential motion.
+@media (prefers-reduced-motion: reduce) {
+  :is(.drive, .pm-panel, .pm-nav, .knowledge-workspace, .knowledge-catalog, .agent-access-task-workspace, .agent-access-automation, .ui-seg, .ui-menu, .ui-dialog),
+  :is(.drive, .pm-panel, .pm-nav, .knowledge-workspace, .knowledge-catalog, .agent-access-task-workspace, .agent-access-automation, .ui-seg, .ui-menu, .ui-dialog) * {
+    animation: none !important;
+    transition: none !important;
+    scroll-behavior: auto !important;
+  }
+}

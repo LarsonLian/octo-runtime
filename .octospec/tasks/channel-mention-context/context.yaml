@@ -1,0 +1,53 @@
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-context-input
+  - runtime-context-extensions
+  - runtime-extras
+  - runtime-engineering
+sources:
+  - .octospec/tasks/channel-octo-cli-environment/brief.md
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/messages.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/conversations.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/wukong.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/contexts.ts
+  - packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts
+  - packages/octo-runtime-adapter-host/src/model-input.ts
+  - .octospec/tasks/channel-mention-context/protocol.md
+  - .octospec/tasks/channel-mention-context/context-guidance.md
+  - .octospec/tasks/channel-mention-context/first-context.example.json
+  - packages/octo-runtime-extra-channel-gateway/src/transport/normalize.ts
+  - .octospec/tasks/channel-mention-context/inbound-trigger.md
+status: design-selected-not-implemented
+decisions:
+  inbound_group_topic_trigger: current-bot-uid-or-pure-ais-in-payload-mention
+  inbound_flag_true_values: [1, true]
+  inbound_all_humans_suppress_ais_only: true
+  inbound_content_matching: false
+  mention_free_configuration: rejected
+  inbound_ai_broadcast_requires_uid_expansion: false
+  automatic_mention_in_ordinary_replies: false
+  applies_to_senders: [human, bot]
+  applies_to_conversations: [dm, group, topic]
+  explicit_mention_scope: same-channel-human
+  output_marker: '@[uid:displayName]'
+  identity_lookup: octo-cli-as-needed
+  final_delivery: channel-existing-final-reply-path
+  wire_protocol: existing-human-content-and-payload-mention
+  context_item: extra.im/mention-instructions
+  context_guidance_field: guidance
+  context_submission_owner: channel-business
+  new_persistent_state: false
+  fallback_decision_owner: model
+  unknown_target_output: plain-name-or-text
+  mandatory_clarification_for_mention: false
+  mention_processing_scope: final-text-body-only
+  code_examples: preserve-verbatim
+  validation_failure_blocks_final_text: false
+  mention_failure_notice: false
+  mention_specific_rerun_or_resend: false
+pending:
+  - bot-target-authorization-and-loop-control
+  - model-outbound-broadcast-scope
+  - native-reply-notification-behavior

@@ -1,0 +1,10 @@
+rules:
+  - runtime-context-extensions
+  - runtime-protocol-schema
+  - runtime-engineering
+  - commit
+sources:
+  - .octospec/rules/context-extensions.md
+  - .octospec/rules/protocol-schema.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md

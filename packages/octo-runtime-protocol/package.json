@@ -1,0 +1,22 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-protocol",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./browser": "./dist/browser.js",
+    "./notification": "./dist/notification.js"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "gen": "node scripts/gen-types.mjs",
+    "build": "node scripts/gen-types.mjs && tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^16.0.0"
+  }
+}

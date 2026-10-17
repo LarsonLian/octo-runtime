@@ -1,0 +1,51 @@
+{
+  "name": "@mininglamp-oss/octo-runtime-daemon",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./extra": {
+      "types": "./dist/extras.d.ts",
+      "import": "./dist/extras.js"
+    },
+    "./extra-config": {
+      "types": "./dist/extra-config.d.ts",
+      "import": "./dist/extra-config.js"
+    },
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./runtime/*": {
+      "types": "./dist/runtime/*.d.ts",
+      "import": "./dist/runtime/*.js"
+    }
+  },
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-adapter-codex": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-claude-code": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-codebuddy": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-hermes": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-kimi-code": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-mcode": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-opencode": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-openclaw": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-qodercli": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-qoderclicn": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-zcode-gui": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-antigravity": "workspace:*",
+    "@mininglamp-oss/octo-runtime-core": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
+    "ajv": "^8.17.1",
+    "yaml": "^2.8.1"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}

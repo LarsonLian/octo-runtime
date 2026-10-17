@@ -1,0 +1,19 @@
+rules:
+  - runtime-architecture
+  - runtime-lifecycle
+  - runtime-extras
+  - runtime-engineering
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+decisions:
+  - Extra 属于设备 Home，不属于 default 或其他 profile。
+  - CLI 的集合目录命名为 extras。
+  - 当前版本尚未发布，不增加旧布局探测、兼容、迁移或提醒逻辑。

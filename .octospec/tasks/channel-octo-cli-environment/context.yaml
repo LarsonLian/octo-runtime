@@ -1,0 +1,24 @@
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-environment
+  - runtime-openclaw
+  - runtime-extras
+  - runtime-invoke-input
+  - runtime-local-execution
+  - runtime-context-input
+  - runtime-engineering
+  - commit
+sources:
+  - packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - packages/octo-runtime-protocol/src/invoke-input.ts
+  - packages/octo-runtime-core/src/invoke-input.ts
+  - packages/octo-runtime-adapter-host/src/host-run-service.ts
+  - packages/octo-runtime-adapter-host/src/rpc.ts
+  - packages/octo-runtime-adapter-sdk/src/environment.ts
+  - apps/daemon/src/openclaw.ts
+  - https://github.com/Mininglamp-OSS/octo-cli#quick-start
+  - https://docs.openclaw.ai/help/environment
+  - https://docs.openclaw.ai/cli/config

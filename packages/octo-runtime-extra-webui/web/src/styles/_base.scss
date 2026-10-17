@@ -1,0 +1,505 @@
+// Global surfaces; typography is owned by _typography.scss.
+
+body {
+  margin: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+  font-size: var(--ui-font-size);
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+  color-scheme: light;
+}
+
+html[data-color-scheme='dark'],
+html[data-color-scheme='dark'] body {
+  color-scheme: dark;
+}
+
+// 分段控件（.ui-seg）物理质感 token：机加工下凹底槽 + 悬浮键帽高光。
+// 亮/暗各调一套 alpha：既透出侧栏毛玻璃底色，又保证滑块边缘与顶边高光清晰。
+// 消费方在 _components.scss 的 .ui-seg / .ui-seg__item.is-on。
+:root {
+  // 底槽：极弱 inset 压出下凹蚀刻 + 0.5px 内凹线（叠加在 DS 的 hairline 描边上）。
+  --seg-trough-shadow:
+    inset 0 1px 2px rgb(0 0 0 / 6%),
+    inset 0 0 0 0.5px rgb(0 0 0 / 4%);
+  // 键帽：高纯度白底，消贴纸感。
+  --seg-knob-bg: #ffffff;
+  // 键帽阴影：近阴影定边界 + 柔和外投影做悬浮高差 + 顶部 1px 晶体高光。
+  --seg-knob-shadow:
+    0 1px 3px rgb(0 0 0 / 8%),
+    0 0.5px 1px rgb(0 0 0 / 5%),
+    inset 0 1px 0 rgb(255 255 255 / 95%);
+}
+
+html[data-color-scheme='dark'] {
+  // 深色下用黑色压暗强化凹槽 + 0.5px 极弱亮线防止暗处丢边缘。
+  --seg-trough-shadow:
+    inset 0 1px 2px rgb(0 0 0 / 35%),
+    inset 0 0 0 0.5px rgb(255 255 255 / 6%);
+  // 透光炭灰键帽：透出毛玻璃壁纸色，不抢主界面焦点。
+  --seg-knob-bg: rgb(255 255 255 / 12%);
+  // 底部分离阴影 + 0.5px 亮环切边 + 顶部 0.5px 亮晶白切光。
+  --seg-knob-shadow:
+    0 1px 3px rgb(0 0 0 / 30%),
+    0 0 0 0.5px rgb(255 255 255 / 10%),
+    inset 0 1px 0 rgb(255 255 255 / 22%);
+}
+
+// 滚动条：Kimi 会话列表同款细条。
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-text-quaternary);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-faint);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+// 文本选择 / 插入符
+::selection {
+  background: var(--color-selected);
+  color: var(--color-text);
+}
+
+textarea,
+input {
+  caret-color: var(--color-accent);
+}
+
+button:focus-visible,
+select:focus-visible,
+[tabindex='0']:not([contenteditable='true']):not([contenteditable='']):not([contenteditable='plaintext-only']):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: -2px;
+}
+
+// Chromium 会在鼠标点过按钮后，因任意键盘输入让原控件重新匹配 :focus-visible。
+// 只有真正按 Tab 进入键盘导航时才需要焦点环；鼠标来源的残留焦点不画任何边框。
+//
+// 焦点环有两条画法：根规则的 outline，和各控件自己的 `box-shadow: var(--p-focus-ring)`
+// （.ui-icon-button / .nav-anim-item / 侧栏项 / 建议卡 …）。所以这里把环 token 整体置空，
+// 覆盖全部消费方而不用逐条改；token 必须仍是合法 shadow，因为存在
+// `box-shadow: var(--shadow-menu), var(--p-focus-ring)` 这类叠加写法（置 none 会让整条声明失效）。
+html[data-focus-origin='pointer'] {
+  --p-focus-ring: 0 0 0 0 transparent;
+  --p-focus-ring-strong: 0 0 0 0 transparent;
+  --color-focus: transparent;
+}
+
+html[data-focus-origin='pointer'] :focus-visible {
+  // Input modality must win over feature-specific selector specificity.
+  outline: none !important;
+}
+
+// Text editing surfaces use the caret and a subtle baseline, never a control-sized ring.
+// Keep this global: rich editors commonly add tabindex=0 themselves.
+html :is([contenteditable='true'], [contenteditable=''], [contenteditable='plaintext-only']):focus {
+  outline: none;
+}
+html:not([data-focus-origin='pointer']) :is([contenteditable='true'], [contenteditable=''], [contenteditable='plaintext-only']):focus-visible {
+  box-shadow: inset 0 -1px 0 var(--color-line-strong);
+}
+
+// 窗口拖拽区
+.app-region-drag {
+  -webkit-app-region: drag;
+}
+
+.app-region-drag button,
+.app-region-drag a,
+.app-region-drag input,
+.app-region-drag [role='button'] {
+  -webkit-app-region: no-drag;
+}
+
+// 弹层打开期间，窗口拖拽区整体让路为 no-drag（kimi/_layout.scss 的 :has() 同款手法）。
+// drag 区的点击被 OS 吃掉用于拖窗口，pointerdown 根本到不了 renderer，Popover 的
+// window 捕获监听永远收不到 → 页头/工具条空白处点了关不掉弹层。让路后点击可达，
+// 弹层收起，:has 失配，drag 恢复。所有 Popover 都 portal 出 .popover-portal 到
+// document.body，这条全局规则零组件改动覆盖全部弹层使用者。
+// .chat-header.macos-desktop 的 drag 来自 kimi/_layout.scss 而非 .app-region-drag，
+// 需并列声明（同为 no-drag，与既有 :has 规则不冲突）。
+body:has(.popover-portal, .ui-dialog__overlay) .app-region-drag,
+body:has(.popover-portal, .ui-dialog__overlay) .chat-header.macos-desktop {
+  -webkit-app-region: no-drag;
+}
+
+// Windows 无边框标题栏（WCO，审计 2.10）：系统最小化/最大化/关闭画在窗口右上角，
+// 顶栏右侧的控件簇需左移避让，否则被三键盖住点不到。--wco-inset 是让白宽度，
+// 138px = 3 键 × 46px 的 Windows 默认值，需在 Windows 上按实际微调。
+:root {
+  --wco-inset: 0px;
+}
+
+:root[data-platform='windows'] {
+  --wco-inset: 138px;
+
+  // 右侧控件簇整体左移，避开系统三键区（drag 空条无需处理，三键覆盖其上无碍）。
+  .content-topbar__right,
+  .tms-header__right {
+    margin-right: var(--wco-inset);
+  }
+}
+
+// 输入框与转录内容恢复文本选择（外壳其余区域保持不可选）。
+textarea,
+input,
+.transcript,
+.composer,
+.markdown-body {
+  user-select: text;
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+}
+
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
+// ---- 侧栏底色：覆写 Kimi token ----
+// kimi/_tokens.scss 是 Kimi Code.app 的逐字拷贝，浅色 --color-sidebar-bg 是 #f9fbfc
+// （R249 G251 B252，冷灰白且蓝偏 B−R=+3）。Octo Work 与 Kimi 的配色脱钩，在应用层
+// 整体覆写这个 token —— 不改 kimi/ 下的拷贝文件。
+// 取 #fafafa = rgb(250,250,250)：完全中性（B−R=0），与 ChatGPT.app 侧栏实测的
+// 不透明态取色一致（失焦态中位色就是 #fafafa）。
+// 覆写后 .shell-side / 模式胶囊 / 底栏 / 玻璃 tint / Win10 伪玻璃全部拿到这个中性白。
+// 暗色值（#0d0d0d）本来就是中性，保持 Kimi 原样不动。
+:root {
+  --color-sidebar-bg: #fafafa;
+}
+
+// ---- 毛玻璃（Frosted sidebar）----
+// 开关挂在 html.vibrancy，系统能力挂在 html.native-backdrop。
+//
+// 重要：下面这条 CSS backdrop-filter 在 **macOS 上是空转的**，别指望它。
+// html/body/#root/.shell-frame 全透明 → .shell-side 背后在 web 内容里没有任何已绘制
+// 像素，Chromium 采样不到窗口服务器在整个 web 层之下合成的原生材质。实测把
+// blur 40px→0、saturate 120%→100%、brightness 1.5→1，三张截图逐字节相同。
+// 保留它只为 Windows（Acrylic 下未实测，不敢直接删）。
+//
+// 所以 macOS 侧栏最终颜色只有两个输入：
+//   1) 原生材质 —— main/index.ts 的 vibrancy，现为 headerView（原 sidebar 蓝偏 +6.3）
+//   2) --sb-glass-tint —— 这层纯色膜，基色取 --color-sidebar-bg（上面已覆写成 #fafafa）
+// 除此之外没有别的旋钮，blur / saturate 在 mac 上调了也没用。
+//
+// --sb-glass-alpha 调透明度：越小越透，但越透越暴露材质与桌面的颜色。实测叠加：
+//   header@30% lum 225.7 / B−R +1.8    header@45% lum 231.8 / B−R +1.4
+//   （对照旧材质：sidebar@45% lum 230.8 / B−R +5.6，sidebar@74% 才到 +2.9）
+// 想更透就往 30% 调，蓝偏仍好于换材质前的任何取值。
+//
+// 平台分档：
+//   · macOS：headerView 材质 + 纯色 tint（CSS filter 空转）。
+//   · Windows 11 22H2+（html.is-win11）：DWM Acrylic，CSS filter 可能仍有效，参数见下。
+//   · Windows 10 / 更老（html.is-win-legacy）：无系统材质，窗口不透明，用静态渐变
+//     冒充磨砂面（见更下面的 is-win-legacy 段）。
+html.native-backdrop.vibrancy .shell-side {
+  --sb-glass-base: var(--color-sidebar-bg);
+  --sb-glass-alpha: 45%;
+  --sb-glass-blur: 40px;
+  --sb-glass-saturate: 120%;
+  --sb-glass-tint: color-mix(in srgb, var(--sb-glass-base) var(--sb-glass-alpha), transparent);
+  background: var(--sb-glass-tint);
+  backdrop-filter: blur(var(--sb-glass-blur)) saturate(var(--sb-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--sb-glass-blur)) saturate(var(--sb-glass-saturate));
+  // 分隔线由 .rail-edge__line 画（在内容区那一侧），侧栏自己不再加 border，
+  // 否则半透明灰 + hairline 叠出一条阴影感。
+}
+
+// 暗色：基色由 --color-sidebar-bg 自动变成 #0d0d0d，只需把 alpha 调回改版前的 38%。
+// appearance.js 只写 dark/light，不会写 system，故无需 'system' 分支。
+html[data-color-scheme='dark'].native-backdrop.vibrancy .shell-side {
+  --sb-glass-alpha: 38%;
+}
+
+// Windows 11 专属参数：只覆写自定义属性，background / backdrop-filter 复用上面基线。
+// 靠源码顺序在后生效；mac 无 is-win11 类，不受这里影响。
+html.is-win11.vibrancy .shell-side {
+  --sb-glass-blur: 64px;
+  --sb-glass-saturate: 140%;
+  // 维持改版前的 30%：基色只从 #f9fbfc 变成 #fafafa（差 1~2 级），Windows 这边没条件实测，
+  // 不跟着 mac 那边一起调透过量。
+  --sb-glass-alpha: 30%;
+}
+
+html[data-color-scheme='dark'].is-win11.vibrancy .shell-side {
+  --sb-glass-alpha: 30%;
+}
+
+// 主内容左缘的 0.5px hairline。强度按 ChatGPT.app 实测对齐：1x 截图、窗口激活态下
+// 沿边界逐列取中位值得到「侧栏 245 → 边界列 227.7 → 内容 255」，边界只占 1 个逻辑
+// 像素说明它是 0.5px；按 2x 渲染反推线本身亮度 ≈ 200，即约 21% 黑。
+//
+// 原值 8% 只有约 236，在「桌面背景是纯白」时不够用：那种情况下侧栏玻璃被衬到
+// ≈252，与 255 的内容面只差 2~3 级，面与面的对比等于没有，分隔**全部**落在这条
+// 线上。所以常态必须给足，不能再靠材质分界兜底。
+//
+// --color-text 自身带 alpha（浅色 rgba(0,0,0,.9)），且 oklab 混合在 sRGB 上不是线性的，
+// 系数要实测标定：23%→232、27%→230、32%→226，ChatGPT 的 227.7 落在 30%。
+// 暗色不受此问题影响（侧栏 #0d0d0d 与内容 #121212 本来就分得开），保持原来的
+// 8/12/20，见下面的覆写。
+html.native-backdrop.vibrancy .rail-edge__line {
+  width: .5px;
+  background: color-mix(in oklab, var(--color-text) 30%, transparent);
+}
+
+html.native-backdrop.vibrancy .rail-edge:hover .rail-edge__line,
+html.native-backdrop.vibrancy .rail-edge:focus-within .rail-edge__line {
+  background: color-mix(in oklab, var(--color-text) 40%, transparent);
+}
+
+html.native-backdrop.vibrancy .rail-edge__line.is-dragging {
+  background: color-mix(in oklab, var(--color-text) 55%, transparent);
+}
+
+// 暗色维持改版前的强度：那边侧栏(#0d0d0d)与内容(#121212)本来就有面对比，
+// 再把线加粗到 23% 会变成一道割裂玻璃的硬边。
+html[data-color-scheme='dark'].native-backdrop.vibrancy .rail-edge__line {
+  background: color-mix(in oklab, var(--color-text) 8%, transparent);
+}
+
+html[data-color-scheme='dark'].native-backdrop.vibrancy .rail-edge:hover .rail-edge__line,
+html[data-color-scheme='dark'].native-backdrop.vibrancy .rail-edge:focus-within .rail-edge__line {
+  background: color-mix(in oklab, var(--color-text) 12%, transparent);
+}
+
+html[data-color-scheme='dark'].native-backdrop.vibrancy .rail-edge__line.is-dragging {
+  background: color-mix(in oklab, var(--color-text) 20%, transparent);
+}
+
+// 侧栏内部自己铺底色的分区（顶部模式胶囊 / 动作区 / 底部账号行）在毛玻璃下
+// 必须透明，否则挡住半透明面。Win10 伪毛玻璃同理——渐变铺在 .shell-side 上，
+// 内部分区必须透明才能透出那层渐变。
+html.native-backdrop.vibrancy .shell-side .ch,
+html.native-backdrop.vibrancy .shell-side .shell-side__modes,
+html.native-backdrop.vibrancy .shell-side .sidebar-actions,
+html.native-backdrop.vibrancy .shell-side .shell-side__footer,
+html.is-win-legacy.vibrancy .shell-side .ch,
+html.is-win-legacy.vibrancy .shell-side .shell-side__modes,
+html.is-win-legacy.vibrancy .shell-side .sidebar-actions,
+html.is-win-legacy.vibrancy .shell-side .shell-side__footer {
+  background: transparent;
+}
+
+// ---- Windows 10 / 更老：伪毛玻璃 ----
+// 没有系统材质（backgroundMaterial 仅 Win11 22H2+），窗口保持不透明 —— 不走
+// transparent window（Windows 透明窗有已知圆角/最大化 bug）。所以这里 **不用**
+// backdrop-filter（背后没有可采样的桌面，糊了也没意义），改用静态渐变 + 顶部一条
+// 高光 hairline 冒充磨砂面：糊不掉桌面色块，但比一块纯色板有玻璃质感。随主题自适应。
+html.is-win-legacy.vibrancy .shell-side {
+  --sb-faux-top: color-mix(in srgb, var(--color-sidebar-bg) 92%, white 8%);
+  background: linear-gradient(180deg, var(--sb-faux-top) 0%, var(--color-sidebar-bg) 46%);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, white 10%, transparent);
+}
+
+// Win10 伪玻璃同理：侧栏渐变落在 #fafafa 附近、内容是 #fff，面对比只有约 5 级，
+// 分隔同样得靠这条线，跟 mac 用同一强度。
+html.is-win-legacy.vibrancy .rail-edge__line {
+  width: .5px;
+  background: color-mix(in oklab, var(--color-text) 30%, transparent);
+}
+
+html[data-color-scheme='dark'].is-win-legacy.vibrancy .rail-edge__line {
+  background: color-mix(in oklab, var(--color-text) 8%, transparent);
+}
+
+// 满屏设置：左栏就是这同一个 .shell-side（内容换成分组导航），所以毛玻璃、
+// 宽度、内边距全都继承上面这几条；内容列是 .shell-main，自带不透明底。
+
+// ---- 应用外壳（Kimi 形态：左栏顶天立地，内容列自带 header）----
+// 系统材质可用 + vibrancy 时根元素与 .shell-frame 透明，让原生材质从
+// .shell-side 透出来；主舞台（.shell-main）自己画不透明的 --color-bg 挡住桌面。
+// 注：html/body/.shell-frame 三层缺一不可——frame 不透明时侧栏的
+// rgba + backdrop-filter 只会采样到那层纯白，毛玻璃等于没开。
+html.native-backdrop.vibrancy,
+html.native-backdrop.vibrancy body,
+html.native-backdrop.vibrancy #root,
+html.native-backdrop.vibrancy .shell-frame {
+  background: transparent;
+}
+
+// .app-frame / .app-main 的几何已上移到公共外壳层（_shell.scss 的
+// .shell-frame / .shell-main）；这两个类现在只是工作台视图的后代样式钩子。
+
+.app-content {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.app-content-body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+}
+
+.app-content-body--hidden {
+  display: none;
+}
+
+.app-conversation {
+  flex: 1;
+  min-height: 0;
+}
+
+// 登录页 / 加载屏 / 错误屏的占位容器。
+.app-gate {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  background: var(--color-bg);
+}
+
+.app-gate--center {
+  align-items: center;
+  justify-content: center;
+}
+
+.app-gate--padded {
+  padding: var(--space-6);
+}
+
+.app-gate__card {
+  display: flex;
+  max-width: 420px;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  text-align: center;
+}
+
+.app-gate__icon {
+  width: 32px;
+  height: 32px;
+  color: var(--color-danger);
+}
+
+.app-gate__title {
+  margin: 0;
+  font-size: var(--text-14);
+  font-weight: var(--weight-semibold, 700);
+  color: var(--color-text);
+}
+
+.app-gate__desc {
+  margin: 0;
+  font-size: var(--text-12);
+  line-height: 1.625;
+  color: var(--color-text-muted);
+}
+
+.app-gate__spinner {
+  width: 20px;
+  height: 20px;
+}
+
+// ---- 切租户全屏磨砂加载（SpaceSwitchGate）----
+// 盖在整个已登录子树之上（App 级，不随 SpaceScopedApp 重挂），把切租户「旧界面 → 空/加载 →
+// 新界面」的几秒 startup（daemon / 首屏数据）统一糊成一块带呼吸的磨砂玻璃。常驻挂载、
+// 靠 .is-active 切显隐，进/出都走过渡不硬切。收灯时机由 SpaceSwitchProvider 依据查询/变更
+// 是否 settle 决定。
+//
+// 磨砂双保险：半透明底色 + backdrop-filter。主舞台那半屏有实绘像素，模糊真生效；侧栏那半屏
+// 在 mac 上透明透原生材质、backdrop-filter 空转（见上方毛玻璃注释），靠半透明底色兜磨砂观感。
+.space-switch-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--color-bg) 58%, transparent);
+  backdrop-filter: blur(18px) saturate(118%);
+  -webkit-backdrop-filter: blur(18px) saturate(118%);
+  transition: opacity .32s ease, visibility .32s ease;
+}
+
+.space-switch-overlay.is-active {
+  visibility: visible;
+  opacity: 1;
+  // 切换期间吃掉底层点击，别让用户点到正在被换掉的旧界面。
+  pointer-events: auto;
+}
+
+// 呼吸落在中央面板：scale + opacity 缓入缓出往返。
+.space-switch-overlay__panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-4, 16px);
+  animation: space-switch-breath 1.9s ease-in-out infinite;
+}
+
+// app icon 的品牌标记（折叠 M 缎带），灰度透明版：单色 currentColor + 半透明，
+// 像一枚水印，而不是抢眼的实心图标。呼吸由 __panel 的 keyframe 统一驱动。
+.space-switch-overlay__mark {
+  width: 68px;
+  height: 68px;
+  // 灰度：60% 黑的柔灰，叠上呼吸的 .45→.8 透明后落在 ~27%→48%，是水印级的淡。
+  color: var(--color-text-muted, rgba(0, 0, 0, .55));
+}
+
+.space-switch-overlay__label {
+  font-size: var(--text-13);
+  font-weight: var(--weight-medium, 500);
+  letter-spacing: 0;
+  color: var(--color-text-muted);
+}
+
+// 水印质感的呼吸：透明度不打到实心（.45→.8），缩放幅度也收窄，像轻轻起伏而非闪烁。
+@keyframes space-switch-breath {
+  0%,
+  100% {
+    opacity: .45;
+    transform: scale(.96);
+  }
+  50% {
+    opacity: .8;
+    transform: scale(1.03);
+  }
+}
+
+// 尊重「减少动态效果」：只保留静态磨砂 + 文案，不呼吸。
+@media (prefers-reduced-motion: reduce) {
+  .space-switch-overlay__panel {
+    animation: none;
+  }
+  .space-switch-overlay {
+    transition: none;
+  }
+}

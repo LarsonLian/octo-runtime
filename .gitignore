@@ -1,0 +1,48 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+coverage/
+.nyc_output/
+*.tsbuildinfo
+
+# Tool caches
+.cache/
+.turbo/
+.nx/
+.eslintcache
+.impeccable/critique/
+.impeccable/review/
+
+# Logs and process files
+*.log
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.pid
+*.pid.lock
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Octo Runtime runtime state
+.octo-runtime/
+
+# Temporary and packaged artifacts
+.tmp/
+tmp/
+*.tgz
+
+# Editor and operating-system files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.run/

@@ -1,0 +1,65 @@
+---
+type: Guide
+title: Adapter 开发指南
+description: 开发 Provider Adapter 的最小接口与验收步骤。
+tags: []
+timestamp: 2026-10-15T00:00:00Z
+implementation_baseline: df63c8f
+---
+
+# Adapter 开发指南
+
+接入前先读 [总体协议与调用设计](../rules/protocol-design.md)，确认调用入口、输出模式、审批／追问响应、取消及会话恢复的责任边界。
+
+## 最小契约
+
+一个 adapter 提供静态元数据 `metadata` 和 `invoke`。元数据包含 `type` 和 `agentSources`；`defineAdapter` 在未声明输出模式时补 canonical-only 的 `protocolSupport`。`probe` 是可选项；省略时 Host 返回 `available: false`、`unavailableReason: "probe_missing"`，不代表 Provider 已确认可用。
+
+SDK 已删除 `executionFeatures` 自建能力声明机制，功能支持范围归宿主管理；不得恢复标签或设计替代能力表。Adapter 按明确执行合同适配转发，必要的校验与原生握手仍在执行边界处理。规则见 [Adapter 责任边界](../rules/adapter-metadata.md#宿主掌握支持范围adapter-适配转发)。
+
+```js
+import { defineAdapter, probeCommand } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+
+export const adapter = defineAdapter({
+  metadata: {
+    type: "my-provider",
+    agentSources: ["provisioned"]
+  },
+  probe: () => probeCommand("my-provider"),
+  async *invoke(request) {
+    yield { protocolVersion: 2, type: "session.update", payload: { providerSession: { sessionId: "..." } } };
+    yield { protocolVersion: 2, type: "message.create", payload: { role: "assistant", status: "streaming" } };
+    yield { protocolVersion: 2, type: "message.delta", payload: { text: "result" } };
+    yield { protocolVersion: 2, type: "message.update", payload: { role: "assistant", status: "completed" } };
+    yield { protocolVersion: 2, type: "run.completed", payload: {} };
+  }
+});
+```
+
+CLI 默认项在 [`apps/cli/src/default_adapters.json`](../../apps/cli/src/default_adapters.json) 中登记 `type`、模块路径和导出名称。导出对象可以直接是 adapter，也可以通过 `factory` 加 `options` 创建实例。Host 会校验导出形状；清单声明了 `type` 时，还会校验它是否与 `metadata.type` 一致。SDK 产品不读取该清单，而在自己的独立 Host 入口直接 import 并调用 `serveAdapterHost` 注册；完整代码和必须保留的中文注释见 [SDK 原生接入指南](../../SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#16-准备正式包资源)。
+
+## 设计规则
+
+1. Provider 原生协议的解析必须留在 adapter 内；core 不得导入任何 provider 专属包。
+2. Provider session 必须通过 `session.update` 上报，不得塞进终态事件的 payload，也不得写入工作目录文件来传递。
+3. 不得把 provider 的原始事件名直接当作 Octo Runtime 规范事件类型发出。
+4. 在可能的情况下，先发出 create 事件，再发出对应的 delta；Host 的补齐逻辑只用于安全兜底。
+5. 每次调用只产生一个终态事件；Host 会等异步生成器清理完成后再向上游转发该事件。
+6. 必须响应 `request.signal`，把取消请求传递给直接启动的 provider 子进程并完成资源清理。当前 SDK 只负责向直接子进程请求终止，不保证进程一定退出；生产 adapter 必须补齐超时后的 `SIGKILL` 升级，以及整个进程组或后代进程树的回收。
+7. 控制指令应优先通过 Provider 原生的 system、developer 或配置通道传递。Provider 没有独立载体时，必须明确记录所用载体；例如 Antigravity 将控制指令和用户输入放入同一 user 消息的不同 text block，不得宣称为原生 system role。OpenClaw 使用原生额外系统提示载体。
+8. Token 和其他敏感值不得出现在命令行参数、prompt、事件 payload 或工作目录中。
+9. 会话、审批、图片等行为在 Adapter 中按具体合同实现，由宿主管理功能支持范围；不得新增 `executionFeatures` 标签、自有 capabilities、能力字段表或 AbilityProvider 注册体系。当前输出模式仍使用 `protocolSupport`，其简化不在本次文档决定中实施。单独记录真实 Provider 验证范围，不将静态声明当作执行证据。
+
+上例演示 canonical 事件生成；调用 Host 时显式指定 `{ protocolMode: "canonical" }`。需要 native 时实现 Driver 与独立控制帧，不能直接声明支持后继续只返回 canonical 事件。详情见 [模式合同](../rules/output-protocol.md)。
+
+## Adapter 接入验收清单
+
+- 实现 `probe` 时，覆盖 provider 命令存在和不存在两种情况；不实现时，验证 Host 返回 `available: false`、`unavailableReason: "probe_missing"`。
+- 实现 Provider session 传递时，原生 session ID 能正确转换为 `session.update`；验收依据为真实行为，不以 `session.serialize` 标签代替。
+- 使用固定样例覆盖文本和 provider 错误；provider 能输出分析过程、工具调用或用量统计时，再覆盖对应事件。
+- 覆盖成功退出、非零退出码、缺少终态事件、清理失败和取消调用。
+- Provider 支持恢复 session 时，校验新建 session 与恢复 session 两种命令形态。
+- 使用文件承载私密 prompt 或控制配置时，文件权限必须是 `0600`，并在调用结束后删除。
+- 针对固定版本的 provider 执行只读在线冒烟测试。
+
+[`test/adapters.test.js`](../../test/adapters.test.js) 和 [`test/host.test.js`](../../test/host.test.js) 是基础契约的参考测试套件，并未自动覆盖上述每一种 provider 行为。新增或修改 adapter 时，需要在对应 package 测试、公共契约测试和固定版本在线冒烟测试之间补齐整张验收清单。

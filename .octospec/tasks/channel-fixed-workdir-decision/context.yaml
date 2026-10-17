@@ -1,0 +1,19 @@
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-session-reset
+  - runtime-context-input
+  - runtime-invoke-input
+  - runtime-engineering
+sources:
+  - .octospec/tasks/channel-default-cwd/brief.md
+  - packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - .octospec/guides/im-agent-invocation-boundary.md
+status: accepted-architecture-decision-no-development-plan
+classification: architecture-decision
+scope: im-agent-business
+development_plan: false
+workdir_owner: im-backend-agent-configuration
+task_workdir_override: false
+task_workspace_context_override: false

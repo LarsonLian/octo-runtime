@@ -1,0 +1,23 @@
+rules:
+  - runtime-architecture
+  - runtime-lifecycle
+  - runtime-extras
+  - runtime-channel
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/collaboration.md
+  - .octospec/guides/extra-configuration.md
+  - .octospec/journal/shared/2026-10-15-alpha-code-review.md
+  - apps/cli/src/main.ts
+  - apps/cli/src/extras.ts
+  - apps/cli/src/state.ts
+decisions:
+  - 2026-10-15 用户架构图及同轮澄清：设备承载虚拟 Runtime；Extra 属于设备 Host。
+  - 本次只写文档，代码改造及既有状态迁移尚未实施。

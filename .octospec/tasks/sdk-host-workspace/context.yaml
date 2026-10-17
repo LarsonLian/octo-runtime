@@ -1,0 +1,16 @@
+rules_read:
+  - ../../rules/architecture.md
+  - ../../rules/protocol-design.md
+  - ../../rules/adapter-metadata.md
+  - ../../rules/context-input.md
+  - ../../rules/environment.md
+  - ../../rules/invoke-input.md
+  - ../../rules/local-execution.md
+  - ../../rules/mcp.md
+  - ../../rules/openclaw.md
+  - ../../rules/output-protocol.md
+  - ../../rules/reasoning.md
+  - ../../rules/engineering.md
+  - ../../rules/collaboration.md
+guides_read:
+  - ../../guides/workspace.md

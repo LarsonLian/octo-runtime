@@ -1,0 +1,100 @@
+{
+  "name": "@mininglamp-oss/octo-runtime",
+  "version": "1.0.0",
+  "private": false,
+  "description": "Provider-neutral Agent runtime for unified execution through provider adapters",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    "./extras/channel-gateway/config-schema.json": "./packages/octo-runtime-extra-channel-gateway/config-schema.json",
+    "./extras/channel-wecom/config-schema.json": "./packages/octo-runtime-extra-channel-wecom/config-schema.json",
+    "./extras/webui/config-schema.json": "./packages/octo-runtime-extra-webui/config-schema.json",
+    "./extra": {
+      "types": "./dist/public/extra.d.ts",
+      "import": "./dist/public/extra.js"
+    },
+    "./protocol": {
+      "types": "./dist/public/protocol.d.ts",
+      "import": "./dist/public/protocol.js"
+    }
+  },
+  "bin": {
+    "octo-runtime": "apps/cli/dist/index.js",
+    "octo-runtime-daemon": "apps/daemon/dist/launcher.js"
+  },
+  "files": [
+    "packages/*/config-schema.json",
+    "dist/public",
+    "apps/cli/dist/**/*.js",
+    "apps/cli/dist/build-info.json",
+    "apps/cli/README.md",
+    "apps/daemon/dist/**/*.js",
+    "apps/cli/dist/default_adapters.json",
+    "DEPLOYMENTS.md"
+  ],
+  "packageManager": "pnpm@11.19.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mininglamp-OSS/octo-runtime.git"
+  },
+  "homepage": "https://github.com/Mininglamp-OSS/octo-runtime#readme",
+  "bugs": {
+    "url": "https://github.com/Mininglamp-OSS/octo-runtime/issues"
+  },
+  "scripts": {
+    "pack:release": "pnpm build && node scripts/pack-release.mjs",
+    "prepack": "node scripts/require-release-pack.mjs",
+    "clean": "node scripts/clean-dist.mjs",
+    "prebuild": "pnpm run clean",
+    "test": "pnpm build && pnpm test:suites",
+    "test:suites": "pnpm --filter @mininglamp-oss/octo-runtime-extra-webui test:ui && node --test test/*.test.js packages/octo-runtime-protocol/test/*.test.js",
+    "cli": "pnpm build && node apps/cli/dist/index.js",
+    "daemon": "pnpm build && node apps/daemon/dist/launcher.js",
+    "host": "pnpm build && node packages/octo-runtime-adapter-host/dist/runner.js --manifest apps/cli/dist/default_adapters.json",
+    "build": "pnpm --recursive --filter \"./packages/**\" --filter \"./apps/**\" run build && tsc -p public/tsconfig.json",
+    "prepare": "pnpm run build",
+    "typecheck": "pnpm build && tsc -p tsconfig.json --noEmit",
+    "lint": "eslint apps packages",
+    "lint:names": "node scripts/lint-names.mjs",
+    "format": "prettier --write \"{apps,packages,public,scripts,test,test-support}/**/*.{js,mjs,cjs,ts,mts,cts,tsx,json,yml,yaml}\" \".github/**/*.{yml,yaml,md}\" \"*.{json,yml,yaml}\" CONTRIBUTING.md",
+    "format:check": "prettier --check \"{apps,packages,public,scripts,test,test-support}/**/*.{js,mjs,cjs,ts,mts,cts,tsx,json,yml,yaml}\" \".github/**/*.{yml,yaml,md}\" \"*.{json,yml,yaml}\" CONTRIBUTING.md"
+  },
+  "dependencies": {
+    "@mininglamp-oss/octo-runtime-extra-webui": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-acp": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-antigravity": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-claude-code": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-codebuddy": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-codex": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-hermes": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-kimi-code": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-mcode": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-openclaw": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-opencode": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-qodercli": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-qoderclicn": "workspace:*",
+    "@mininglamp-oss/octo-runtime-adapter-zcode-gui": "workspace:*",
+    "@mininglamp-oss/octo-runtime-extra-channel-gateway": "workspace:*",
+    "@mininglamp-oss/octo-runtime-core": "workspace:*",
+    "@mininglamp-oss/octo-runtime-cross-service": "workspace:*",
+    "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
+    "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
+    "ws": "^8.18.3",
+    "@mininglamp-oss/octo-runtime-extra-channel-wecom": "workspace:*"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@mininglamp-oss/octo-runtime-acp-client": "workspace:*",
+    "@mininglamp-oss/octo-runtime-daemon-app": "workspace:*",
+    "@types/node": "^24.0.0",
+    "eslint": "^10.9.1",
+    "prettier": "3.9.6",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.68.0"
+  },
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11"
+  }
+}

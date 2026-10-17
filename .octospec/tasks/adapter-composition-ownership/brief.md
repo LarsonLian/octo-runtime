@@ -1,0 +1,135 @@
+---
+type: Task
+title: CLI 与 SDK 分别决定 Adapter 加载集合
+description: 明确选择、加载、打包和 Provider 安装的责任，取消 SDK 对 CLI 全量清单的依赖。
+tags: [architecture, adapter, installation, runtime]
+timestamp: 2026-10-15T00:00:00Z
+---
+
+# CLI 与 SDK 分别决定 Adapter 加载集合
+
+## 决策与实施状态
+
+用户确认：CLI 自己决定使用哪些 Adapter，固定维护 `apps/cli/src/default_adapters.json`；SDK 的嵌入代码直接 import 并注册自己需要的 Adapter。SDK 是嵌入程序的内部实现，不独立发包，不要求终端用户手工准备装配文件。
+
+框架支持 20 个 Adapter，不表示每个客户都要加载全部 20 个。客户产品只需要其中 5 个时，由该产品的 SDK 嵌入代码选出这 5 个。Host 执行这个选择，不自行增加其他 Adapter。宿主 App 自行决定生产依赖、依赖裁剪和打包方式，并确保选中的模块能够解析；Runtime 不管理客户的依赖树，不保证安装包只包含选中项。
+
+默认来源拆分已实施：CLI 专属 JSON、SDK 独立代码入口与共用注册/RPC/清理机制。第三方追加清单及公开 Adapter 开发入口仍待后续实施；不能把本轮默认来源迁移写成这些能力已交付。
+
+### 最新实施要求：CLI JSON 与 SDK 直接导入
+
+用户后续明确：CLI 默认清单固定放在 `apps/cli/src/default_adapters.json`；SDK 在自己的 Host 入口直接 `import` Adapter 并注册。此决定取代此前关于 CLI 默认 TS 声明和 SDK 必须传可序列化描述集合的提议；后续第三方追加清单的业务规则不因默认资源改名而自动实现。
+
+CLI 构建应将这份专属 JSON 放入 CLI 的 dist，CLI daemon 与 Playboard 统一读取该产物。SDK 删除复制清单的脚本与隐式 JSON 默认路径；SDK 自己的 Host 入口负责创建实例，通用机制只接收已选择的实例并提供注册、RPC、就绪与退出清理。跨进程传入口路径，不传函数或实例。宿主指定自定义入口即可在自己的代码中直接导入所需的 5 个 Adapter，不要求终端用户配置 JSON。
+
+为保留现有运行行为，仓库内 SDK 默认入口可在代码中明确列出其当前选择；它不随 CLI JSON 自动增加。宿主需要另一集合时维护自己的入口。既有显式 manifest 覆盖在本次路径迁移中保留，不作为 SDK 默认选择来源。实现与接入示例必须带中文注释；不变更客户依赖树或自动安装 Provider。
+
+## 当前问题与源码依据
+
+### 第三方 Adapter 与 CLI 追加清单（2026-10-15 补充决定）
+
+客户不需要 Runtime 源码，只安装可执行 `@mininglamp-oss/octo-runtime`，即可在独立工程开发 Dify 等第三方 Adapter。公开开发入口和类型依赖闭包按 [第三方插件合同](../public-plugin-contracts/brief.md) 实施；私有 workspace 包不单独发布。Adapter 处理 Provider 协议转换，不承担 Extra 的业务接入职责。
+
+CLI 默认集合使用 CLI 自己维护的 `apps/cli/src/default_adapters.json`，不再以根目录共享文件作为产品默认源。后续追加能力将额外读取 `<home>/extra_adapters.json`；默认 Home 为 `~/.octo-runtime`，指定 `--home` 时使用指定 Home。文件使用原清单结构，例如：
+
+```json
+{
+  "version": 1,
+  "adapters": [
+    {
+      "type": "dify",
+      "module": "/absolute/customer-dify/dist/index.js",
+      "export": "difyAdapter"
+    }
+  ]
+}
+```
+
+- 保持既有描述格式：`type`、`module`、`export`，以及现有 loader 支持的 factory/options 语义，不在业务 Context 中传加载描述或凭据。
+- 合并顺序为默认 JSON 内置项在前、外部项按文件顺序追加。按 `type` 去重，已存在则忽略该外部项，不 import、不调用工厂、不覆盖内置项；同一文件重复时保留第一项，报告被忽略的类型。此规则专用于 CLI 追加源，不改变 SDK 显式集合重复类型报错的规则。
+- 文件不存在表示没有附加项。文件损坏、版本错误或描述格式非法应明确报错；有效且新增的模块缺失、导出错误或 metadata.type 与声明不符时，就绪前明确失败，不静默丢弃。去重必须发生在模块加载前。
+- 相对路径相对于 extra_adapters.json 所在目录解析；包名同样从该目录解析，再固定已解析入口交给子进程，避免相对于 Runtime 内部私有包或临时目录解析。绝对路径和 file URL 保持明确来源。第三方模块及其依赖由客户/HostApp 安装，CLI 不自动下载安装。
+- CLI daemon、Playboard 和 adapter 命令使用同一有效集合。Host 崩溃恢复使用本次启动快照；用户修改文件后由 CLI/宿主协调重启应用新集合，不热加载，不自动停止活动 Run，不删除 Home、身份或配置。
+- SDK 产品不自动读取这个文件，也不继承 CLI 默认 JSON；仍由其嵌入代码直接 import。显式 CLI manifest 覆盖如何与默认/追加源组合须在实现时明确，不能暗中叠加或替换。
+- Dify 可先仅声明 canonical 模式，诚实声明支持的来源、会话和交互能力。网络 API 可达不代表调用成功，未实现取消或审批不能伪造已应用。
+
+后续追加能力验收必须覆盖：没有源码和私有依赖的外部 TS 工程、真实发行包安装、追加 Dify、内置同名忽略且模块不执行、外部重复、文件缺失/损坏、相对路径、坏导出、metadata 不符、重启快照、独立产品隔离，以及 Dify 实际请求与终态。当前追加清单和公开 Adapter 入口尚未实施。
+
+### 改造前的问题（历史依据）
+
+1. 原根目录 `config/adapters.json` 列出全部 12 个默认 Adapter，[CLI daemon](../../../apps/daemon/src/runtime-options.ts) 和 [Playboard](../../../apps/cli/src/playboard.ts) 默认使用它；现已移入 CLI src。
+2. 原 `packages/octo-runtime-daemon/scripts/copy-manifest.mjs` 在 SDK 构建时复制同一清单，[SDK runner](../../../packages/octo-runtime-daemon/src/runtime/runner.ts) 默认加载副本。新增 CLI Adapter 因此会影响 SDK 默认集合，客户产品没有独立、明确的选择；复制脚本现已删除。
+3. [Host package.json](../../../packages/octo-runtime-adapter-host/package.json) 当前声明全部内置 Adapter 的生产依赖。此事实需要在对接文档中说明，不能把只加载 5 个解释为产物只包含 5 个。依赖和包体由宿主 App 管理，不将裁剪客户依赖树纳入本次 Runtime 改造目标。
+4. 原 SDK 示例要求填写 `manifestPath`，掩盖了本应由嵌入代码管理的决策。现在 [SDK distribution](../../../packages/octo-runtime-daemon/src/runtime/types.ts) 由 `adapterHostEntrypoint` 定位产品的代码入口。
+
+共享的应该是 Adapter 接口、加载校验及执行机制，不是每个产品启用的清单。保留一个全局默认全量表，或改成 Host 内部静态注册全部 Adapter，均不能解决这个问题。
+
+## 目标责任
+
+| 对象 | 负责 | 边界 |
+| --- | --- | --- |
+| CLI 装配代码 | 决定 CLI 加载集合、携带依赖及可选配置入口 | 默认清单固定在 apps/cli/src/default_adapters.json；daemon run 与 Playboard 使用同一 CLI 选择逻辑 |
+| 客户产品的 SDK 嵌入代码 | 在独立 Host 入口直接 import 并注册该产品的 Adapter，将入口路径传给 SDK | 不读取 CLI 默认清单，不要求终端用户另行装配，不产生独立 npm SDK 产品 |
+| SDK / daemon | 校验并转交显式选择，管理 Host 进程 | 不回退为全量、不按机器扫描结果扩充，不跨产品缓存选择 |
+| 通用 Host loader | 只加载选择中的模块，校验导出与元数据，注册到 Host | 不决定产品默认值，不扫描全部 Adapter；共享 runner 和 stdio RPC 保留 |
+| 宿主 App 的构建与打包 | 自行决定 Adapter 依赖、是否裁剪及产物内容，确保选中模块与必要依赖可解析 | Runtime 不管理客户依赖树，不保证包体大小，也不要求产物排除所有未选模块 |
+| HostApp | 决定 Provider Runtime 的安装、版本及认证准备 | 加载 Adapter 模块不授权自动下载或安装 Provider；CLI 只管理自己的发行包 |
+
+框架已实现、产品已携带、本次已加载、Provider 已安装、probe 可用和调用成功是不同事实。一次 invoke 选择的 Adapter 必须已经在该 Host 的加载集合内；执行请求不得自行扩大集合。
+
+## 怎么改
+
+1. 将全量 JSON 归入 `apps/cli/src/default_adapters.json`，构建到 CLI dist，保留 CLI 现有默认集合。删除同时服务 CLI 和 SDK 的根清单。
+2. SDK 的独立 Host 入口直接 import Adapter，并调用 `serveAdapterHost([...])` 注册；宿主通过 `distribution.adapterHostEntrypoint` 指定自己的编译后 JS，不新增描述集合 API 或 Provider 注册平台。
+3. SDK 删除复制 CLI 清单的构建步骤及隐式默认路径。迁移 `distribution.manifestPath` 的使用方到内部选择；保留 Node、runner 和 Host 入口等实际部署配置。CLI 的显式 manifest 覆盖可以继续由 CLI 管理，不再成为 SDK 的隐式配置源。
+4. 跨进程只传独立入口的路径，不传 Adapter 实例或 JS 函数。直接 import 和实例创建都发生在 Host 子进程中；不生成 SDK 临时 JSON。加载配置不进入 Run / Context 或模型文本。
+5. 在对接文档中明确依赖与打包由宿主 App 处理。Runtime 只要求选中模块在宿主交付目录中可解析，不替宿主删除依赖、调整裁剪策略或承诺包体缩小。包名解析不能依赖源码 workspace 的链接偶然可用；对未选模块，不因其存在于安装包就自动 import 或 probe。
+6. 同步 SDK 启动会话、daemon 参数、Host 握手与重启、CLI 打包、Work App 嵌入配置和部署脚本、相关测试及接入文档。此前的 Host app 删除决定继续有效，不重建 app，也不将 Adapter 放进 daemon 进程执行。
+
+## 行为与可能出现的问题
+
+| 情况或风险 | 目标行为与处理 |
+| --- | --- |
+| SDK 未指定自定义入口 | 使用 SDK 自己代码中明确维护的当前 12 项选择，不读取 CLI JSON；需要较少项的产品维护自己的入口 |
+| 产品显式提供空集合 | 允许只启动控制服务，Adapter 列表为空；调用未加载类型时明确失败，不自动补加载 |
+| 重复类型、错误导出、选中的模块缺失 | 就绪前明确失败，报告出错项；不静默省略选中项或伪造 ready |
+| 未选择的 Adapter 缺失或损坏 | 不 import、不 probe，不应妨碍选中集合启动 |
+| Adapter 已加载，但 Provider 不存在或未认证 | 保留真实 probe / 执行错误；由 HostApp 决定安装或认证，不自动安装 |
+| 相同 Home 已有 daemon，但新请求的集合不同 | 不静默复用错误集合、不原地热增删；明确告知需要宿主协调重启。不得为换集合删除 Home 或身份，也不得强停活动调用 |
+| Host 崩溃后重启 | 使用启动时同一集合，不重新读取 CLI 全量默认值，不重放中断调用 |
+| 产品间同名模块或相对路径解析不同 | 启动前解析产品自己的来源；临时文件位置和当前工作目录变化不得改变实际加载目标。所选模块属于可信执行配置，业务输入不能指定任意模块 |
+| 宿主打包遗漏选中模块或其必要依赖 | Runtime 报出真实解析或加载失败；宿主修正自己的依赖和打包。仅源码测试通过不足以证明实际产物可运行 |
+| 旧版 SDK 使用方仍传 manifestPath | Runtime 与实际宿主调用端成套更新；迁移期如保留旧入口须明确范围，不长期保留隐式全量回退，也不能只删除字段造成运行时启动失败 |
+
+取消共享默认来源后，原来依赖 SDK 复制路径的宿主需迁移到代码入口；显式 manifest 覆盖保留兼容。按产品分别维护集合会增加少量重复声明，但能使新增 Adapter 的加载影响停留在主动选择它的产品。按需加载不承诺包体缩小，也不是安全沙箱；是否携带未选模块由宿主 App 决定，不属于 Runtime 的加载验收失败。
+
+## 对接文档与代码注释（必须交付）
+
+用户明确要求此项为高优先级的必要交付。改造必须同步更新 [INTEGRATION.md](../../../INTEGRATION.md) 的 SDK 加载说明与完整调用示例、[DEPLOYMENTS.md](../../../DEPLOYMENTS.md) 的宿主打包责任，以及实际使用方的接入代码。只改接口或补一行“按需加载”不满足要求。
+
+对接文档必须清楚区分：宿主选择的加载集合、宿主实际携带的模块、Provider 的安装与认证、probe 的可用结果。必须说明 CLI 和 SDK 各自管理选择、SDK 不复制 CLI 清单、框架不承诺裁剪客户依赖树，并展示缺模块和选择未加载类型时的实际行为。
+
+正式加载示例必须使用实施后的真实类型和字段，能够构建运行，不以伪 API 替代。代码中的中文注释必须逐段解释以下内容，不能只在代码外说明：
+
+1. 这段选择代码为何存在、由哪个产品维护，以及每个选中项为何需要；新增支持不会自动加入客户集合。
+2. 每个实际字段或参数的作用：SDK 的入口路径、直接导入与注册数组；CLI JSON 的类型、模块路径、导出和可选工厂参数。不能为 SDK 示例编造另一套描述字段。
+3. 模块路径相对于谁解析，源码环境与正式包如何定位；宿主必须准备哪些程序文件和依赖。
+4. SDK 如何把选择交给独立 Host，为什么不能传实例或函数；Host 如何只加载选中模块并验证注册结果。
+5. 缺省、空集合、缺模块、重复类型和不支持调用的处理；加载成功不代表 Provider 已安装、已认证或执行成功。
+6. Host 就绪、异常重启和停止的关系；重启仍使用同一选择，不重新读取 CLI 清单、不重放业务调用。
+
+实际实现中，SDK 选择传递、Host 模块加载和注册等关键代码也必须有中文说明，解释用途、责任来源和上述非直观行为；不能只给文档示例加注释。无需逐行复述赋值语句，但读者应能从注释理解这段代码为何必须存在、由谁提供数据及失败后会发生什么。
+
+本轮不增加运行期间热加载机制，不把产品选择改成权限系统，不改变每轮 Context 归属。Run=7、Context=v3 保持；若内部启动参数变更，仍按它自身合同校验，不机械升级这些业务协议版本。所有现有 Home、身份、profile、配置与 Provider 状态保留。
+
+## 实施顺序与验收
+
+1. 复用通用注册/RPC/清理机制，使 CLI JSON loader 与 SDK 直接 import 入口各自给出集合；在通用边界校验，Provider 差异仍留在 Adapter 中。
+2. 迁移 CLI 和实际 SDK 使用方，再删除共享清单、复制脚本及默认全量回退；同步 CLI 自己的资源和发布脚本，客户依赖与裁剪由宿主处理。
+3. 两个独立测试宿主分别选择不同集合，断言 Host 仅返回各自类型；用未选择且 import 即抛错的模块证明它没有被加载。选中坏模块必须明确失败。
+4. 测试缺省、空集合、重复类型、未知调用、路径解析、重启集合保持和复用集合冲突。保留取消、审批、native/canonical、终态和流订阅回归。
+5. 用宿主实际准备的隔离产物验证选中模块解析、Host 启动和执行。允许产物携带未选模块，但必须证明它们没有被自动加载；不以客户包体或依赖裁剪结果作为 Runtime 改造验收项。CLI 单一 npm 包继续通过离线安装和命令回归。
+6. 运行 lint、类型检查与跨包测试。实现后使用 im-test 和真实宿主验证并记录实际范围；涉及 Work App 接入时按 CDP 要求验证，不把环境 HTTP 可达当成业务执行成功。
+7. 核对对接文档、完整可运行示例及实现注释覆盖上述六项说明；缺少加载代码用途和责任解释时，不得标为改造交付完成。
+
+本轮默认来源迁移的[验证结果](../../journal/shared/2026-10-15-cli-default-adapters-sdk-imports.md)单独记录；后续追加能力和复用集合冲突等尚未覆盖的验收不能由本轮结果替代。构建或隔离验证不得删除既有 Home、身份、profile 或运行状态。

@@ -1,0 +1,13 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+allowBuilds:
+  esbuild: true
+  # Reviewed native watcher install hook; retain strict checks for other packages.
+  "@parcel/watcher@2.6.0": true
+
+linkWorkspacePackages: true
+preferWorkspacePackages: true
+saveWorkspaceProtocol: true
+sharedWorkspaceLockfile: true

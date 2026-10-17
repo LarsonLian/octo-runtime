@@ -1,0 +1,136 @@
+// MiMo role sizes use independent UI/code ratios; root rem never scales twice.
+:root {
+  --ui-font-scale: 1;
+  --code-font-scale: 1;
+  --font-ui: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "SF Mono", ui-monospace, Menlo, "Cascadia Mono", Consolas, monospace;
+  --font-sans: var(--font-ui);
+  --font-ui-native: var(--font-ui);
+  --font-display: var(--font-ui);
+  --font-kbd: var(--font-ui);
+  --sans: var(--font-ui);
+  --mono: var(--font-mono);
+  --font-code: var(--font-mono);
+  @each $size in 8, 10, 11, 12, 13, 14, 15, 16, 18, 19, 20, 21, 22, 24, 25, 26, 28, 30, 32, 36, 40, 48, 64 {
+    --text-#{$size}: calc(#{$size}px * var(--ui-font-scale));
+  }
+  --text-2xs: var(--text-12);
+  --text-xs: var(--text-12);
+  --text-sm: var(--text-13);
+  --text-base: var(--text-14);
+  --text-md: var(--text-14);
+  --text-lg: var(--text-16);
+  --text-xl: var(--text-18);
+  --text-2xl: var(--text-20);
+  --font-size-caption: var(--text-12);
+  --font-size-control: var(--text-13);
+  --font-size-body: var(--text-14);
+  --font-size-section: var(--text-18);
+  --line-body: calc(22px * var(--ui-font-scale));
+  --line-control: calc(20px * var(--ui-font-scale));
+  --line-caption: calc(16px * var(--ui-font-scale));
+  --line-composer: calc(21px * var(--ui-font-scale));
+  --code-font-size: calc(12px * var(--code-font-scale));
+  --code-line-height: calc(18px * var(--code-font-scale));
+  --control-height-sm: max(28px, calc(28px * var(--ui-font-scale)));
+  --control-height: max(32px, calc(32px * var(--ui-font-scale)));
+  --control-height-md: max(34px, calc(34px * var(--ui-font-scale)));
+  --control-height-lg: max(40px, calc(40px * var(--ui-font-scale)));
+  --menu-row-height: max(34px, calc(34px * var(--ui-font-scale)));
+  --weight-regular: 400;
+  --weight-caption: 400;
+  --weight-option-label: 400;
+  --weight-medium: 500;
+  --weight-ui-strong: 500;
+  --weight-section-label: 500;
+  --weight-semibold: 600;
+  --leading-solid: 1;
+  --leading-tight: 1.4;
+  --leading-caption: 1.333333;
+  --leading-normal: 1.538462;
+  --leading-prose: 1.571429;
+  --leading-relaxed: 1.6;
+  // Transitional aliases contain no legacy incremental scale.
+  --ui-t0: var(--text-20);
+  --ui-t1: var(--text-18);
+  --ui-t2: var(--text-16);
+  --ui-b1: var(--text-14);
+  --ui-b2: var(--text-14);
+  --ui-c1: var(--text-12);
+  --ui-c2: var(--text-12);
+  --ui-font-size: var(--text-14);
+  --ui-font-size-sm: var(--text-13);
+  --ui-font-size-xs: var(--text-12);
+  --ui-font-size-lg: var(--text-15);
+  --ui-font-size-xl: var(--text-16);
+  --md-h1: var(--text-20);
+  --md-h2: var(--text-18);
+  --md-h3: var(--text-16);
+  --md-b1: var(--text-14);
+  --md-b2: var(--text-14);
+  --md-b3: var(--text-12);
+  --markdown-font-family: var(--font-ui);
+  --markdown-code-font-family: var(--font-mono);
+  --markdown-font-weight-regular: 400;
+  --markdown-font-weight-emphasis: 600;
+  --markdown-letter-spacing: 0;
+  --markdown-h1-font-size: var(--text-20);
+  --markdown-h2-font-size: var(--text-18);
+  --markdown-h3-font-size: var(--text-16);
+  --markdown-h1-line-height: 1.4;
+  --markdown-h2-line-height: 1.4;
+  --markdown-h3-line-height: 1.375;
+  --markdown-body-font-size: var(--text-14);
+  --markdown-body-line-height: 1.571429;
+  --markdown-quote-font-size: var(--text-14);
+  --markdown-quote-line-height: 1.571429;
+  --markdown-table-font-size: var(--text-14);
+  --markdown-table-line-height: 1.571429;
+  --markdown-code-font-size: var(--code-font-size);
+  --markdown-code-line-height: 1.5;
+  --markdown-code-header-font-size: var(--text-12);
+  --markdown-code-header-line-height: 1.333333;
+  --markdown-image-caption-font-size: var(--text-12);
+  --markdown-image-caption-line-height: 1.333333;
+}
+
+html { font-size: 16px; }
+body {
+  font-family: var(--font-ui);
+  font-size: var(--text-14);
+  font-weight: 400;
+  line-height: var(--line-body);
+  letter-spacing: 0;
+  font-synthesis-weight: none;
+}
+button, input, textarea, select { font-family: inherit; letter-spacing: 0; }
+html[data-platform='mac'] body { -webkit-font-smoothing: antialiased; }
+html[data-platform='mac'][data-font-smoothing='off'] body { -webkit-font-smoothing: subpixel-antialiased; }
+.octo-doc-surface .ProseMirror, .octo-doc-surface .tiptap { font-synthesis-weight: auto; }
+
+.markdown-body, .md-content, .wk-markdown {
+  font-family: var(--font-ui);
+  font-size: var(--text-14);
+  line-height: var(--line-body);
+  h1 { font-size: var(--text-20); line-height: 1.4; }
+  h2 { font-size: var(--text-18); line-height: 1.4; }
+  h3 { font-size: var(--text-16); line-height: 1.375; }
+  h4, h5, h6 { font-size: var(--text-14); }
+  code, pre { font-family: var(--font-mono); font-size: var(--code-font-size); line-height: var(--code-line-height); }
+  pre code { font-size: inherit; line-height: inherit; }
+}
+.wk-markdown-pre-wrapper pre { font-size: var(--code-font-size); line-height: var(--code-line-height); }
+.composer textarea, .composer-input, .composer-editable, .composer-textarea,
+.wk-messageinput-editor .ProseMirror, .wk-messageinput-placeholder-overlay {
+  font-size: var(--text-14);
+  line-height: var(--line-composer);
+}
+.newchat__title { font-size: var(--text-20); font-weight: 600; line-height: 1.4; }
+.settings-dialog-title, .dialog-title { font-size: var(--text-18); font-weight: 500; line-height: 1.4; }
+.typography-preferences {
+  margin-top: 24px;
+  h3 { margin: 0 0 12px; font-size: var(--text-16); font-weight: 600; line-height: 1.375; }
+  .theme-row { gap: 16px; min-width: 0; }
+  .ow-select { max-width: 220px; }
+}
+.typography-size { box-sizing: border-box; width: 80px; min-height: 32px; text-align: right; }
