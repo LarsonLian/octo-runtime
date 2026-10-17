@@ -23,7 +23,8 @@ workspace 清单。内部 workspace 全部 `private: true`，不进入 npm regis
 - **版本归属：** `vX.Y.Z` tag 是唯一发行版本，工作流内执行严格 SemVer 校验；生成包版本
   必须等于去掉 `v` 的 tag。`v0.0.0` 被明确禁止，源码占位版本不得被误当成发行版本。
 - **来源归属：** tag 必须指向 `main` 历史中的 commit。构建元数据保留完整 commit；正式
-  发行必须满足 `build-info.commit == tag commit` 且 `dirty == false`。
+  发行必须满足 `build-info.commit == tag commit` 且 `dirty == false`。校验必须从远端显式恢复
+  annotated tag 对象，不能依赖 checkout 在 tag 事件中保留本地 tag ref 类型。
 - **单包边界：** `apps/*` 和 `packages/*` 只参与源码构建或根包捆绑，全部禁止独立发布。
   根包的 `bin` 继续指向随 tgz 携带的 CLI/daemon 构建产物；`private` 不改变命令可执行性。
 - **发布门禁：** npm 发布只消费同一次精确 tag 验证生成的 artifact。构建、静态检查、测试、
@@ -57,7 +58,8 @@ workspace 清单。内部 workspace 全部 `private: true`，不进入 npm regis
 - 发行 tgz 离线全局安装后，`octo-runtime --help`、`octo-runtime --version`、全局
   `octo-runtime-daemon` 启动、公开 TypeScript 入口和内置 Extra 验证通过；版本为 tag 版本，
   commit 为 tag commit，且不带 dirty 标记。
-- tag 工作流拒绝格式错误、非 `main` 历史、源码模板不合规或构建证据不一致的发行。
+- tag 工作流拒绝 lightweight tag、格式错误、非 `main` 历史、源码模板不合规或构建证据不一致
+  的发行；checkout 将本地 tag ref 压平成 commit 时，校验仍能从远端恢复并识别 annotated tag。
 - npm 首次发布使用 public access 和 provenance；同版本重跑不覆盖 npm 版本，并能恢复或补齐
   GitHub Release；并发发布无论完成顺序如何，npm 与 GitHub latest 都不回退。
 - 运行 `pnpm lint`、`pnpm lint:names`、`pnpm format:check`、`pnpm typecheck`、`pnpm test`、

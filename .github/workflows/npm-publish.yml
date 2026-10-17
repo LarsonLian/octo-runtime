@@ -58,6 +58,8 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
+          # checkout 在 tag 事件中可能把本地同名 tag ref 压平成目标 commit；重新读取远端 tag 对象。
+          git fetch --force --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
           test "$(git cat-file -t "refs/tags/$TAG")" = tag || {
             echo '::error::Release tag must be annotated'
             exit 1
