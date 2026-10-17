@@ -3,7 +3,7 @@ type: Rule
 title: 本地执行、传输与回执
 description: 公共输入、内部 RPC、源流修复与外部授权的责任边界。
 tags: ["ipc","invoke","stream"]
-timestamp: 2026-10-15T00:00:00Z
+timestamp: 2026-10-17T00:00:00Z
 implementation_baseline: df63c8f
 id: runtime-local-execution
 tier: repo
@@ -39,6 +39,14 @@ sequenceDiagram
 ```
 
 本地调用不要求 Worker 注册、Human Token 或 IM 连接。HostApp 预先决定并准备 Provider 的安装与认证。
+
+## 本地客户端信任
+
+遵循[基础架构的同账号互信约束](architecture.md#本地信任边界同一操作系统账号内互信)：同一操作系统账号内、能够访问实例本地 IPC 的客户端互信，daemon 不额外识别宿主 APP 身份，不要求 APP 注册、共享 Token 或逐应用授权。多个 Home 不构成同账号客户端之间的安全隔离。
+
+Runtime 保持本地端点的操作系统访问权限；现有 POSIX socket 使用 0600，该事实不代表 Windows Pipe 使用同一权限机制。正常的同账号调用不产生专用鉴权错误或错误卡片。连接失败、权限不足及超时沿既有错误路径返回，由宿主负责展示。
+
+本地信任不省略请求协议、执行权限及审批校验，也不代替 Extra 对远程业务请求的认证授权。上述约束是当前本地 app-server 合同，不新增产品代码或 IPC 协议字段。
 
 ## 传输边界
 

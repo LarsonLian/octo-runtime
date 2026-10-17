@@ -16,7 +16,7 @@ timestamp: 2026-10-17T00:00:00Z
 
 - R01（yujiawei）：已删除 getGroupInfo 实现及星号导出对应入口；保留 getGroupMembers。包构建、9 项渠道/最终 @ 回归及构建后导出核对通过。
 - R02a/R02b（yujiawei）：已删除两项上传 API；保留 files.ts 图片尺寸与类型辅助函数。包构建、6 项图片/IM 运行回归及导出核对通过。
-- R03（yujiawei）：架构合同已记录，待同步 SDK 指南并提交。
+- R03（yujiawei）：已同步架构、本地执行及两份 SDK 指南；同账号互信，不新增鉴权或错误卡片。OKF 与补丁格式检查通过。
 - R04（yujiawei）：原提交 CI 已有证据，新修改按实际检查补充。
 - R05（Jerry-Xin）：待实施，ACP 传输错误隔离。
 - R06（Jerry-Xin）：待实施，ACP/NDJSON 受管组回收。

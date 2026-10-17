@@ -3,7 +3,7 @@ type: Rule
 title: Octo Runtime 基础架构
 description: 运行时设备、统一执行内核与 Extra 的责任边界及执行约束。
 tags: [architecture, runtime, adapter, extra, context, installation]
-timestamp: 2026-10-16T00:00:00Z
+timestamp: 2026-10-17T00:00:00Z
 id: runtime-architecture
 tier: repo
 priority: 100
@@ -85,6 +85,18 @@ F30 进一步明确宿主及其凭据保护责任：大多数接入通过 SDK �
 设计和评审必须检查：“宿主若把配置从 JSON 换到 SQLite/Nacos，SDK 的输入合同和消费逻辑是否仍无需变化？”若必须改动，先纠正配置来源越界。后续同类需求统一遵循本节，不因旧代码已有某种来源适配而沿用。Channel 的 `bf_token_file`、`app_secret_file` 及插件内凭据文件读取已删除，调用方需自行解析后传入值；不自动改写既有宿主配置。当前实现与验证见[配置来源责任记录](../journal/shared/2026-10-16-host-config-source-boundary.md)。
 
 本次清理不保留旧凭据文件配置的兼容入口、读取解析、旧模块路径转发、自动迁移或来源回退。该决定只针对这次删除的配置机制，不作为其他历史数据或 Runtime 身份重建的授权。
+
+## 本地信任边界：同一操作系统账号内互信
+
+2026-10-17 用户确认：**Octo Runtime 的本地 app-server 以操作系统账号作为信任边界。同一操作系统账号内、能够访问该实例本地 IPC 的客户端互信，不额外区分宿主 APP 身份。** 这是当前产品明确选择的接入合同，不是暂缓处理的鉴权缺陷。
+
+该合同适用于 Runtime CLI、SDK 宿主及其他同账号本地客户端。Runtime 不为区分这些客户端增加 APP 注册、共享 Token、逐应用授权或相应错误码、错误卡片。这样可让多个本机应用直接复用执行能力，避免引入当前产品不需要的应用身份与凭据维护流程。不同 Runtime Home 区分设备实例和状态，不提供同账号 APP 之间的安全隔离。
+
+本地 IPC 的访问保护由操作系统权限承载，Runtime 按平台合同维护端点权限；POSIX socket 的现有 0600 权限限制其他普通账号访问，不将其描述为 Windows Pipe 的权限实现。同账号互信不取消协议校验、执行权限、审批、取消及资源生命周期约束；真实连接失败仍按既有错误合同返回，由宿主选择展示方式。
+
+此规则仅定义本地 IPC 信任，不将经网络进入的业务请求视为可信。Extra 和外部系统继续承担各自的身份、租户及资源授权检查。后续架构评审不得仅因本地 IPC 未区分同账号 APP，就要求补建应用级鉴权体系。
+
+传输合同见[本地执行](local-execution.md#本地客户端信任)，决策来源及文档验证见[同账号互信记录](../journal/shared/2026-10-17-local-ipc-account-trust.md)。
 
 ## 宿主函数注入与逐轮业务数据读取
 

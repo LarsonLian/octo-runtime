@@ -12,6 +12,7 @@
 | 身份、Home、profile、安装与生命周期 | [本地 Runtime](rules/runtime-lifecycle.md) |
 | 公共输入、默认值与多模态 | [InvokeInput](rules/invoke-input.md) |
 | IPC、执行接纳与断流修复 | [本地执行](rules/local-execution.md) |
+| 本地 app-server 以系统账号为信任边界，同账号客户端互信 | [本地信任架构](rules/architecture.md#本地信任边界同一操作系统账号内互信) |
 | 帧、原生模式、canonical 与交互 | [输出协议](rules/output-protocol.md) |
 | 纯执行、有界窗口与业务历史 | [状态与容量](rules/stateless-execution.md) |
 | 每轮模型输入、控制通道与 cwd | [Context 输入](rules/context-input.md) |
@@ -45,6 +46,8 @@
 根目录按场景分为 [CLI 使用指南](../CLI_USAGE_GUIDE.md)、[SDK 完整原生接入指南](../SDK_NATIVE_INTEGRATION_FULL_GUIDE.md) 和 [SDK Channel Gateway 指南](../SDK_CHANNEL_GATEWAY_GUIDE.md)；[INTEGRATION.md](../INTEGRATION.md)仅作选型导航，[DEPLOYMENTS.md](../DEPLOYMENTS.md)说明发行部署。包 README 保留包级用法。
 
 ## 历史与取舍
+
+- [PR 1 yujiawei 与 Jerry-Xin 评审分析](tasks/pr1-yujiawei-review/brief.md)：Jerry 的两项生命周期 P1 均已复现；[评分与同类项](tasks/pr1-yujiawei-review/assessment.md)新增 Codex 断管和 Host 后代残留的复现、缓冲候选缺口及长期资源风险。HTTP 按调用范围定级；R03 已确认同系统账号客户端互信，仅补文档、不改鉴权；Node 24 同 SHA 远端验证已有。仅计划，详见[生命周期专项](tasks/pr1-yujiawei-review/jerry-lifecycle.md)；R01/R02a/R02b 已确认删除 getGroupInfo 与两项上传 API，保留原生图片尺寸解析；仅更新 OKF，代码待实施。
 
 - [群聊明确点名无响应事故](tasks/channel-group-admission/brief.md)：已修正 CLI/SDK 共用准入；groups_enabled 独立启停，group_ids 省略/null/[] 不限制范围、非空限制父群，无旧空名单兼容。11 项定向测试、类型/lint、Node 1074 通过（9 跳过）、UI 35 通过；im-test 的 CLI/SDK 真实 WS 群和话题收发通过。dc73c28 已推送、发行隔离验收和本地全局安装通过；原前台进程待重启，第三方宿主与实际模型尚未验收，不能宣称事故全部恢复；见[实施证据](journal/shared/2026-10-17-channel-group-admission-delivery.md)。
 

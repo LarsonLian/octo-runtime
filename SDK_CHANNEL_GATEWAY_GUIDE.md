@@ -16,6 +16,8 @@ git submodule update --init --recursive
 
 当前开发接入使用 GitHub 仓库的 `feat/open-source-github` 分支。后续克隆宿主时使用 `git clone --recurse-submodules <宿主仓库地址>`。将 submodule 指针随宿主代码提交，固定集成版本；指定分支不会让后续检出自动跟随分支最新提交。
 
+本地信任边界：同一操作系统账号内、能够访问实例 IPC 的客户端互信；SDK 不额外区分 APP 身份，不要求 APP 注册或共享 Token。多个 Home 不提供同账号应用隔离。协议校验、执行权限、审批及 Extra 的外部业务授权仍按各自合同执行。参见[本地 IPC 架构约束](.octospec/rules/architecture.md#本地信任边界同一操作系统账号内互信)。
+
 ## 1. 配置 pnpm-workspace.yaml
 
 在宿主根目录新建或合并 `pnpm-workspace.yaml`，保留宿主已有的 packages、allowBuilds 等配置，纳入 Runtime 内部包并用 `!` 排除当前 SDK 接入不需要的包：

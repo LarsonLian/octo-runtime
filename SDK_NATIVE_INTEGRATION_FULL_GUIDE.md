@@ -2,6 +2,8 @@
 
 已有 Electron 项目，按下面三步接入：**启动 Octo Runtime → 配置需要的特性 → 可选地直接调用 Agent**。只需要 Octo IM 的项目（建议 OctoBuddy 采用）直接看 [Channel Gateway 接入指南](SDK_CHANNEL_GATEWAY_GUIDE.md)。桌面程序必须使用 SDK，不通过 CLI 接入。
 
+本地信任边界：同一操作系统账号内、能够访问实例 IPC 的客户端互信；SDK 不额外区分 APP 身份，不要求 APP 注册或共享 Token。多个 Home 不提供同账号应用隔离。协议校验、执行权限、审批及 Extra 的外部业务授权仍按各自合同执行。参见[本地 IPC 架构约束](.octospec/rules/architecture.md#本地信任边界同一操作系统账号内互信)。
+
 ## 1. 原生启动 Octo Runtime
 
 ### 1.1 加入 submodule
