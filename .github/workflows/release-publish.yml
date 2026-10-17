@@ -1,27 +1,63 @@
 name: Release Publish
 on:
+  push:
+    tags:
+      - "v*.*.*"
   workflow_dispatch:
     inputs:
       tag:
-        description: 已存在的发行 tag（vX.Y.Z）
+        description: 故障恢复时重新处理的稳定版本 annotated tag（vX.Y.Z）
         required: true
         type: string
-      validate_run_id:
-        description: 与 tag 同一提交的成功 CI run ID
-        required: true
-        type: string
-      draft:
-        description: 保持为草稿
-        type: boolean
-        default: true
+
 permissions: {}
+
+concurrency:
+  group: octo-runtime-release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
-  publish:
-    uses: Mininglamp-OSS/.github/.github/workflows/reusable-release-publish.yml@v1
+  publish-npm:
+    uses: ./.github/workflows/npm-publish.yml
     with:
-      tag: ${{ inputs.tag }}
-      validate_run_id: ${{ inputs.validate_run_id }}
-      draft: ${{ inputs.draft }}
+      tag: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+      dry_run: false
+    secrets:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+
+  publish-release:
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
       actions: read
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: octo-runtime-release
+          path: release
+      - name: Create or repair GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
+          VERSION: ${{ needs.publish-npm.outputs.version }}
+        run: |
+          set -euo pipefail
+          ARCHIVE="release/mininglamp-oss-octo-runtime-$VERSION.tgz"
+          test -f "$ARCHIVE"
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ARCHIVE" --clobber --repo "$GITHUB_REPOSITORY"
+            gh release edit "$TAG" --draft=false --latest --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "$ARCHIVE" \
+              --verify-tag \
+              --generate-notes \
+              --title "$TAG" \
+              --latest \
+              --repo "$GITHUB_REPOSITORY"
+          fi

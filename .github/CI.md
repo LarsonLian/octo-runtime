@@ -74,21 +74,30 @@ requested, while `main` currently requires at least one approval.
 
 ## npm Release
 
-1. Update the root package version, merge into `main`, and push a stable `vX.Y.Z` tag.
-2. Run `npm Publish` against that tag with `dry_run=true`.
-3. After checking the result, run with `dry_run=false` to publish the verified archive.
+Source manifests keep the non-release placeholder version `0.0.0`. A stable annotated
+`vX.Y.Z` tag is the sole release-version source; do not commit version bumps for a
+release. Before the first production tag, `npm Publish` may be run manually with
+`dry_run=true` to exercise the exact tag build without uploading it.
 
-Publishing requires an `NPM_TOKEN` with package publish access and OIDC permission
-for provenance. Ordinary PR checks do not read this secret. The workflow verifies
-the tag's main ancestry and package version, then runs CI at the exact release SHA.
-Internal workspace packages are not published separately. Do not invoke `npm publish`
+Pushing the tag starts `Release Publish`, which validates the tag and its `main`
+ancestry, calls the complete CI matrix at that exact commit, stamps `X.Y.Z` into the
+generated package, publishes the verified archive to npm, and then creates or repairs
+the matching GitHub Release with the same archive. A failed run can be retried through
+the workflow's manual tag input. Existing immutable npm versions are verified and
+skipped rather than overwritten.
+
+Publishing requires an `NPM_TOKEN` with package publish access; the job also receives
+OIDC permission for provenance. Ordinary PR checks do not read this secret. Every
+internal app and package is private and is never published separately. Production
+dependencies are bundled into the one public root package. Do not invoke `npm publish`
 directly in the repository root; the existing prepack guard rejects that path.
 
 ## GitHub Release
 
-Release Drafter prepares release notes. Run `Release Publish` with the stable tag
-and a successful top-level `CI` run ID for that commit; it defaults to a draft.
-GitHub Release creation and npm publishing are independent operations.
+Release Drafter continues preparing notes between versions. The tag-triggered release
+workflow creates the final release only after npm publication succeeds and uploads the
+same verified tgz. If npm was already published but Release creation failed, rerunning
+the workflow skips the immutable npm version and repairs the Release.
 
 The repository uses Apache-2.0 and preserves third-party license notices. Remote
 publishing and release creation require separate verification; see the

@@ -12,6 +12,13 @@ const execute = promisify(execFile);
 const archive = resolve(process.argv[2]);
 const root = resolve(import.meta.dirname, "..");
 const live = process.argv.includes("--live");
+const expectedCommitIndex = process.argv.indexOf("--expected-commit");
+const expectedCommit =
+  expectedCommitIndex === -1 ? null : (process.argv[expectedCommitIndex + 1] ?? null);
+const requireClean = process.argv.includes("--require-clean");
+if (expectedCommitIndex !== -1 && !/^[a-f0-9]{40,64}$/.test(expectedCommit ?? "")) {
+  throw new Error("--expected-commit 必须提供完整的十六进制 commit");
+}
 // macOS Unix sockets have a short path limit; its default temp directory is too long.
 const directory = await mkdtemp(join(process.platform === "darwin" ? "/tmp" : tmpdir(), "orc-"));
 const npm = join(
@@ -127,6 +134,8 @@ try {
     await readFile(join(installed, "apps/cli/dist/build-info.json"), "utf8")
   );
   assert.match(build.commit, /^[a-f0-9]{40,64}$/);
+  if (expectedCommit !== null) assert.equal(build.commit, expectedCommit);
+  if (requireClean) assert.equal(build.dirty, false);
   const versionInfo = `${metadata.version}\ncommit:${build.commit.slice(0, 12)}${build.dirty ? " (dirty)" : ""}`;
   assert.equal((await run(["--version"])).stdout.trim(), versionInfo);
   assert.match(

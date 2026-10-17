@@ -8,6 +8,17 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const readManifest = async (directory) =>
   JSON.parse(await readFile(join(directory, "package.json"), "utf8"));
 const manifest = await readManifest(root);
+const arguments_ = process.argv.slice(2);
+if (arguments_.length !== 0 && (arguments_.length !== 2 || arguments_[0] !== "--version")) {
+  throw new Error("用法：node scripts/pack-release.mjs [--version X.Y.Z]");
+}
+const releaseVersion = arguments_[1] ?? manifest.version;
+if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(releaseVersion)) {
+  throw new Error(`发行版本必须是稳定 SemVer，实际为 ${releaseVersion}`);
+}
+if (manifest.version !== "0.0.0") {
+  throw new Error(`源码根 package.json.version 必须保持 0.0.0，实际为 ${manifest.version}`);
+}
 const workspaces = new Map();
 for (const directory of ["apps", "packages"]) {
   for (const entry of await readdir(join(root, directory), { withFileTypes: true })) {
@@ -64,7 +75,7 @@ try {
       const dependencies = Object.fromEntries(
         Object.keys(source.dependencies ?? {}).map((name) => [
           name,
-          workspaces.has(name) ? manifest.version : packages.get(name).source.version
+          workspaces.has(name) ? releaseVersion : packages.get(name).source.version
         ])
       );
       await writeFile(
@@ -73,7 +84,7 @@ try {
           {
             ...metadata,
             private: true,
-            version: manifest.version,
+            version: releaseVersion,
             dependencies
           },
           null,
@@ -110,7 +121,7 @@ try {
   const dependencies = Object.fromEntries(
     [...packages].map(([name, { source }]) => [
       name,
-      workspaces.has(name) ? manifest.version : source.version
+      workspaces.has(name) ? releaseVersion : source.version
     ])
   );
   await writeFile(
@@ -118,7 +129,7 @@ try {
     JSON.stringify(
       {
         name: manifest.name,
-        version: manifest.version,
+        version: releaseVersion,
         description: manifest.description,
         repository: manifest.repository,
         homepage: manifest.homepage,

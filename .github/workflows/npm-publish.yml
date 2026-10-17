@@ -1,6 +1,27 @@
 name: npm Publish
 
 on:
+  workflow_call:
+    inputs:
+      tag:
+        description: 已存在的稳定版本 annotated tag（vX.Y.Z）
+        required: true
+        type: string
+      dry_run:
+        description: 仅验证发布，不上传 npm
+        required: false
+        type: boolean
+        default: false
+    secrets:
+      NPM_TOKEN:
+        required: false
+    outputs:
+      sha:
+        description: Tag 对应的完整 commit
+        value: ${{ jobs.validate.outputs.sha }}
+      version:
+        description: 不带 v 前缀的发行版本
+        value: ${{ jobs.validate.outputs.version }}
   workflow_dispatch:
     inputs:
       tag:
@@ -43,10 +64,19 @@ jobs:
           TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
+          test "$(git cat-file -t "refs/tags/$TAG")" = tag || {
+            echo '::error::Release tag must be annotated'
+            exit 1
+          }
           SHA=$(git rev-parse --verify "refs/tags/$TAG^{commit}")
+          git fetch --no-tags origin main
           git merge-base --is-ancestor "$SHA" origin/main
-          VERSION=$(git show "$SHA:package.json" | jq -r .version)
-          test "$TAG" = "v$VERSION"
+          TEMPLATE_VERSION=$(git show "$SHA:package.json" | jq -r .version)
+          test "$TEMPLATE_VERSION" = "0.0.0" || {
+            echo "::error::Source package version must remain 0.0.0 (got $TEMPLATE_VERSION)"
+            exit 1
+          }
+          VERSION=${TAG#v}
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
@@ -55,6 +85,7 @@ jobs:
     uses: ./.github/workflows/ci.yml
     with:
       ref: ${{ needs.validate.outputs.sha }}
+      release_version: ${{ needs.validate.outputs.version }}
     permissions:
       contents: read
 
@@ -63,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     concurrency:
-      group: octo-runtime-npm-publish
+      group: octo-runtime-npm-publish-${{ inputs.tag }}
       cancel-in-progress: false
     permissions:
       contents: read
@@ -77,7 +108,39 @@ jobs:
         with:
           name: octo-runtime-release
           path: release
+      - name: Check registry version
+        id: registry
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          package='@mininglamp-oss/octo-runtime'
+          archive="release/mininglamp-oss-octo-runtime-$VERSION.tgz"
+          test -f "$archive"
+          local_integrity=$(node -e '
+            const { createHash } = require("node:crypto");
+            const { readFileSync } = require("node:fs");
+            process.stdout.write(`sha512-${createHash("sha512").update(readFileSync(process.argv[1])).digest("base64")}`);
+          ' "$archive")
+          set +e
+          output=$(npm view "$package@$VERSION" dist.integrity 2>&1)
+          status=$?
+          set -e
+          if [ "$status" -eq 0 ]; then
+            if [ "$output" != "$local_integrity" ]; then
+              echo "::error::$package@$VERSION exists with different tarball integrity"
+              exit 1
+            fi
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "$package@$VERSION already contains this verified archive; immutable npm version will not be overwritten."
+          elif printf '%s' "$output" | grep -Eiq 'E404|404 Not Found|is not in this registry'; then
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          else
+            printf '%s\n' "$output" >&2
+            exit "$status"
+          fi
       - name: Publish verified archive
+        if: steps.registry.outputs.exists != 'true'
         env:
           VERSION: ${{ needs.validate.outputs.version }}
           DRY_RUN: ${{ inputs.dry_run }}
@@ -91,3 +154,17 @@ jobs:
           else
             npm publish "$ARCHIVE" --access public --tag latest --provenance
           fi
+      - name: Verify published registry version
+        if: inputs.dry_run == false
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5 6; do
+            if [ "$(npm view @mininglamp-oss/octo-runtime@"$VERSION" version 2>/dev/null || true)" = "$VERSION" ]; then
+              exit 0
+            fi
+            sleep $((attempt * 5))
+          done
+          echo "::error::Published npm version $VERSION is not visible"
+          exit 1

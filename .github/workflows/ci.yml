@@ -12,6 +12,11 @@ on:
         description: Validated release commit SHA
         type: string
         required: true
+      release_version:
+        description: Optional stable SemVer stamped into the verified release artifact
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -66,14 +71,27 @@ jobs:
         run: pnpm test:suites
       - name: Pack single distribution
         id: pack
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
         run: |
-          node scripts/pack-release.mjs
-          VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
+          set -euo pipefail
+          if [ -n "$RELEASE_VERSION" ]; then
+            node scripts/pack-release.mjs --version "$RELEASE_VERSION"
+            VERSION="$RELEASE_VERSION"
+          else
+            node scripts/pack-release.mjs
+            VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
+          fi
           echo "archive=dist/release/mininglamp-oss-octo-runtime-$VERSION.tgz" >> "$GITHUB_OUTPUT"
       - name: Verify offline installation and public API
         env:
           ARCHIVE: ${{ steps.pack.outputs.archive }}
-        run: node scripts/verify-release.mjs "$ARCHIVE"
+        run: |
+          set -euo pipefail
+          EXPECTED_COMMIT=$(git rev-parse HEAD)
+          node scripts/verify-release.mjs "$ARCHIVE" \
+            --expected-commit "$EXPECTED_COMMIT" \
+            --require-clean
       - name: Upload verified npm archive
         if: matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
