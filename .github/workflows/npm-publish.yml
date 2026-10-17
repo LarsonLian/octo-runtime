@@ -117,11 +117,13 @@ jobs:
             process.stdout.write("sha512-" + createHash("sha512").update(readFileSync(process.argv[1])).digest("base64"));
           ' "$archive")
           set +e
-          output=$(npm view "$package@$VERSION" dist.integrity 2>&1)
+          output=$(npm view "$package@$VERSION" dist.integrity --json 2>&1)
           status=$?
           set -e
           if [ "$status" -eq 0 ]; then
-            if [ "$output" != "$local_integrity" ]; then
+            registry_integrity=$(printf '%s' "$output" | jq -er \
+              'if type == "string" then . else error("expected registry integrity string") end')
+            if [ "$registry_integrity" != "$local_integrity" ]; then
               echo "::error::$package@$VERSION exists with different tarball integrity"
               exit 1
             fi

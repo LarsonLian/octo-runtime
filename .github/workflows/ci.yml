@@ -33,11 +33,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        os: [ubuntu-latest, macos-latest]
     steps:
-      - name: Preserve repository line endings
-        if: runner.os == 'Windows'
-        run: git config --global core.autocrlf false
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           ref: ${{ inputs.ref || github.sha }}
@@ -53,8 +50,6 @@ jobs:
           if ! command -v rg >/dev/null 2>&1; then
             if [ "$RUNNER_OS" = "macOS" ]; then
               brew install ripgrep
-            elif [ "$RUNNER_OS" = "Windows" ]; then
-              choco install ripgrep --yes
             else
               sudo apt-get update
               sudo apt-get install --yes ripgrep
@@ -108,11 +103,56 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  verify-windows-release:
+    name: Verify release package (windows-latest)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Preserve repository line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ inputs.ref || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version-file: .nvmrc
+      - uses: pnpm/action-setup@f40ffcd9367d9f12939873eb1018b921a783ffaa # v4
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build release package
+        run: pnpm build
+      - name: Pack single distribution
+        id: pack
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+        run: |
+          set -euo pipefail
+          if [ -n "$RELEASE_VERSION" ]; then
+            node scripts/pack-release.mjs --version "$RELEASE_VERSION"
+            VERSION="$RELEASE_VERSION"
+          else
+            node scripts/pack-release.mjs
+            VERSION=$(node -p "JSON.parse(require('node:fs').readFileSync('package.json', 'utf8')).version")
+          fi
+          echo "archive=dist/release/mininglamp-oss-octo-runtime-$VERSION.tgz" >> "$GITHUB_OUTPUT"
+      - name: Verify Windows installation and daemon process cleanup
+        shell: bash
+        env:
+          ARCHIVE: ${{ steps.pack.outputs.archive }}
+        run: |
+          set -euo pipefail
+          EXPECTED_COMMIT=$(git rev-parse HEAD)
+          node scripts/verify-release.mjs "$ARCHIVE" \
+            --expected-commit "$EXPECTED_COMMIT" \
+            --require-clean
+
   gate:
     # Stable required-check name: matrix failures and skipped builds must fail it.
     # See .octospec/tasks/company-development-checks/brief.md.
     name: CI Gate
-    needs: check
+    needs: [check, verify-windows-release]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -121,8 +161,9 @@ jobs:
       - name: Require every matrix job to succeed
         env:
           CHECK_RESULT: ${{ needs.check.result }}
+          WINDOWS_RELEASE_RESULT: ${{ needs.verify-windows-release.result }}
         run: |
-          if [ "$CHECK_RESULT" != "success" ]; then
-            echo "::error::Build, test and package matrix did not succeed: $CHECK_RESULT"
+          if [ "$CHECK_RESULT" != "success" ] || [ "$WINDOWS_RELEASE_RESULT" != "success" ]; then
+            echo "::error::CI did not succeed: matrix=$CHECK_RESULT windows-release=$WINDOWS_RELEASE_RESULT"
             exit 1
           fi

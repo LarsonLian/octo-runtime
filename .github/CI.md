@@ -12,7 +12,7 @@ filter that could leave its required check waiting indefinitely.
 
 Ubuntu, macOS, and Windows use **Node.js 24.x**, read from `.nvmrc`, and the pnpm version
 declared in `package.json#packageManager`. CI explicitly installs ripgrep for the
-naming check rather than relying on the runner image. Each runner executes:
+naming check rather than relying on the runner image. The Ubuntu/macOS matrix executes:
 
 1. `pnpm install --frozen-lockfile`.
 2. `pnpm lint`, `pnpm lint:names` and `pnpm format:check`.
@@ -23,12 +23,12 @@ naming check rather than relying on the runner image. Each runner executes:
 
 The complete test entry point includes the existing local debugging WebUI plugin
 tests. No production UI or new browser end-to-end gate is introduced. Provider tests
-use fakes unless their existing live-test opt-in is explicitly enabled. On Windows,
-the package verifier executes the installed `.cmd` daemon shim and terminates its full
-process tree before uninstalling the package.
+use fakes unless their existing live-test opt-in is explicitly enabled. A dedicated
+Windows job builds and packs the distribution, then executes the installed `.cmd`
+daemon shim and terminates its full process tree before uninstalling the package.
 
-`CI Gate` is the stable required check. It runs after the entire matrix, including
-on failure, and rejects any aggregate result other than `success`. Branch protection
+`CI Gate` is the stable required check. It runs after the Ubuntu/macOS matrix and the
+Windows release verification, including on failure, and rejects any aggregate result other than `success`. Branch protection
 requires this check from the GitHub Actions app and an up-to-date branch.
 
 Formatting covers owned source, tests, scripts, JSON/YAML configuration, `.github`

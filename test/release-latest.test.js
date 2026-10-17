@@ -205,6 +205,8 @@ test("workflow 将不可变发布、Release 修复和共享 promotion 分离", a
   );
   assert.match(npmWorkflow, /--tag "release-\$VERSION"/);
   assert.doesNotMatch(npmWorkflow, /npm publish[^\n]+--tag latest/);
+  assert.match(npmWorkflow, /dist\.integrity --json/);
+  assert.match(npmWorkflow, /registry_integrity=.*jq -er/);
   assert.match(releaseWorkflow, /'octo-runtime-latest-promotion'/);
   assert.match(releaseWorkflow, /octo-runtime-latest-dry-run-/);
   assert.match(releaseWorkflow, /node scripts\/reconcile-release-latest\.mjs/);
@@ -221,9 +223,10 @@ test("Windows 发行验收通过 taskkill 回收全局 daemon shim 的进程树"
   );
   assert.match(verifier, /execute\("taskkill", \["\/PID", String\(daemon\.pid\), "\/T", "\/F"\]/);
   assert.match(verifier, /await stopDaemon\(\)/);
-  assert.match(workflow, /os: \[ubuntu-latest, macos-latest, windows-latest\]/);
+  assert.match(workflow, /name: Verify release package \(windows-latest\)/);
   assert.match(workflow, /git config --global core\.autocrlf false/);
   assert.match(workflow, /node scripts\/verify-release\.mjs/);
+  assert.match(workflow, /needs: \[check, verify-windows-release\]/);
   assert.doesNotMatch(cliManifest.scripts.build, /\bchmod\b/);
   assert.doesNotMatch(daemonManifest.scripts.build, /\bchmod\b/);
 });
