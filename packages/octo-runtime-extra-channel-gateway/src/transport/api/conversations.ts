@@ -64,35 +64,6 @@ export async function getGroupMembers(params: {
   return members;
 }
 
-/**
- * 获取群信息
- */
-export async function getGroupInfo(params: {
-  apiUrl: string;
-  botToken: string;
-  groupNo: string;
-  log?: { info?: (msg: string) => void; error?: (msg: string) => void };
-}): Promise<{ group_no: string; name: string; [key: string]: unknown }> {
-  const url = `${params.apiUrl.replace(/\/+$/, "")}/v1/bot/groups/${params.groupNo}`;
-  try {
-    const resp = await fetch(url, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${params.botToken}`
-      },
-      signal: AbortSignal.timeout(DEFAULT_TIMEOUT_MS)
-    });
-    if (!resp.ok) {
-      params.log?.error?.(`octo: getGroupInfo failed: ${resp.status}`);
-      throw new Error(`getGroupInfo failed: ${resp.status}`);
-    }
-    return (await resp.json()) as { group_no: string; name: string; [key: string]: unknown };
-  } catch (err) {
-    params.log?.error?.(`octo: getGroupInfo error: ${err instanceof Error ? err.name : "unknown"}`);
-    throw err;
-  }
-}
-
 /** Decoded payload from base64 message content */
 interface SyncMessagePayload {
   type?: number;
