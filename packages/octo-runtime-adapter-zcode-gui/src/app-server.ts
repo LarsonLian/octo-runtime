@@ -1,5 +1,7 @@
 import { createProcessCleanup } from "@mininglamp-oss/octo-runtime-adapter-sdk/process-cleanup";
 import {
+  DriverQueue,
+  watchLineLimit,
   initialControlInstructions,
   hasImageInput,
   freshFallbackInputText,
@@ -31,11 +33,6 @@ interface PendingRequest {
 interface ProcessExit {
   code: number | null;
   signal: NodeJS.Signals | null;
-}
-
-interface QueueWaiter<T> {
-  resolve: (value: IteratorResult<T>) => void;
-  reject: (error: Error) => void;
 }
 
 export interface ZcodeSessionEvent {
@@ -78,41 +75,6 @@ export class ZcodeAppServerProcessError extends Error {
   ) {
     super(message);
     this.name = "ZcodeAppServerProcessError";
-  }
-}
-
-class AsyncQueue<T> implements AsyncIterableIterator<T> {
-  readonly #items: T[] = [];
-  readonly #waiters: Array<QueueWaiter<T>> = [];
-  #closed = false;
-  #error?: Error;
-
-  push(value: T): void {
-    const waiter = this.#waiters.shift();
-    if (waiter) waiter.resolve({ value, done: false });
-    else if (!this.#closed) this.#items.push(value);
-  }
-
-  end(error?: Error): void {
-    if (this.#closed) return;
-    this.#closed = true;
-    this.#error = error;
-    for (const waiter of this.#waiters.splice(0)) {
-      if (error) waiter.reject(error);
-      else waiter.resolve({ value: undefined, done: true });
-    }
-  }
-
-  next(): Promise<IteratorResult<T>> {
-    const item = this.#items.shift();
-    if (item !== undefined) return Promise.resolve({ value: item, done: false });
-    if (this.#error) return Promise.reject(this.#error);
-    if (this.#closed) return Promise.resolve({ value: undefined, done: true });
-    return new Promise((resolve, reject) => this.#waiters.push({ resolve, reject }));
-  }
-
-  [Symbol.asyncIterator](): AsyncIterableIterator<T> {
-    return this;
   }
 }
 
@@ -603,7 +565,10 @@ export async function* runZcodeAppServerTurn({
 class ZcodeAppServerClient {
   readonly #child: ChildProcessWithoutNullStreams;
   readonly #pending = new Map<RpcId, PendingRequest>();
-  readonly #events = new AsyncQueue<ZcodeSessionEvent>();
+  readonly #events = new DriverQueue<ZcodeSessionEvent>({
+    discardOnFailure: true,
+    onFailure: (error) => this.#failAll(error)
+  });
   readonly #requestTimeoutMs: number;
   readonly #autoApprove: boolean;
   readonly #permissionHandler?: (
@@ -620,6 +585,8 @@ class ZcodeAppServerClient {
   readonly #cleanup: () => Promise<void>;
   readonly #reader: ReturnType<typeof createInterface>;
   #closePromise?: Promise<void>;
+  #failure?: Error;
+  readonly #removeLineGuard: () => void;
 
   constructor({
     spec,
@@ -655,8 +622,17 @@ class ZcodeAppServerClient {
     this.#child.stderr.on("data", (value: string | Buffer) => {
       this.#stderr = (this.#stderr + value.toString()).slice(-STDERR_TAIL_LIMIT);
     });
-    this.#child.stdin.on("error", (error) => this.#failAll(error));
+    for (const source of [this.#child.stdin, this.#child.stdout, this.#child.stderr]) {
+      source.on("error", (error: Error) => this.#failAll(error));
+    }
+    // S04：ZCode 不支持图片输入，所有原生行按普通 256 KiB 上限控制。
+    // .octospec/tasks/pr1-yujiawei-review/assessment.md
+    this.#removeLineGuard = watchLineLimit(this.#child.stdout, 256 * 1024, (error) => {
+      this.#failAll(error);
+      this.#child.stdout.destroy();
+    });
     this.#reader = createInterface({ input: this.#child.stdout });
+    this.#reader.on("error", (error) => this.#failAll(error));
     this.#reader.on("line", (line) => this.#receiveLine(line));
     this.#child.once("error", (error) => {
       this.#resolveExit({ code: null, signal: null });
@@ -684,6 +660,8 @@ class ZcodeAppServerClient {
     onWritten?: () => void,
     requestId?: RpcId
   ): Promise<unknown> {
+    if (this.#failure) return Promise.reject(this.#failure);
+    if (this.#closed) return Promise.reject(new Error("ZCode app-server client closed"));
     const id = requestId ?? this.reserveRequestId();
     let timer: NodeJS.Timeout;
     const result = new Promise<unknown>((resolve, reject) => {
@@ -702,7 +680,7 @@ class ZcodeAppServerClient {
     this.#write({ method, params });
   }
 
-  events(): AsyncIterableIterator<ZcodeSessionEvent> {
+  events(): AsyncIterable<ZcodeSessionEvent> {
     return this.#events;
   }
 
@@ -737,6 +715,7 @@ class ZcodeAppServerClient {
   }
 
   #receiveLine(line: string): void {
+    if (this.#failure || this.#closed) return;
     let message: JsonRecord;
     try {
       message = asRecord(JSON.parse(line)) ?? {};
@@ -840,19 +819,30 @@ class ZcodeAppServerClient {
   }
 
   #write(message: JsonRecord, onWritten?: () => void): void {
-    if (this.#child.stdin.destroyed) return;
+    if (this.#failure || this.#closed) return;
+    if (this.#child.stdin.destroyed) {
+      this.#failAll(new Error("ZCode stdin closed"));
+      return;
+    }
     this.#child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
-      if (!error) onWritten?.();
+      if (error) this.#failAll(error);
+      else onWritten?.();
     });
   }
 
   #failAll(error: Error): void {
+    if (this.#failure) return;
+    this.#failure = error;
+    this.#reader.close();
+    this.#removeLineGuard();
+    void this.#cleanup().catch(() => undefined);
     for (const pending of this.#pending.values()) {
       clearTimeout(pending.timer);
       pending.reject(error);
     }
     this.#pending.clear();
-    this.#events.end(error);
+    this.#events.drain();
+    this.#events.close(error);
   }
 }
 
@@ -910,6 +900,11 @@ function failureReason(error: unknown): string {
 }
 
 function errorCode(error: unknown): string | number {
+  if (
+    error instanceof Error &&
+    ["STREAM_BUFFER_OVERFLOW", "STREAM_EVENT_TOO_LARGE"].includes(error.message)
+  )
+    return error.message;
   if (error instanceof ZcodeAppServerRpcError) return error.code;
   if (error instanceof ZcodeAppServerProcessError) return "ZCODE_PROCESS_EXITED";
   return "ZCODE_ADAPTER_ERROR";

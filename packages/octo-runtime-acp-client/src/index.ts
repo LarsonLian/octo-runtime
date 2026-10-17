@@ -1,3 +1,5 @@
+import { DriverQueue, watchLineLimit } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import { INVOKE_REQUEST_MAX_BYTES } from "@mininglamp-oss/octo-runtime-protocol";
 import { createProcessCleanup } from "@mininglamp-oss/octo-runtime-adapter-sdk/process-cleanup";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -71,49 +73,6 @@ export function acpPromptParams(
 }
 
 /**
- * A single-consumer async queue used to hand `session/update` notifications from
- * the JSON-RPC receive loop to a `prompt` generator. `push` resolves a waiting
- * `next()` directly or buffers; `end` closes the stream, propagating an error to
- * pending waiters when the underlying process failed.
- */
-class AsyncQueue<T> implements AsyncIterableIterator<T> {
-  private readonly items: T[] = [];
-  private readonly waiters: Array<Deferred<IteratorResult<T>>> = [];
-  private closed = false;
-  private error?: Error;
-
-  push(value: T): void {
-    if (this.closed) return;
-    const next = this.waiters.shift();
-    if (next) next.resolve({ value, done: false });
-    else this.items.push(value);
-  }
-
-  end(error?: Error): void {
-    if (this.closed && !error) return;
-    this.closed = true;
-    this.error ??= error;
-    if (error) this.items.length = 0;
-    for (const next of this.waiters.splice(0)) {
-      if (error) next.reject(error);
-      else next.resolve({ value: undefined, done: true });
-    }
-  }
-
-  next(): Promise<IteratorResult<T>> {
-    const value = this.items.shift();
-    if (value !== undefined) return Promise.resolve({ value, done: false });
-    if (this.error) return Promise.reject(this.error);
-    if (this.closed) return Promise.resolve({ value: undefined, done: true });
-    return new Promise((resolve, reject) => this.waiters.push({ resolve, reject }));
-  }
-
-  [Symbol.asyncIterator](): AsyncIterableIterator<T> {
-    return this;
-  }
-}
-
-/**
  * JSON-RPC 2.0 client for an ACP (Agent Client Protocol) subprocess, used by the
  * CodeBuddy adapter. Frames are newline-delimited JSON over the child's stdio.
  * The client multiplexes three inbound message kinds on one stdout stream:
@@ -128,7 +87,7 @@ export class AcpClient {
   readonly #permissionWritten?: (params: JsonRecord) => void;
   readonly #permissionFailed?: (params: JsonRecord, error: Error) => void;
   readonly #pending = new Map<number, Deferred<unknown>>();
-  readonly #updates = new Map<string, AsyncQueue<AcpUpdate>>();
+  readonly #updates = new Map<string, DriverQueue<AcpUpdate>>();
   #nextId = 1;
   #stderr = "";
   #closed = false;
@@ -136,6 +95,8 @@ export class AcpClient {
   readonly #cleanup: () => Promise<void>;
   #closePromise?: Promise<void>;
   readonly #reader: ReturnType<typeof createInterface>;
+  readonly #removeLineGuard: () => void;
+  #lineLimit = 256 * 1024;
 
   constructor({
     child,
@@ -165,6 +126,16 @@ export class AcpClient {
     for (const source of [child, child.stdin, child.stdout, child.stderr]) {
       source.on("error", (error: Error) => this.#failAll(error));
     }
+    // S04：在 readline / JSON.parse 前限长；图片输入的原生回显沿整请求上限。
+    // .octospec/tasks/pr1-yujiawei-review/assessment.md
+    this.#removeLineGuard = watchLineLimit(
+      child.stdout,
+      () => this.#lineLimit,
+      (error) => {
+        this.#failAll(error);
+        child.stdout.destroy();
+      }
+    );
     this.#reader = createInterface({ input: child.stdout });
     this.#reader.on("error", (error) => this.#failAll(error));
     this.#reader.on("line", (line) => {
@@ -255,9 +226,14 @@ export class AcpClient {
     if (this.#failure) return;
     this.#failure = error;
     this.#reader.close();
+    this.#removeLineGuard();
+    void this.#cleanup().catch(() => undefined);
     for (const pending of this.#pending.values()) pending.reject(error);
     this.#pending.clear();
-    for (const queue of this.#updates.values()) queue.end(error);
+    for (const queue of this.#updates.values()) {
+      queue.drain();
+      queue.close(error);
+    }
     this.#updates.clear();
   }
 
@@ -372,7 +348,16 @@ export class AcpClient {
       params = acpPromptParams(sessionId, text)
     }: Pick<AcpRequestOptions, "onWritten" | "requestId"> & { params?: JsonRecord } = {}
   ): AsyncGenerator<AcpUpdate> {
-    const queue = new AsyncQueue<AcpUpdate>();
+    if (this.#failure) throw this.#failure;
+    this.#lineLimit =
+      Array.isArray(params.prompt) &&
+      params.prompt.some((part: unknown) => isRecord(part) && part.type === "image")
+        ? INVOKE_REQUEST_MAX_BYTES
+        : 256 * 1024;
+    const queue = new DriverQueue<AcpUpdate>({
+      discardOnFailure: true,
+      onFailure: (error) => this.#failAll(error)
+    });
     this.#updates.set(sessionId, queue);
     const result = this.request<JsonRecord>("session/prompt", params, {
       timeoutMs: 8 * 60 * 60 * 1000,
@@ -393,14 +378,16 @@ export class AcpClient {
           ...(typeof value.stopReason === "string" ? { stopReason: value.stopReason } : {}),
           ...(typeof value.finishReason === "string" ? { finishReason: value.finishReason } : {})
         });
-        queue.end();
+        queue.close();
       })
-      .catch((error) => queue.end(toError(error)));
+      .catch((error) => queue.close(toError(error)));
 
     try {
       for await (const update of queue) yield update;
       await result;
     } finally {
+      queue.drain();
+      this.#lineLimit = 256 * 1024;
       this.#updates.delete(sessionId);
     }
   }

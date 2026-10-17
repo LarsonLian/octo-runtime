@@ -21,7 +21,9 @@ export class DriverQueue<T> implements AsyncIterable<T> {
     if (this.#closed) return;
     const bytes = Buffer.byteLength(JSON.stringify(value));
     if (bytes > 256 * 1024 || this.#items.length >= 4096 || this.#bytes + bytes > 4 * 1024 * 1024) {
-      this.close(new Error("STREAM_BUFFER_OVERFLOW"));
+      this.close(
+        Object.assign(new Error("STREAM_BUFFER_OVERFLOW"), { code: "STREAM_BUFFER_OVERFLOW" })
+      );
       return;
     }
     if (this.#waiter) {

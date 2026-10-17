@@ -153,6 +153,9 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-protocol':
+        specifier: workspace:*
+        version: link:../octo-runtime-protocol
 
   packages/octo-runtime-adapter-acp:
     dependencies:

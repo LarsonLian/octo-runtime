@@ -20,7 +20,7 @@ timestamp: 2026-10-17T00:00:00Z
 - R04（yujiawei）：原提交 CI 已有证据，新修改按实际检查补充。
 - R05（Jerry-Xin）：已监听 child/stdin/stdout/stderr 错误并保存首次失败，拒绝 pending 与后续调用、关闭 reader、释放失败队列；修正同步写失败的定时器清理。6 项新增回归（含真实 Host RPC 中坏调用失败、兄弟及后续调用成功）和 8 项既有 ACP 回归通过。
 - R06（Jerry-Xin）：ACP/NDJSON 已使用同一次可等待的受管组清理；父进程 exit 不取消 KILL 升级，NDJSON 自然 exit 也启动清理。7 项进程组/超时回归、6 项 ACP 故障回归及 47 项既有 ACP/Host/native 回归通过。
-- S01–S05（同类审查）：待逐项核实、修复和回归。
+- S01–S05（同类审查）：已分别修复，具体实现与验证见下文；最终完整检查待执行。
 
 ## 验证约束
 
@@ -47,3 +47,11 @@ timestamp: 2026-10-17T00:00:00Z
 ## S03：ZCode 进程组回收
 
 来自 Jerry-Xin R06 的同类检查，现已通过真实 ZCode 协议 fixture 复现并验证：Provider 返回终态后先退出，其忽略 TERM 的后代仍须被回收。close 复用同一清理 Promise，关闭 reader，取消定时器在 finally 释放；协议停止宽限 250 ms 加受管回收 600 ms，不超过 Host 默认 1 秒预算。进程组与 ZCode 共 17 项测试通过。
+
+## S04：ACP / ZCode 接收缓冲
+
+来自 Jerry-Xin 生命周期意见的同类审查。两种传输复用已有 DriverQueue：单事件 256 KiB、单队列 4096 条、单队列序列化总量 4 MiB，任一超过即失败。ACP 按 session 的更新队列隔离；ZCode 按单次客户端事件队列隔离。数值是序列化字节预算，不是进程 RSS 上限。
+
+普通协议行（包含尚未换行的数据）在 readline / JSON.parse 前限制为 256 KiB。ACP 当前 prompt 明确带原生图片时，原生行允许到既有 INVOKE_REQUEST_MAX_BYTES=32 MiB，容纳输入回显；结束后恢复普通行上限，事件队列始终使用 256 KiB / 4096 / 4 MiB。ZCode 当前不支持图片输入，始终使用普通行上限。不增加可配置参数或动态猜测消息类别。
+
+超限返回 STREAM_EVENT_TOO_LARGE 或 STREAM_BUFFER_OVERFLOW，释放积压、拒绝新输入、关闭 reader 并启动受管组回收；仅当前调用失败，不静默丢事件后报告成功。稳定错误码随错误对象返回。共 7 项新增容量回归覆盖条数、字节、无换行、图片原生 RPC 回显，以及真实 ZCode Provider 管道在消费者停读时主动关闭。相关 ACP、ZCode 与回收共 34 项通过；后续稳定错误码/确定性时序检查另与 native 回归一起验证。
