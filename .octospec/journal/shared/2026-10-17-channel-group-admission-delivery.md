@@ -24,6 +24,8 @@ timestamp: 2026-10-17T00:00:00Z
 
 # 发行和恢复边界
 
-提交后对该修复提交运行 pnpm pack:release、隔离 verify-release，再通过 npm 全局安装生成的 tgz，核对 --version 的 commit 和 dirty 状态。安装不是 npm publish，不隐式安装 Provider 或注册系统服务。实际发行结果以本轮交付回执为准。
+代码提交 dc73c28 已推送 origin/feat/open-source-github，未创建 MR。对该提交运行 pnpm pack:release 和隔离 verify-release 已通过：离线安装、公开类型、三个内置 Extra 和外部 Extra 加载、daemon ready，以及卸载保留 Home 均验证成功。通过 npm 全局安装该 tgz 后，版本为 1.0.0、commit:dc73c28a34a8，无 dirty 标记；直接检查已安装 Gateway 的默认/null/[]/显式名单和禁用语义通过。后续文档提交不改变执行代码，最终本地构建号以交付回执为准。没有 npm publish、隐式安装 Provider 或注册系统服务。
+
+发现本机已由用户运行前台 daemon，系统服务仍为 not_installed，活动任务为 0。全局替换不会刷新其内存中的旧模块；保留原前台终端的运行控制，不把它转成后台服务。用户在原终端 Ctrl+C 后执行 octo-runtime daemon run 即可加载新产物，无需重建 Home 或改群名单。SDK 宿主另按自身生命周期更新。
 
 本机现有 CLI Bot 省略 group_ids，按新合同无需改配置；已经运行的旧 daemon 必须重新加载新发行物才会生效。全局安装不更新 Buddy、demo 等第三方宿主自身携带的 SDK 副本，需对应团队更新构建并重启。实际产品恢复、影响部署总数及真人 owner/实际模型闭环仍未核实，因此本专项记录为本地修复已验证，不宣布全部事故关闭。被过滤的历史消息不自动补执行，升级后需要明确重新发送。

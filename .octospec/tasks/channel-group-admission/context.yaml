@@ -1,4 +1,4 @@
-status: verified-release-pending
+status: installed-host-reload-pending
 baseline: 6a4397d51091b04a4d7b603abb2b5ffdf7bb912a
 rules:
   - runtime-architecture
@@ -30,4 +30,5 @@ validation:
   im_test_before_fix: 真实 QA 历史 payload 重放，显式群通过、省略群拒绝，发送消息和模型调用均为 0。
   after_fix: 新合同 11 项定向测试、类型、lint 通过；Node 1074 通过、9 跳过，WebUI 35 通过；OKF 检查通过。
   im_test_after_fix: 只读真实 payload 重放通过；CLI 与 SDK 真实 WS 群和话题收发通过，共 12 条输入和 7 次测试 Adapter 执行，不调用模型。
-  not_performed: 提交后发行包构建与安装待执行；第三方 App 升级、真人 owner 和实际模型闭环未验。
+  release: dc73c28 的 tgz 隔离离线安装、公开类型和三个 Extra 加载通过；npm 全局安装通过，版本为 1.0.0、commit dc73c28a34a8、dirty false，已安装 Gateway 合同检查通过。
+  not_performed: 用户原前台 daemon 重新启动；第三方 App 升级、真人 owner 和实际模型闭环未验。

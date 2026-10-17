@@ -46,7 +46,7 @@
 
 ## 历史与取舍
 
-- [群聊明确点名无响应事故](tasks/channel-group-admission/brief.md)：已修正 CLI/SDK 共用准入；groups_enabled 独立启停，group_ids 省略/null/[] 不限制范围、非空限制父群，无旧空名单兼容。11 项定向测试、类型/lint、Node 1074 通过（9 跳过）、UI 35 通过；im-test 的 CLI/SDK 真实 WS 群和话题收发通过。发行安装在提交后执行，第三方宿主与实际模型尚未验收，不能宣称事故全部恢复；见[实施证据](journal/shared/2026-10-17-channel-group-admission-delivery.md)。
+- [群聊明确点名无响应事故](tasks/channel-group-admission/brief.md)：已修正 CLI/SDK 共用准入；groups_enabled 独立启停，group_ids 省略/null/[] 不限制范围、非空限制父群，无旧空名单兼容。11 项定向测试、类型/lint、Node 1074 通过（9 跳过）、UI 35 通过；im-test 的 CLI/SDK 真实 WS 群和话题收发通过。dc73c28 已推送、发行隔离验收和本地全局安装通过；原前台进程待重启，第三方宿主与实际模型尚未验收，不能宣称事故全部恢复；见[实施证据](journal/shared/2026-10-17-channel-group-admission-delivery.md)。
 
 - [宿主完整 SDK 接入与动态 Context](tasks/sdk-host-extra-contexts/brief.md)：通用三参数 loadExtra、SDK 内部装配与生命周期已实现，宿主不创建 loader 或执行桥；同步/异步 loadContexts 保留宿主数据源管理权并逐轮读取新值。13 项 SDK 与 3 项取消测试通过，全量 1069 通过、9 跳过，见[交付记录](journal/shared/2026-10-17-sdk-host-extra-contexts.md)。必要性和可执行性均 100；[现状评估](tasks/sdk-host-extra-contexts/assessment.md)不以接口完成代替整个产品验收。第三方 App、demo 与真实 IM 本轮暂不进行，自带 CLI 保持 JSON 路径。
 

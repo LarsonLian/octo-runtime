@@ -2,7 +2,7 @@
 
 ## 2026-10-17
 
-- 实施[群准入合同修复](journal/shared/2026-10-17-channel-group-admission-delivery.md)：groups_enabled 独立启停，group_ids 省略/null/[] 不限制范围，非空限制父群；不保留旧空名单语义。Schema、整体设计及 CLI/SDK 指南同步，owner/Space/真实 @ 等授权保留。11 项定向及全量 Node 1074 通过、9 跳过，UI 35 通过；im-test 的 CLI/SDK 群和话题真实收发通过，12 条输入、7 次测试 Adapter 执行，模型调用为 0。发行安装随后执行，第三方宿主升级与实际模型尚未验收。
+- 实施[群准入合同修复](journal/shared/2026-10-17-channel-group-admission-delivery.md)：groups_enabled 独立启停，group_ids 省略/null/[] 不限制范围，非空限制父群；不保留旧空名单语义。Schema、整体设计及 CLI/SDK 指南同步，owner/Space/真实 @ 等授权保留。11 项定向及全量 Node 1074 通过、9 跳过，UI 35 通过；im-test 的 CLI/SDK 群和话题真实收发通过，12 条输入、7 次测试 Adapter 执行，模型调用为 0。dc73c28 已推送、发行隔离验收和本地全局安装通过；原前台进程待重启，第三方宿主升级与实际模型尚未验收。
 
 - 调查阶段建立[群聊明确点名无响应事故分析与处理计划](tasks/channel-group-admission/brief.md)：CLI/SDK 共用 Gateway 在 group_ids 省略时拒绝所有群/话题，默认 CLI 示例与 Schema 因而失效；问题早于本轮 SDK 改造。新增 3 项准入/transport 回归按预期失败，im-test 既有真实历史 payload 的只读重放复现，未发送消息或调用模型。记录 owner 默认说明错误、临时显式群范围止损、逐阶段修复与真实入口验收、宿主升级/回退和事故关闭条件。当时不改业务代码、用户配置或安装，后续实施见上条记录。
 
