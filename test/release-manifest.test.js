@@ -66,7 +66,19 @@ test("发行校验在 checkout 压平本地 ref 后恢复远端 annotated tag �
       "-m",
       "fixture"
     ]);
-    await execute("git", ["-C", source, "tag", "-a", "v1.0.0", "-m", "fixture"]);
+    await execute("git", [
+      "-C",
+      source,
+      "-c",
+      "user.name=Release Fixture",
+      "-c",
+      "user.email=release-fixture@example.invalid",
+      "tag",
+      "-a",
+      "v1.0.0",
+      "-m",
+      "fixture"
+    ]);
     await execute("git", ["-C", source, "remote", "add", "origin", remote]);
     await execute("git", ["-C", source, "push", "origin", "main", "refs/tags/v1.0.0"]);
 
