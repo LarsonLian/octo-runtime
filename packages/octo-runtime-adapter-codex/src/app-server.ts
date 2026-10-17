@@ -1171,6 +1171,7 @@ class CodexAppServerClient {
   #nextInteractionId = 1;
   #stderr = "";
   #closed = false;
+  #transportFailure?: Error;
   #closing = false;
   #exited = false;
   #terminal = false;
@@ -1347,7 +1348,17 @@ class CodexAppServerClient {
     });
 
     // spawn error and normal/abnormal close are watched separately, but both ultimately reject pending RPCs and close the event stream.
-    this.#child.once("error", (error) => this.#handleProcessError(error));
+    // S01（Jerry-Xin R05 同类）：write 回调不能代替流 error 监听。
+    // .octospec/tasks/pr1-yujiawei-review/assessment.md
+    for (const source of [
+      this.#child,
+      this.#child.stdin,
+      this.#child.stdout,
+      this.#child.stderr,
+      this.#reader
+    ]) {
+      source.on("error", (error: Error) => this.#handleProcessError(error));
+    }
     this.#child.once("close", (code, exitSignal) => this.#handleExit({ code, signal: exitSignal }));
     if (signal?.aborted) queueMicrotask(this.#abortListener);
     else signal?.addEventListener("abort", this.#abortListener, { once: true });
@@ -1522,6 +1533,7 @@ class CodexAppServerClient {
     onWritten?: () => void,
     requestId?: RpcId
   ): Promise<unknown> {
+    if (this.#transportFailure) return Promise.reject(this.#transportFailure);
     if (this.#closed || this.#exited) {
       return Promise.reject(new Error("codex app-server is closed"));
     }
@@ -1910,6 +1922,10 @@ class CodexAppServerClient {
   }
 
   #write(message: JsonRecord, onError?: (error: Error) => void, onWritten?: () => void): void {
+    if (this.#transportFailure) {
+      onError?.(this.#transportFailure);
+      return;
+    }
     if (this.#closed || this.#exited) {
       onError?.(new Error("codex app-server is closed"));
       return;
@@ -2006,6 +2022,9 @@ class CodexAppServerClient {
   }
 
   #handleProcessError(error: Error): void {
+    if (this.#transportFailure) return;
+    this.#transportFailure = error;
+    this.#reader.close();
     this.#clearFinalizationTimer();
     this.#rejectPending(error);
     this.#invalidateInteractions("execution_lost");
