@@ -27,3 +27,4 @@ decisions:
   - 正式发行必须保留并验证 tag commit，禁止 dirty 构建。
   - tag push 自动发布，手工入口只承担 dry-run 和同 tag 故障恢复。
   - annotated tag 类型以远端 tag 对象为准，校验前显式恢复远端 ref，避免 checkout 压平本地 ref 后误判。
+  - npm 发布归档使用以 ./ 开头的显式相对路径；正式写入前要求非空 NPM_TOKEN，dry-run 不要求凭据。

@@ -145,11 +145,15 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          ARCHIVE="release/mininglamp-oss-octo-runtime-$VERSION.tgz"
+          ARCHIVE="./release/mininglamp-oss-octo-runtime-$VERSION.tgz"
           test -f "$ARCHIVE"
           if [ "$DRY_RUN" = true ]; then
             npm publish "$ARCHIVE" --access public --tag "release-$VERSION" --provenance --dry-run
           else
+            test -n "$NODE_AUTH_TOKEN" || {
+              echo "::error::NPM_TOKEN is required for a production npm publish"
+              exit 1
+            }
             npm publish "$ARCHIVE" --access public --tag "release-$VERSION" --provenance
           fi
       - name: Verify published registry version

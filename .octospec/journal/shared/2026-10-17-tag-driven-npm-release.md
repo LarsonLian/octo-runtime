@@ -72,3 +72,12 @@ npm publish 和 GitHub Release 之前，没有产生 registry 或 Release 写入
 修复在类型校验前通过显式远端 refspec 恢复 annotated tag 对象，并使用真实 Git 仓库 fixture
 覆盖“本地 ref 已是 commit、远端仍是 annotated tag”的回归场景。修复合并后必须保留现有
 `v1.0.0`，从 `Release Publish` 的 `recover` 入口继续同 tag 发布；不得移动或重建 tag。
+
+该修复经 PR #23 合并后，recover 运行 `39077131120` 成功通过 tag 校验以及 Linux、macOS、
+Windows 的完整构建和发行验收。随后 `npm publish` 将
+`release/mininglamp-oss-octo-runtime-1.0.0.tgz` 误解析为 GitHub shorthand，尝试执行
+`git ls-remote ssh://git@github.com/release/mininglamp-oss-octo-runtime-1.0.0.tgz.git` 后失败；正确
+的本地归档参数必须以 `./release/` 开头。该运行还确认 `octo-runtime` 仓库未配置
+`NPM_TOKEN`，而参考仓库 `octo-cli` 已配置同名 Actions Secret。失败发生在 npm registry 写入
+和 GitHub Release 创建之前，两端仍无 `1.0.0` 发行物。修复路径参数并由管理员配置 Secret
+后，继续保留现有 tag 并再次执行 recover。

@@ -112,6 +112,8 @@ test("发行校验在 checkout 压平本地 ref 后恢复远端 annotated tag �
       workflow,
       /git fetch --force --no-tags origin "refs\/tags\/\$TAG:refs\/tags\/\$TAG"/
     );
+    assert.match(workflow, /ARCHIVE="\.\/release\/mininglamp-oss-octo-runtime-\$VERSION\.tgz"/);
+    assert.match(workflow, /NPM_TOKEN is required for a production npm publish/);
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

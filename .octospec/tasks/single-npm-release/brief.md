@@ -28,7 +28,8 @@ workspace 清单。内部 workspace 全部 `private: true`，不进入 npm regis
 - **单包边界：** `apps/*` 和 `packages/*` 只参与源码构建或根包捆绑，全部禁止独立发布。
   根包的 `bin` 继续指向随 tgz 携带的 CLI/daemon 构建产物；`private` 不改变命令可执行性。
 - **发布门禁：** npm 发布只消费同一次精确 tag 验证生成的 artifact。构建、静态检查、测试、
-  离线安装、公开入口和真实全局命令验证任一失败都不得发布。
+  离线安装、公开入口和真实全局命令验证任一失败都不得发布。传给 `npm publish` 的 tgz 必须使用
+  显式相对文件路径，正式发布缺少 `NPM_TOKEN` 时必须在 registry 写入前给出清晰错误。
 - **重试行为：** npm 已存在同版本时不尝试覆盖不可变版本；工作流继续核对 registry 版本并
   可补齐 GitHub Release。不同 tag 的不可变版本交付可以独立执行；共享 latest 由包级协调器
   根据已完整交付的最高稳定版本收敛，同 tag 不并发发布。
