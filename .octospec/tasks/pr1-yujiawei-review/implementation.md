@@ -29,3 +29,7 @@ timestamp: 2026-10-17T00:00:00Z
 ## S01：Codex 管道错误隔离
 
 来自 Jerry-Xin R05 的同类检查，并非 reviewer 单独提出。已补 stdin/stdout/stderr 与 reader 的 error 监听，保存首次传输失败，拒绝后续写入。包构建与 29 项 Codex 回归通过，包含三个流的重复错误、单一失败终态及既有取消/交互测试。
+
+## S05：Host 启动错误归属
+
+来自 Jerry-Xin R05 同类审查。已在 readiness 前监听 ChildProcess error 并关闭该 RPC 客户端，避免共享调用方被未处理异常终止。隔离地替换测试进程 execPath 注入真实 ENOENT；readiness 立即失败，不等配置的 10 秒超时。Host 包构建及相关测试通过。

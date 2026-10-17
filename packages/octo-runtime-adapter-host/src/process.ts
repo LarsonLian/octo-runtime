@@ -63,6 +63,9 @@ export async function spawnAdapterHost({
     input: child.stdout,
     output: child.stdin
   });
+  // S05：spawn error 必须在 readiness 阶段归属本次启动，不能终止宿主。
+  // .octospec/tasks/pr1-yujiawei-review/assessment.md
+  child.on("error", (error) => client.close(error));
   let adapters: HostedAdapterMetadata[];
   try {
     adapters = await waitForReady(client.list(), readyTimeoutMs, signal);
