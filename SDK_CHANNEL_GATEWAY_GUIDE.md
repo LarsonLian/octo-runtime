@@ -104,6 +104,8 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 
 **`config.bots` 是数组：一个 Bot 填一项，多个 Bot 填多项。** 下例配置两个 Bot；只接一个时保留一项即可，每项填写对应 Bot 的凭据和执行配置。
 
+注意: 此处的每个 octo.control/instructions 是load channel-gateway时候的默认提示词，启动时加载；对于宿主APP,需要实现  LoadContexts 来进行动态加载这个系统提示词context
+
 ```json
 {
   "module": "@mininglamp-oss/octo-runtime-extra-channel-gateway",
