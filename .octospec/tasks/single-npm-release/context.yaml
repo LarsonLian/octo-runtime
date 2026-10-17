@@ -18,6 +18,7 @@ sources:
   - .github/workflows/ci.yml
   - .github/workflows/npm-publish.yml
   - .github/workflows/release-publish.yml
+  - test/release-manifest.test.js
   - scripts/pack-release.mjs
   - scripts/verify-release.mjs
 decisions:
@@ -25,3 +26,4 @@ decisions:
   - 只发布根包；内部 apps 和 packages 全部 private，并作为根包内容或 bundled dependencies 交付。
   - 正式发行必须保留并验证 tag commit，禁止 dirty 构建。
   - tag push 自动发布，手工入口只承担 dry-run 和同 tag 故障恢复。
+  - annotated tag 类型以远端 tag 对象为准，校验前显式恢复远端 ref，避免 checkout 压平本地 ref 后误判。

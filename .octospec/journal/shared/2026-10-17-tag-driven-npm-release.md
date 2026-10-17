@@ -61,5 +61,14 @@ tag。不可变版本先使用版本专属 dist-tag，Release 资产完成后由
   `octo-daemon-old` 等兄弟仓库同目录而报告 14 个既有仓外链接失效；没有报出本次新增或修改
   OKF 的格式、规则 ID 或仓内链接问题。
 
-本记录不表示已经创建或推送 `v1.0.0` tag，也不表示 npm 或 GitHub Release 已实际发布。
-真实发布必须在 PR 合并、tag 指向干净 `main` 提交后由托管工作流完成。
+## 首次真实发布恢复
+
+`v1.0.0` annotated tag 已推送并指向合并后的 `main` 提交
+`62d10ac46e7c2c3505b42c362229f7b91f328e5b`。首次 `Release Publish` 运行
+`39075690718` 在 `Resolve release commit` 阶段失败：`actions/checkout` 将 runner 本地的同名
+tag ref 压平成目标 commit，后续 `git cat-file -t` 因此误报 lightweight tag。失败发生在构建、
+npm publish 和 GitHub Release 之前，没有产生 registry 或 Release 写入。
+
+修复在类型校验前通过显式远端 refspec 恢复 annotated tag 对象，并使用真实 Git 仓库 fixture
+覆盖“本地 ref 已是 commit、远端仍是 annotated tag”的回归场景。修复合并后必须保留现有
+`v1.0.0`，从 `Release Publish` 的 `recover` 入口继续同 tag 发布；不得移动或重建 tag。
