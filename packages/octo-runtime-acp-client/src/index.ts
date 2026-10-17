@@ -82,14 +82,17 @@ class AsyncQueue<T> implements AsyncIterableIterator<T> {
   private error?: Error;
 
   push(value: T): void {
+    if (this.closed) return;
     const next = this.waiters.shift();
     if (next) next.resolve({ value, done: false });
     else this.items.push(value);
   }
 
   end(error?: Error): void {
+    if (this.closed && !error) return;
     this.closed = true;
-    this.error = error;
+    this.error ??= error;
+    if (error) this.items.length = 0;
     for (const next of this.waiters.splice(0)) {
       if (error) next.reject(error);
       else next.resolve({ value: undefined, done: true });
@@ -128,6 +131,8 @@ export class AcpClient {
   #nextId = 1;
   #stderr = "";
   #closed = false;
+  #failure?: Error;
+  readonly #reader: ReturnType<typeof createInterface>;
 
   constructor({
     child,
@@ -149,7 +154,14 @@ export class AcpClient {
       // Keep only the tail; stderr is diagnostic context for a failure, not a log sink.
       this.#stderr = (this.#stderr + value.toString()).slice(-8192);
     });
-    createInterface({ input: child.stdout }).on("line", (line) => {
+    // R05：进程和管道错误只结束本客户端，不得逃逸到共享 Host。
+    // .octospec/tasks/pr1-yujiawei-review/assessment.md
+    for (const source of [child, child.stdin, child.stdout, child.stderr]) {
+      source.on("error", (error: Error) => this.#failAll(error));
+    }
+    this.#reader = createInterface({ input: child.stdout });
+    this.#reader.on("error", (error) => this.#failAll(error));
+    this.#reader.on("line", (line) => {
       try {
         this.#receive(asRecord(JSON.parse(line)));
       } catch (error) {
@@ -157,9 +169,7 @@ export class AcpClient {
       }
     });
     child.once("exit", (code, signal) => {
-      if (this.#pending.size || this.#updates.size) {
-        this.#failAll(new Error(this.#stderr.trim() || `ACP process exited: ${code ?? signal}`));
-      }
+      this.#failAll(new Error(this.#stderr.trim() || `ACP process exited: ${code ?? signal}`));
     });
   }
 
@@ -171,6 +181,10 @@ export class AcpClient {
       onFailed?.(error);
       this.#failAll(error);
     };
+    if (this.#failure || this.#closed) {
+      onFailed?.(this.#failure ?? new Error("ACP client closed"));
+      return;
+    }
     try {
       this.#child.stdin.write(`${JSON.stringify(message)}\n`, (error) => {
         if (error) failed(error);
@@ -183,6 +197,7 @@ export class AcpClient {
 
   /** Dispatch one inbound JSON-RPC message: response by id, `session/update` notification, or an inbound permission request. */
   #receive(message: JsonRecord): void {
+    if (this.#failure || this.#closed) return;
     if (
       typeof message.id === "number" &&
       (message.result !== undefined || message.error !== undefined)
@@ -231,6 +246,9 @@ export class AcpClient {
 
   /** Reject every outstanding request and close every update queue with the same error; used when the subprocess dies or emits invalid JSON. */
   #failAll(error: Error): void {
+    if (this.#failure) return;
+    this.#failure = error;
+    this.#reader.close();
     for (const pending of this.#pending.values()) pending.reject(error);
     this.#pending.clear();
     for (const queue of this.#updates.values()) queue.end(error);
@@ -259,6 +277,7 @@ export class AcpClient {
     params: JsonRecord,
     { timeoutMs = 300_000, onWritten, requestId }: AcpRequestOptions = {}
   ): Promise<T> {
+    if (this.#failure) return Promise.reject(this.#failure);
     if (this.#closed) return Promise.reject(new Error("ACP client closed"));
     const id = requestId ?? this.reserveRequestId();
     if (this.#pending.has(id)) {
@@ -277,7 +296,6 @@ export class AcpClient {
         }
       });
     });
-    this.#send({ jsonrpc: "2.0", id, method, params }, onWritten);
     if (timeoutMs > 0) {
       timer = setTimeout(() => {
         const pending = this.#pending.get(id);
@@ -286,6 +304,7 @@ export class AcpClient {
       }, timeoutMs);
       timer.unref();
     }
+    this.#send({ jsonrpc: "2.0", id, method, params }, onWritten);
     return request as Promise<T>;
   }
 
