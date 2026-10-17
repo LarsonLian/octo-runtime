@@ -1,3 +1,4 @@
+import { createProcessCleanup } from "@mininglamp-oss/octo-runtime-adapter-sdk/process-cleanup";
 import {
   initialControlInstructions,
   hasImageInput,
@@ -13,8 +14,7 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 
 const REQUEST_TIMEOUT_MS = 30_000;
-const CLOSE_GRACE_MS = 500;
-const KILL_GRACE_MS = 1_000;
+const CLOSE_GRACE_MS = 250;
 const STDERR_TAIL_LIMIT = 64 * 1_024;
 const MAX_PUBLIC_TEXT_CHARS = 1_000;
 
@@ -483,12 +483,13 @@ export async function* runZcodeAppServerTurn({
   approvalBridge?.bindTransport(() => client.close());
   let sessionId: string | undefined;
   let terminal = false;
+  let abortTimer: NodeJS.Timeout | undefined;
   const abort = (): void => {
     if (sessionId) client.notify("session/stop", { sessionId });
-    const timer = setTimeout(() => {
-      void client.close();
+    abortTimer ??= setTimeout(() => {
+      void client.close().catch(() => undefined);
     }, CLOSE_GRACE_MS);
-    timer.unref();
+    abortTimer.unref();
   };
   if (request.signal?.aborted) abort();
   else request.signal?.addEventListener("abort", abort, { once: true });
@@ -593,6 +594,7 @@ export async function* runZcodeAppServerTurn({
     }
   } finally {
     request.signal?.removeEventListener("abort", abort);
+    if (abortTimer) clearTimeout(abortTimer);
     await client.close();
     await spec.cleanup?.();
   }
@@ -615,6 +617,9 @@ class ZcodeAppServerClient {
   #activeSession?: string;
   #lastSeq = 0;
   #closed = false;
+  readonly #cleanup: () => Promise<void>;
+  readonly #reader: ReturnType<typeof createInterface>;
+  #closePromise?: Promise<void>;
 
   constructor({
     spec,
@@ -643,12 +648,16 @@ class ZcodeAppServerClient {
       env: spec.env,
       detached: process.platform !== "win32"
     });
+    this.#cleanup = createProcessCleanup(this.#child, {
+      processGroup: process.platform !== "win32"
+    });
     this.#child.stderr.setEncoding("utf8");
     this.#child.stderr.on("data", (value: string | Buffer) => {
       this.#stderr = (this.#stderr + value.toString()).slice(-STDERR_TAIL_LIMIT);
     });
     this.#child.stdin.on("error", (error) => this.#failAll(error));
-    createInterface({ input: this.#child.stdout }).on("line", (line) => this.#receiveLine(line));
+    this.#reader = createInterface({ input: this.#child.stdout });
+    this.#reader.on("line", (line) => this.#receiveLine(line));
     this.#child.once("error", (error) => {
       this.#resolveExit({ code: null, signal: null });
       this.#failAll(error);
@@ -714,17 +723,17 @@ class ZcodeAppServerClient {
     );
   }
 
-  async close(): Promise<void> {
-    if (this.#closed) return;
+  // S03：leader 先退出仍须回收其独立组；所有关闭路径等待同一 Promise。
+  // .octospec/tasks/pr1-yujiawei-review/assessment.md
+  close(): Promise<void> {
+    return (this.#closePromise ??= this.#close());
+  }
+
+  async #close(): Promise<void> {
     this.#closed = true;
+    this.#reader.close();
     this.#failAll(new Error("ZCode app-server client closed"));
-    if (this.#child.exitCode !== null || this.#child.signalCode !== null) return;
-    signalProcessTree(this.#child, "SIGTERM");
-    await Promise.race([this.#exitPromise, delay(KILL_GRACE_MS)]);
-    if (this.#child.exitCode === null && this.#child.signalCode === null) {
-      signalProcessTree(this.#child, "SIGKILL");
-      await Promise.race([this.#exitPromise, delay(KILL_GRACE_MS)]);
-    }
+    await this.#cleanup();
   }
 
   #receiveLine(line: string): void {
@@ -919,28 +928,12 @@ function isTerminal(event: CanonicalEvent): boolean {
   );
 }
 
-function signalProcessTree(child: ChildProcessWithoutNullStreams, signal: NodeJS.Signals): void {
-  if (process.platform !== "win32" && child.pid !== undefined) {
-    try {
-      process.kill(-child.pid, signal);
-      return;
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
-    }
-  }
-  child.kill(signal);
-}
-
 function defaultSpawn(
   command: string,
   args: readonly string[],
   options: { cwd: string; env: NodeJS.ProcessEnv; detached: boolean }
 ): ChildProcessWithoutNullStreams {
   return spawn(command, [...args], { ...options, stdio: ["pipe", "pipe", "pipe"] });
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function asRecord(value: unknown): JsonRecord | undefined {

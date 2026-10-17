@@ -43,3 +43,7 @@ timestamp: 2026-10-17T00:00:00Z
 ## S02：Host 所拥有的进程组回收
 
 来自 Jerry-Xin R06 的同类检查。Host launcher 复用本次受管组回收函数，close 先关闭 RPC 再返回同一清理 Promise，readiness 失败也等待同一清理；删除按 leader exit 提前返回与遗留 exit/timer 竞速。真实 Host fixture 的后代忽略 TERM 仍被回收，相关组回收和 Host 共 30 项测试通过。
+
+## S03：ZCode 进程组回收
+
+来自 Jerry-Xin R06 的同类检查，现已通过真实 ZCode 协议 fixture 复现并验证：Provider 返回终态后先退出，其忽略 TERM 的后代仍须被回收。close 复用同一清理 Promise，关闭 reader，取消定时器在 finally 释放；协议停止宽限 250 ms 加受管回收 600 ms，不超过 Host 默认 1 秒预算。进程组与 ZCode 共 17 项测试通过。

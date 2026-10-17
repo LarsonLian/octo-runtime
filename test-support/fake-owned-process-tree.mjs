@@ -12,6 +12,31 @@ if (mode === "host")
     const request = JSON.parse(line);
     process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: request.id, result: [] }) + "\n");
   });
+let markReady;
+const treeReady = new Promise((resolve) => {
+  markReady = resolve;
+});
+if (mode === "zcode")
+  createInterface({ input: process.stdin }).on("line", (line) => {
+    const request = JSON.parse(line);
+    const result = request.method === "session/create" ? { sessionId: "tree-session" } : {};
+    process.stdout.write(JSON.stringify({ id: request.id, result }) + "\n");
+    if (request.method === "session/send")
+      void treeReady.then(() => {
+        process.stdout.write(
+          JSON.stringify({
+            method: "session/event",
+            params: {
+              sessionId: "tree-session",
+              seq: 1,
+              type: "turn.completed",
+              payload: { resultType: "success" }
+            }
+          }) + "\n"
+        );
+        process.exit(0);
+      });
+  });
 if (mode === "tool") {
   process.on("SIGTERM", () => {});
   process.send("ready");
@@ -28,6 +53,7 @@ if (mode === "tool") {
   tool.once("message", () => {
     const identity = { parentPid: process.pid, childPid: tool.pid };
     writeFileSync(readyPath, JSON.stringify(identity));
+    markReady();
     process.stdout.write(JSON.stringify(identity) + "\n");
     if (mode === "parent-exits") process.exit(0);
   });
