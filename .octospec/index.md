@@ -37,6 +37,7 @@
 - [Adapter 开发](guides/adapter-authoring.md)：接口示例和验收。
 - [Provider 实现矩阵](guides/providers.md)：传输、模式及权限差异。
 - [Extra 配置与调用](guides/extra-configuration.md)：当前 CLI 路径、SDK 和本地 WebUI。
+- [Channel 逐轮加载宿主 Context](guides/channel-dynamic-contexts.md)：Agent 提示词与业务数据变化无需重载插件；说明函数注入、同 key 整项覆盖、内存边界及当前 SDK 装配缺口，对应 [SDK 指南第 7 节](../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)。
 - [IM Agent 与通用 invoke 的责任边界](guides/im-agent-invocation-boundary.md)：长期 Agent 的业务策略与单次执行能力分层；固定 workdir 与 reset 是 IM 架构决策，不是每会话目录功能计划。
 - [IM 执行准备排查经验与架构视图](journal/shared/2026-10-16-im-invoke-preparation-lessons.md)：完整 Context 误入执行 resolver、Extra 重复准备、系统指令时机、在线状态与任务错误的区别；重复准备已修复，全面错误展示仍待实施，见[本轮交付](journal/shared/2026-10-17-extra-initializer-delivery.md)。
 - [本地运维](guides/operations.md)：真实状态、排障和日志。

@@ -55,6 +55,7 @@ async function initialize(
     host: context.adapterHost,
     signal: context.signal,
     log: context.log,
+    // 与 Gateway 共用逐轮合同：宿主数据可变，连接与 manager 仍由 Extra 整体封装。
     prepareContexts: (bot, signal) => contexts.load(bot, signal),
     credentials: (bot) => Promise.resolve(configuredCredential(bot)),
     ...(allowed

@@ -233,7 +233,7 @@ Agent 定义、业务任务、会话历史及 Provider session binding 由业务
 
 2026-10-16 执行准备边界补充：Extra 可以读取所选 adapter 以执行自身业务判断，组装公开 `InvokeInput` 后调用注入的 `host.invoke(input, environment)`。`prepareInvokeInput()` 和其中的 `resolveLocalContext()` 属于 AdapterHost 的共享执行准备路径；Extra 不得自行解析内部执行计划，或先构造 `InvokeRequest` 再转回公开输入。业务默认值、固定目录约束、渠道会话与本轮材料仍归业务入口。所有入口复用该准备流程，不得通过放宽执行 resolver 接纳完整 Context 来掩盖分层错误。
 
-当前 Octo / WeCom Extra 的重复解析已核对为实现偏离，删除工作尚未实施；不能将本规则当作代码已经统一的证明。目标调用视图见[执行准备与系统指令](../guides/im-agent-invocation-boundary.md#执行准备与系统指令调用视图)，故障证据和经验见[排查记录](../journal/shared/2026-10-16-im-invoke-preparation-lessons.md)，实施范围见[任务计划](../tasks/unify-execution-and-simplify-instructions/brief.md)。
+2026-10-17 已删除 Octo / WeCom dispatcher 的重复执行解析，双渠道直接提交公开 InvokeInput；验证和未完成范围见[交付记录](../journal/shared/2026-10-17-extra-initializer-delivery.md)。调用视图见[执行准备与系统指令](../guides/im-agent-invocation-boundary.md#执行准备与系统指令调用视图)，故障证据和经验见[排查记录](../journal/shared/2026-10-16-im-invoke-preparation-lessons.md)，全面准备失败展示等后续工作见[任务计划](../tasks/unify-execution-and-simplify-instructions/brief.md)。
 
 2026-10-16 明确：Channel Gateway 管理长期 IM Agent 的固定工作目录、频道会话映射、reset、历史输入及消息投递；`AdapterHost.invoke` 只承接调用方确定的本次执行配置、输入和 Provider 会话。两层共用执行内核，不表示共享业务职责。Host 的单次执行可以显式续接 Provider 会话，不等于每次新建 Agent 或目录。
 
@@ -278,6 +278,12 @@ Extra 必须保持这一责任边界：宿主编排“卸载 → 修改并保存
 2026-10-16 F20 进一步明确：宿主以整个 Extra 为运行控制单位，不跨模块操纵内部 Bot、连接或管理器；读取公开配置和展示状态不意味着拥有内部运行控制权。主要部署为单机单 Bot，整体重载通常没有其他 Bot 受连带影响；少数多 Bot 配置更新时的重连已被接受。不得为这个受益面有限的场景扩大通用接口、恢复逐 Bot reconcile 或通用业务 RPC。扩展性来自稳定且不依赖插件内部业务的核心合同，不来自预先暴露每种内部操作。需求价值、耦合成本和边界示例见 [Extra 整体生命周期决策](../journal/shared/2026-10-16-extra-whole-plugin-boundary.md)，强制合同见 [Extra 规则](extras.md#整体生命周期与最小公开接口)。
 
 Extra 的函数式入口负责封装内部流程：宿主传入完整配置和已有生命周期 context，插件内部持有连接与状态并注册清理/状态回调。Host App / Host CLI 不得接管内部 Bot、连接或队列的控制流程，不为此引入逐对象控制接口或公开插件对象。用户估计同机多 Bot 仅涉及约 1% 的用户或设备，该业务估计进一步说明局部热更受益有限，不能据此让所有宿主依赖插件内部结构；不将估计比例写成实测统计或运行逻辑。
+
+2026-10-17 逐轮业务取值补充：Agent 提示词等宿主数据会在连接存续期间变化，不应要求每次编辑都重载 Channel。通过两阶段 `extra(context, jsonConfig)(dependencies)` 注入宿主实现的 `loadContexts`，由 Channel 在已准入任务真正开始准备时调用一次。config 仍是普通 JSON；函数不进入配置或跨进程传输，不向宿主暴露内部对象。函数引用在加载时固定，函数读取的数据可以逐轮变化；仅更新该数据无需 unload/load。更换 JSON 配置或函数引用仍遵循整体生命周期。
+
+静态 `config.bots[i].context.items` 与本轮函数结果在 Channel 业务边界合并：同 namespace/name 动态整项替换、保留静态位置，新 key 按动态顺序追加；不拼接 payload 或 instructions.entries，不保存上一轮动态结果。动态空数组保留静态项，加载失败不以旧结果兜底。Host/Adapter 只处理本轮显式快照，不读取宿主存储。动态系统指令取得成功与 Provider 续聊实际应用不同，沿既有可信指令会话合同，不自动 reset。
+
+共享 loader 与两渠道已实现上述合同；现有 createDaemonRuntime SDK 仍经 JSON descriptor 在 runner 加载 Extra，HostApp Node 同进程函数装配接线延期。不得把底层代码接口当成当前 SDK 已支持闭包。场景、完整覆盖示例、内存边界和 SDK 初始化方案见[逐轮 Context 专题](../guides/channel-dynamic-contexts.md)与[SDK 指南第 7 节](../../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)。
 
 | 插件方向 | 状态 | 边界 |
 | --- | --- | --- |

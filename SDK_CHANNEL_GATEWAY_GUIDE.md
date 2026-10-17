@@ -174,6 +174,8 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 
 **配置生效方式：`channel-gateway` 是 Runtime 的 Extra 插件。桌面宿主已启动 Runtime 后，新增、修改或删除 Bot，需卸载并重新加载这个 Extra；仅保存配置不会自动生效。daemon 和 AdapterHost 执行内核无需重启，其他 Extra 无需重载。** 重载会重建该插件内所有 Bot 的连接；每次传入完整 `bots` 数组，未列出的 Bot 不保留。具体顺序见[保存或重新加载 IM 配置](#5-保存或重新加载-im-配置)。
 
+这里的重载针对传入的 JSON 配置快照。若已通过函数依赖接入 `loadContexts`，仅更新该函数读取的宿主提示词或业务数据，下一轮即可重新取得，无需重载；该能力与当前 SDK 的接线限制见[第 7 节](#7-逐轮加载-agent-系统提示词与业务-context)。
+
 | 字段 | 填什么 |
 | --- | --- |
 | `api_url` | Octo IM 的 API 根地址；示例使用正式环境 |
@@ -193,6 +195,8 @@ pnpm --filter @mininglamp-oss/octo-runtime-extra-channel-gateway... run build
 给 Agent 开通 IM 通道时，宿主在配置该 Bot 时确定专用系统提示词，并通过 octo-contexts 的 `octo.context-envelope/v3` 协议写入 **`config.bots[i].context`**。上面的完整 JSON 已给出配置位置：item 使用 `namespace: "octo.control"`、`name: "instructions"`，提示词正文放在 `payload.entries[].text`；每个条目只保留 `text`，不填写 `source`。
 
 每个 Bot 分别配置自己的提示词；没有提示词时省略该 item。将包含 `context` 的完整配置对象按第 4、5 节加载即可，配置的指令会随每轮调用传递，无需宿主自行拼接到 IM 消息正文。
+
+这份静态 Context 在 Extra 加载时成为配置快照，并非每轮重新读宿主数据库。Agent 提示词经常变化时，采用[第 7 节的宿主动态加载设计](#7-逐轮加载-agent-系统提示词与业务-context)。系统指令进入新 Provider 会话的时机与普通业务 Context 不同，不能仅凭每轮提交就认定已有会话已经应用新 system 指令，具体边界见第 7.6 节。
 
 参考 [Work App 的 imChannelBotConfig](../octo-work-app/src/main/im-channel-service.ts)：它将通道设置中保存的 `channel.instructions` 转成上述 item，空白提示词不生成 item，再与该 Bot 的连接和 Adapter 配置一起交给 Gateway。这里的提示词来自宿主授权的 Agent 配置入口，IM 消息正文不能冒充该来源；协议说明见 [Context 输入合同](.octospec/rules/context-input.md)。
 
@@ -408,3 +412,171 @@ resources/octo-runtime/
 宿主打包流程负责复制同次构建的完整依赖闭包，并保留可解析的 node_modules 布局；不能只复制入口文件或悬空的 pnpm 链接。宿主 main 中的 SDK 保留为外部依赖，独立 Host 入口单独编译，不并入 main bundle。参考 [Work App 打包脚本](../octo-work-app/scripts/prepare-embedded-runtime.mjs)和 [部署说明](DEPLOYMENTS.md)。更新程序时保留原 `runtimeHome`、身份和配置。
 
 需要自己的本地对话 UI 时再看 [完整指南的可选 Agent 调用](SDK_NATIVE_INTEGRATION_FULL_GUIDE.md#3-原生调用-agent可选)。其他行为直接查 [Gateway README](packages/octo-runtime-extra-channel-gateway/README.md)、[SDK 类型](packages/octo-runtime-daemon/src/runtime/types.ts)和 [Extra 合同](.octospec/rules/extras.md)。
+
+## 7. 逐轮加载 Agent 系统提示词与业务 Context
+
+### 7.1 使用场景与实现状态
+
+复杂 HostApp 通常自行管理 Agent 定义：用户编辑系统提示词、项目说明或业务规则后，下一次 IM 任务应读取更新后的值。仅在启动时将这些值放入 `config.bots[i].context`，运行实例仍持有旧快照；每次编辑都重载 Gateway 会重建它管理的连接。
+
+因此两阶段 Extra 支持在初始化时独立注入 `loadContexts` 函数。函数由宿主实现，Channel 每轮调用；宿主保存新数据后，无需重启或重载 Channel Gateway。插件仍以整个 Extra 为封装和生命周期单位，不向宿主开放内部 Bot、manager、连接或队列。完整架构与合同见 [Octospec 专题](.octospec/guides/channel-dynamic-contexts.md)。
+
+**当前可用范围须分清：**
+
+| 入口 | 当前状态 |
+| --- | --- |
+| `ExtraPlugins.load(module, jsonConfig, { loadContexts })` | 已实现的同进程代码装配接口 |
+| Gateway/WeCom 的每轮调用与静态动态合并 | 已实现；未提供函数时使用静态配置 |
+| 第 4、5 节 `createDaemonRuntime` / `runtime.loadExtra(descriptor)` | 当前只接收 JSON descriptor，在 runner 子进程加载 Extra，不能直接传闭包 |
+| SDK 在 HostApp Node 主进程装配 Extra 和业务函数 | 已选定的后续改造，此前按要求延期，尚未接通 |
+
+本节提供实际底层接口示例和 SDK 后续初始化方案。**不能把第 4.3 节的 `runtime.loadExtra(descriptor)` 改成多传一个函数就认为已经支持。** 保持已有静态接入可用，SDK 改造前不把函数、函数源码或函数名写入 descriptor/config。
+
+### 7.2 宿主提供什么函数
+
+业务函数类型从 workspace 的 daemon 包导入，ContextItem 从 protocol 包导入。本节直接引用协议包，宿主还需在第 2 节的 dependencies 中增加 `"@mininglamp-oss/octo-runtime-protocol": "workspace:*"`；它已包含在 Gateway 的预编译依赖闭包中。
+
+```ts
+import type {
+  JsonObject,
+  LoadContexts
+} from "@mininglamp-oss/octo-runtime-daemon";
+import type { ContextItem } from "@mininglamp-oss/octo-runtime-protocol";
+
+// 宿主自己的业务读取接口，允许同步内存读取，也允许异步存储/HTTP IO。
+type ReadAgentContexts = (
+  botConfig: JsonObject,
+  options: { readonly signal: AbortSignal }
+) => readonly ContextItem[] | Promise<readonly ContextItem[]>;
+
+export function createAgentContextLoader(readCurrent: ReadAgentContexts): LoadContexts {
+  return async (botConfig, { signal }) => {
+    signal.throwIfAborted();
+    // readCurrent 每次查询当前版本；不能在创建此函数时只读一次并永久捕获旧结果。
+    const current = await readCurrent(botConfig, { signal });
+    signal.throwIfAborted();
+    return current;
+  };
+}
+```
+
+`ReadAgentContexts` 是本示例定义的宿主函数类型，不是另一项 Runtime API。业务团队实现 `readCurrent`：在宿主已有的账号/租户授权范围内，根据 Bot 与 Agent 的映射读取提示词并构造 item。框架提供的第一参数是**当前单个 Bot 的完整 JSON 配置副本**，不是整个 `bots` 数组，也不提供本轮消息或 session。多环境/多租户的查找不能只靠裸 `bot_id`；配置可能含凭据，不记录整个参数。
+
+读取内存时，也可直接提供同步函数，例如以下宿主业务类：
+
+```ts
+import type { LoadContexts } from "@mininglamp-oss/octo-runtime-daemon";
+import type { ContextItem } from "@mininglamp-oss/octo-runtime-protocol";
+
+export class CurrentAgentContexts {
+  #current: readonly ContextItem[] = [];
+
+  // 一个实例对应一个已确定业务作用域的 Agent；仅保留当前版本，不累计旧版本。
+  replace(items: readonly ContextItem[]): void {
+    this.#current = structuredClone(items);
+  }
+
+  readonly loadContexts: LoadContexts = (_botConfig, { signal }) => {
+    signal.throwIfAborted();
+    return this.#current;
+  };
+}
+```
+
+该类只是宿主内存存储示意，不是 Extra 对象。多 Bot 时由宿主按配置映射到各自当前值。更新时调用宿主自己的 `replace`，Extra 下次调用同一个函数就读取新值；不是重新调用 initializer。读取 HTTP/数据库时使用上一例的 async 形式，将 `signal` 传到底层 IO，并在宿主完成返回值校验和授权；不要捕获错误后返回旧缓存或 `[]`，把真实读取失败伪装成成功。
+
+### 7.3 如何装配到 Extra，SDK 后续如何初始化
+
+下面是**当前已实现的同进程 loader 接口**，用于说明 SDK 组合层如何接线。`executionPort` 必须由框架提供，并完整遵循 `ExtraAdapterHost` 的 invocation 语义；业务团队只实现上一节的取值函数。
+
+```ts
+import * as gatewayModule from "@mininglamp-oss/octo-runtime-extra-channel-gateway";
+import {
+  ExtraPlugins,
+  type ExtraAdapterHost,
+  type JsonObject,
+  type LoadContexts
+} from "@mininglamp-oss/octo-runtime-daemon";
+
+// 组合层创建并持有 loader，负责退出时 close；这不是由 Extra 返回管理对象。
+export function createHostExtraLoader(executionPort: ExtraAdapterHost): ExtraPlugins {
+  return new ExtraPlugins([], executionPort);
+}
+
+export async function loadAgentGateway(
+  extras: ExtraPlugins,
+  jsonConfig: JsonObject,
+  loadContexts: LoadContexts
+): Promise<void> {
+  // config 仅传第 3 节对象中的 config 部分；函数在独立的第三参数中。
+  await extras.load(gatewayModule, jsonConfig, { loadContexts });
+}
+```
+
+loader 的拥有者负责 `await extras.unload("channel-gateway")`、状态查询和最终 `await extras.close()`，包括加载失败后的清理检查。不要在每条消息时创建一个新 loader 或新 Extra。更换函数读取的数据不调用 unload；要更换函数引用或 JSON 配置，才整体卸载后加载。
+
+当前 SDK **尚未向此组合层接好执行端口**。`runtime.cancelRun/respondRun` 使用 runId，而 Extra 的取消/交互使用 invocationId，不能简单改名充当端口，也不应交给业务团队补一套模型执行器。SDK 后续改造须做到：
+
+1. 延续第 4 节的独立 AdapterHost 启动和原有账号/Home 管理，先确保执行服务就绪。
+2. SDK 在 HostApp 的 Node main 组合层创建并持有 `ExtraPlugins`，由 SDK 接好 invoke/cancel/respondInteraction 端口。
+3. 宿主 import Gateway 模块，准备纯 JSON 配置及 `loadContexts`；通过拟提供的 `runtime.loadExtra(module, jsonConfig, dependencies)` 装配。此三参数 SDK 方法是目标接口，当前不可直接使用。
+4. 此 Extra 不再同时作为 runner JSON descriptor 加载，避免同一 Bot 建立两组连接。CLI 仍走自己的 daemon JSON 装配，不提供业务闭包。
+5. 宿主保存 Agent 数据后不操作插件；下一轮准备读取新值。整体卸载、账号切换和退出由宿主通知，SDK 先 abort/清理本地 Extra，再关闭所拥有的 daemon。
+
+这一改造只改变 SDK 的装配位置，Provider 和 AdapterHost 继续沿现有执行链工作。函数始终留在宿主 Node 进程中，不经过 renderer、JSON 文件或跨进程函数代理。完整待实施项见 [SDK M0 设计](.octospec/tasks/extra-initializer-context-dependencies/design.md#已确认选择extra-在调用方的-node-组合层执行)。
+
+### 7.4 静态与动态的覆盖规则
+
+每个新逻辑轮从 `config.bots[i].context.items` 重新取得静态基线，再合并本轮函数返回的数组。按 `(namespace, name)` 匹配，**动态整项替换静态项**：
+
+| 情况 | 最终配置项 |
+| --- | --- |
+| 静态 `[A, B]`，动态 `[B2, C]`，B 与 B2 同 key | `[A, B2, C]`；被替换位置不变，新 key 按动态顺序追加 |
+| 动态与静态同 key | 整项替换；不深合并 payload，不拼接 entries，不补旧 guidance |
+| 动态返回 `[]` 或未注入回调 | 保留静态项；空数组不是删除命令 |
+| 上一轮返回动态项，下一轮不再返回 | 下一轮仅按静态基线与本轮结果重算，不沿用上轮动态值 |
+| 任一来源内部重复 key，或输出非法/超预算 | 本轮准备失败，不调用 Provider |
+
+例如，静态 `octo.control/instructions` 含 `[{ "text": "我是明略科技的Octo助理" }]`，动态也返回 instructions，则动态必须给出完整最终列表：
+
+```json
+[
+  {
+    "namespace": "octo.control",
+    "name": "instructions",
+    "payload": {
+      "entries": [
+        { "text": "我是明略科技的Octo助理" },
+        { "text": "回答前先核对宿主提供的项目规则。" }
+      ]
+    }
+  }
+]
+```
+
+回调返回的是 item 数组，不是 envelope。instructions 的 entries 是仅含 `text` 的列表，不加 `source`。若动态只返回第二条指令，静态固定人设也会被替换，框架不会偷偷补回。希望保留静态人设、仅逐轮提供项目背景时，动态返回自己的 `extra.<domain>/<name>` 普通业务项即可。
+
+### 7.5 什么时候读取，失败与内存如何处理
+
+函数在通过消息准入、队列接纳后，任务真正开始准备时调用一次；不是 socket 每收到一条报文就调用。加载完成后再组织渠道材料和提交模型。本轮在途数据不随宿主后续编辑而追写；Provider 自动重试复用该轮快照，新任务再读取。控制命令不调用这个函数。
+
+可在 Gateway 的顶层 config 中设置以下普通 JSON；它与 `bots` 同级，不放在单个 Bot 下：
+
+```json
+{
+  "context_loading": {
+    "timeout_ms": 5000,
+    "max_in_flight": 8
+  }
+}
+```
+
+这只是配置片段。默认值即上例；范围分别为 1..30000 ms 和 1..32，额度由整个 Extra 的所有 Bot 共用。超时、取消、抛错或拒绝导致本轮准备失败，不用上轮值兜底；满额直接失败，不建立新的回调等待队列。超时 Promise 只要实际没结束就继续占额，迟到结果被忽略；卸载取消并等待清理，失败阻止同名重载。
+
+动态结果及最终 envelope 受 Context v3 的 32 项/65,536 字节预算约束，需给渠道材料留出预算。框架只保留本轮与已有有界重试快照，不累计动态历史。宿主须让 IO 响应 signal，避免无限缓存或闭包保留历史大对象；同进程函数可以自行分配内存，函数式接口本身不能保证任意业务实现都不会 OOM。
+
+### 7.6 系统提示词的 Provider 会话边界
+
+逐轮加载保证**本轮请求取得最新 Context**。普通业务 Context 按当轮材料交给模型；`octo.control/instructions` 则走可信控制通道，当前按 Provider 新会话初始化合同应用，正常续聊不重复注入。更新宿主提示词不等于已有 Provider 会话已接受新 system 指令，Channel 不因此自动 reset。
+
+产品要求新系统指令实际生效时，由业务方显式新建/reset Provider 会话，再让下一轮读取新指令；这不要求重载 Gateway 或重启 daemon。会话内替换 system 的支持范围须逐 Provider 核实，不能把动态取值成功当作原生 Provider 应用成功。实际合同见 [Context 输入规则](.octospec/rules/context-input.md#系统指令的会话时机与协议变更)。

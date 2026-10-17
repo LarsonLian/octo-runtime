@@ -5,7 +5,11 @@ import {
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { JsonObject, JsonValue } from "./extras.js";
 
-/** 宿主业务函数：每轮接收独立 Bot 配置快照；IO 实现须把 signal 传给底层请求。 */
+/**
+ * 宿主业务函数：每轮接收独立 Bot 配置快照，返回 ContextItem 列表而非 envelope。
+ * 函数引用在初始化时固定，但每次调用可读取宿主最新的 Agent 提示词，无需重载 Extra。
+ * 存储、授权及读取一致性归宿主；同步读取和异步 IO 均支持，IO 须传递 signal。
+ */
 export type LoadContexts = (
   config: JsonObject,
   options: { readonly signal: AbortSignal }
@@ -16,6 +20,7 @@ export interface ChannelDependencies {
 
 /**
  * 只合并本轮数据，不保留历史。动态同 key 整项替换且保留静态位置，新项按返回顺序追加。
+ * instructions.entries 也不拼接：覆盖方须显式保留需要的固定人设；空动态列表不删除静态项。
  * 两个来源先分别校验，避免同源重复 key 被覆盖掩盖；返回副本隔离宿主与插件的后续修改。
  */
 export function mergeConfiguredContexts(
@@ -88,6 +93,7 @@ export function createContextLoader(
       const operation = Promise.resolve()
         .then(() => {
           combined.throwIfAborted();
+          // 每轮重新调用同一业务函数，不在启动时预取；下一轮可读到宿主已更新的数据。
           return callback(structuredClone(config), { signal: combined });
         })
         .then((items) => {

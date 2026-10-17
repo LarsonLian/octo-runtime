@@ -2,6 +2,8 @@
 
 ## 2026-10-17
 
+- 按用户强调补充[Channel 逐轮加载宿主 Context 专题](guides/channel-dynamic-contexts.md)及[SDK 指南第 7 节](../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)：函数引用初始化一次，宿主业务数据每轮读取，数据更新无需重载；同 key 动态整项覆盖静态项，固定人设需显式保留。同步架构/Extra 规则、原计划、README 和中文核心注释，区分当前 loader 与延期 SDK 接线，以及系统指令的 Provider 会话边界。构建、类型、lint、严格 TS 示例、相关回归及一万次强制 GC 加载通过，详见[验证记录](journal/shared/2026-10-17-channel-dynamic-context-docs.md)。
+
 - 按用户纠正统一 WebUI 包与目录为 `octo-runtime-extra-webui`，同步 workspace、锁文件、Schema、构建/打包引用、测试和当前指南；Extra 名称与配置目录仍为 webui，不保留旧包别名、不改写用户数据。按用户补充要求，为两阶段入口、动态 Context 覆盖、实际在途额度、取消和清理失败边界补充中文注释。历史命令保留原始名称，现行链接指向新目录，验证见[记录](journal/shared/2026-10-17-extra-webui-rename.md)。
 
 - [Extra 两阶段入口实施交付](journal/shared/2026-10-17-extra-initializer-delivery.md)：共享 loader、Gateway/WeCom/WebUI 三个 CLI Extra、动态同步异步 Context 及 text-only 指令已落地，配置 Schema 和完整使用示例显式携带固定人设。双渠道移除重复执行解析，超时回调未结束继续占额，取消及卸载有界；强制 GC、一万次加载、双渠道各一万会话、发行包离线加载及 im-test 真实 Codex 通过。用户最新指定 SDK 接入先不改，HostApp 函数装配延期；不自动重写既有配置或身份。完整检查和未验范围以交付记录为准。

@@ -18,6 +18,7 @@ export default function load(
   context: ExtraContext,
   config: JsonObject
 ): ExtraInitializer<ChannelDependencies> {
+  // JSON 连接配置与宿主函数分别装配；插件保留 manager，不向宿主开放逐 Bot 控制。
   return (dependencies) => initialize(context, config, dependencies);
 }
 async function initialize(
@@ -60,6 +61,7 @@ async function initialize(
     host: context.adapterHost,
     signal: context.signal,
     log: context.log,
+    // 只保存调用入口，不预取提示词；宿主更新业务存储后，下一个接纳的逻辑轮重新读取。
     prepareContexts: (bot, signal) => contexts.load(bot, signal),
     credentials: (bot) => Promise.resolve(configuredCredential(bot)),
     ...(allowed

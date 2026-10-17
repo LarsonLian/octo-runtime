@@ -10,6 +10,8 @@ timestamp: 2026-10-16T00:00:00Z
 
 状态：共享接口、CLI 三个 Extra 及两渠道动态加载已实施；SDK HostApp 同进程装配按用户最新要求延期。本文中的 SDK 目标 API 仍为后续设计，当前可用代码接口为 `ExtraPlugins.load(module, config, dependencies)`。范围、验证与后续项见[任务简报](brief.md)和[交付记录](../../journal/shared/2026-10-17-extra-initializer-delivery.md)。
 
+2026-10-17 场景补充：本设计的核心目的，是宿主编辑 Agent 提示词或业务 Context 后，后续 IM 任务能重新读取，且不破坏 Extra 整体封装、不重建连接。**初始化只固定函数引用，不固定该函数以后读取的业务数据。** 宿主更新数据无需重载；更换函数实现或传入的 JSON 配置才需 unload/load。实际逐轮时序、覆盖例子及 Provider 边界统一见[专题](../../guides/channel-dynamic-contexts.md)，宿主同步/异步函数及 SDK 初始化方案见[接入指南第 7 节](../../../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)。
+
 ## 1. 三类函数各做什么
 
 | 函数 | 同步 / 异步 | 调用次数 | 副作用 |
@@ -69,9 +71,9 @@ load<D extends object>(
 ): Promise<void>;
 ```
 
-保留 `unload(name)`、`inspect(name)` 和整体 lifecycle status。加载直接接收模块及其类型化函数依赖，TypeScript 在调用点检查 D；loader 内部只保存启动后的生命周期资源，不长期保存多种 D 的异构依赖注册表。模块由宿主 import，不引入新的模块 factory。现有 ExtraRegistration 的注册/加载混合合同由该入口替换，不做双接口兼容。
+保留 `unload(name)`、`inspect(name)` 和整体 lifecycle status。代码加载直接接收模块及其类型化函数依赖，TypeScript 在调用点检查 D；loader 内部不长期保存多种 D 的异构函数依赖注册表。模块由宿主 import，不引入新的模块 factory。实施时保留 CLI/runner 的纯 JSON registration 装配路径，并统一调用新两阶段入口；不兼容旧的 void 插件 ABI。JSON registration 与代码函数装配是两种宿主输入，不能把函数放入前者。
 
-同名只允许一个未清理实例。配置或函数实现改变后，宿主先 await unload，再用完整新配置及函数调用 load。没有无参 reload，不由 loader 保存旧函数以便自动重放。
+同名只允许一个未清理实例。传入的 JSON 配置或函数引用改变后，宿主先 await unload，再用完整新配置及函数调用 load。函数读取的业务数据变化不适用这一步；同一已注入函数在下一轮读取新值即可。没有无参 reload，不由 loader 保存旧函数以便自动重放。
 
 config 在加载边界按现有 JSON 合同校验并克隆一次。dependencies 不 structuredClone、不序列化；只复制并冻结其浅层具名属性，固定本实例所用函数引用，不递归冻结宿主业务对象。回调内读取宿主最新数据是外部业务选择，不要求插件保存历史结果。
 
@@ -131,7 +133,7 @@ module 和 hostBusiness 为宿主显式 import 的代码值；jsonConfig 为宿�
 3. SDK stop/account switch/reconfigure 先使本地 Extra 停止接纳并 abort，再等待清理，最后停止执行服务；停止失败如实返回，不自动重建新实例。
 4. SDK health 的 Extra 状态归本地 loader；daemon 不再为 SDK 重复加载相同 Extra。CLI daemon 状态仍查询它自己装配的实例，不合并两份互相矛盾的状态。
 5. daemon 重启恢复只恢复执行服务。不得借故障恢复自动重放模型调用或复制 Extra 业务状态；业务连接如何面对执行端口暂不可用遵循原合同。
-6. 第三方发行包提供实际可 import 的 SDK 及内置 Extra 代码入口，声明文件传递依赖完整；仓外 skipLibCheck=false 编译和执行通过。当前 package.json 的 /extra 主要导出类型，不能把拟新增子路径写成现有入口。
+6. 第三方发行包提供实际可 import 的 SDK 及内置 Extra 代码入口，声明文件传递依赖完整；仓外 skipLibCheck=false 编译和执行通过。当前 /extra 已导出共享 ExtraPlugins，不等于公开 SDK 和内置 Gateway 装配入口均已完成；本仓 workspace 接入与单一 npm 发行物的可 import 范围须分别验证。
 
 CLI 是另一宿主。CLI 继续读取 JSON descriptor、检查 enabled、import 模块，在 daemon 内调用同一 load(module, config, {})；模块名字必须与 descriptor.name 一致。CLI 默认不提供动态函数，不增加 JS 表达式配置开关。需要自定义函数的代码宿主显式装配。
 
@@ -145,7 +147,7 @@ CLI 是另一宿主。CLI 继续读取 JSON descriptor、检查 enabled、import
 | unloadExtra(name) | 通知该实例 abort，等待其清理并返回真实结果 | 停止接纳、关闭连接、结束回调及任务、释放引用 |
 | stop(reason) | 通知所有本地 Extra 停止并尝试完成清理，再停止 daemon | 执行与单个 unload 相同的内部清理 |
 
-单个 unload 不停止 daemon、共享 AdapterHost 或其他 Extra。整体 stop 不要求宿主遍历内部 Bot 或自行调用 disposer；宿主一次通知 SDK，由 SDK 执行既定停止顺序。配置和函数实现变化仍由宿主显式 unload 后 load，不增加自动重载。
+单个 unload 不停止 daemon、共享 AdapterHost 或其他 Extra。整体 stop 不要求宿主遍历内部 Bot 或自行调用 disposer；宿主一次通知 SDK，由 SDK 执行既定停止顺序。JSON 配置和函数引用变化仍由宿主显式 unload 后 load；同一函数读取的业务数据更新无需生命周期操作，不增加自动重载。
 
 ### 生命周期分工的工程评估
 
@@ -173,7 +175,7 @@ CLI 是另一宿主。CLI 继续读取 JSON descriptor、检查 enabled、import
 
 同进程代码若不合作取消仍可能存活，停止通知本身不是内存回收证据；因此本选型的关键验收是 initializer 可中断、回调有界、清理释放引用和失败不叠加新实例。无需因此引入函数 RPC、第二个插件对象或通用资源管理框架。
 
-源码评估依据：现有 ExtraPlugins 已有立即 abort、按名串行、失败实例保留及 close 汇总；SDK stop 目前通过 stopManagedDaemon 停止子进程。迁到本地 Extra 后必须在 SDK stop 中先通知本地 loader，不能沿用“子进程退出就代表全部 Extra 已释放”的旧前提。当前 #unload 仍等待 instance.starting，新增有界等待及不合作操作处置是实施工作，不写成现有能力。
+源码评估依据：共享 ExtraPlugins 已实施立即 abort、按名串行、5 秒有界清理、失败实例保留及 close 汇总；SDK stop 目前通过 stopManagedDaemon 停止子进程。迁到本地 Extra 后必须在 SDK stop 中先通知本地 loader，不能沿用“子进程退出就代表全部 Extra 已释放”的旧前提。共享 loader 的有界清理已验证，SDK 整体退出装配仍待实施，不能混作一项已完成能力。
 
 ## 5. 生命周期时序
 

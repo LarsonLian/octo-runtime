@@ -14,6 +14,8 @@
 
 同进程宿主可经公开 `ExtraPlugins.load(module, jsonConfig, { loadContexts })` 注入业务函数：`loadContexts(botConfig, { signal })` 返回 ContextItem 数组或 Promise。每个已接纳轮次调用一次，同 namespace/name 动态整项替换静态项并保留位置，新项按动态顺序追加；重试复用本轮快照。函数不进入 JSON，插件内部 manager 不向宿主暴露。本轮未改 SDK HostApp 的函数装配，既有 runtime.loadExtra 仍只接收 JSON。
 
+典型场景是宿主编辑 Agent 提示词后，后续 IM 任务重新读取新值，而无需重载 Gateway 或重建连接。初始化固定的是函数引用，不是以后读取的数据。静态 `config.bots[i].context` 每轮作为基线；动态同 key 整项替换，instructions.entries 也不拼接，需保留的固定人设由宿主显式带上。动态空数组保留静态项，不沿用上一轮动态值。完整场景和覆盖例子见[Octospec 专题](../../.octospec/guides/channel-dynamic-contexts.md)，宿主函数、装配及 SDK 后续初始化见[SDK 指南第 7 节](../../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)。逐轮取得新系统指令与 Provider 已有会话应用不同，不自动 reset，详见该节的会话边界。
+
 插件级 JSON 配置 `context_loading` 支持 `timeout_ms`（默认 5000，1..30000）和 `max_in_flight`（默认 8，1..32）。超时、异常或容量已满时本轮不调用模型；未结束的 IO 继续占名额，没有等待回调的队列或历史结果缓存。业务函数必须响应 signal；`/stop` 及卸载会取消加载。任意外部同步代码和自行建立的缓存不受框架内存预算约束。完整合同见[配置指南](../../.octospec/guides/extra-configuration.md)。
 
 ## CLI 配置多个 Bot

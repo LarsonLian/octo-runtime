@@ -31,6 +31,8 @@ sources:
   - .octospec/rules/stateless-execution.md
   - .octospec/rules/session-reset.md
   - .octospec/rules/collaboration.md
+  - .octospec/guides/channel-dynamic-contexts.md
+  - SDK_CHANNEL_GATEWAY_GUIDE.md
   - .octospec/tasks/_brief.template.md
   - .octospec/tasks/im-agent-persona-and-context-audit/brief.md
   - .octospec/tasks/unify-execution-and-simplify-instructions/brief.md
@@ -68,8 +70,12 @@ decisions:
   - 默认 IM 人设正文为我是明略科技的Octo助理，动态 instructions 覆盖时不暗中拼接默认。
   - 动态加载初值 5000ms、8 个在途；协议结果上限 32 项和 64KiB，预检深度与遍历预算限制额外校验开销。任意不合作 JS 不能承诺绝对 OOM 防护。
   - 当前 CLI 三个 Extra 全部生效；SDK 接入先不修改。CLI 仍为纯 JSON，函数不跨进程传输。
+  - 2026-10-17 补充核心使用场景：同一个 loadContexts 每轮读取宿主最新业务数据，数据改变无需重载；JSON 配置或函数引用改变才整体卸载后加载，保持插件封装。
+  - SDK 指南新增同步和异步业务函数、实际 loader 装配、后续 SDK 初始化与覆盖示例；区分动态取到系统指令与 Provider 已有会话应用，SDK 函数装配继续延期。
   - 不自动填充已有空 Context，不修改现有身份、Home、profile 或 Bot 配置。
 validation:
+  - scope: 2026-10-17 动态 Context 场景与 SDK 文档
+    result: 新增架构专题与 SDK 第 7 节，补充核心中文注释；typecheck、lint、3 个严格 TS 示例、25 项相关回归及单独 expose-gc 8 项通过。文档和链接核对见对应 journal；无 SDK 接线或运行行为变更。
   - scope: 构建和回归
     result: Runtime 构建、tsc、lint、名称检查及 WebUI 35 项通过；全量 Node 和最终检查以交付记录为准。
   - scope: 内存及生命周期

@@ -40,6 +40,8 @@ timestamp: 2026-10-16T00:00:00Z
 
 业务方决定提示词和加载时机；Extra 决定自身内部调用位置、排队和资源清理；通用 loader 管整体生命周期；Host/Adapter 只按执行合同校验、传递和适配。空动态列表合法。通用执行层不补齐业务 Context，不按 session 缓存或省略它。
 
+核心场景：宿主中的 Agent 提示词或业务上下文改变后，下一条已接纳任务调用同一个 loadContexts 读取新值，无需重载 Channel Gateway，也不开放内部 Bot/manager 控制。JSON config 与函数引用在加载时确定，函数读取的数据不受该快照限制。完整覆盖示例、触发时机和 SDK 当前限制见[逐轮 Context 专题](../../guides/channel-dynamic-contexts.md)与[SDK 指南新章节](../../../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)。系统指令在 Provider 已有会话中的实际应用仍按既有合同，不因动态加载而暗中 reset。
+
 本设计不修改 Run=7、Context=`octo.context-envelope/v3`，不改变安装决定权、Runtime 身份、Home、profile、Provider 原生状态或业务权限。不授权删除、重建或重置上述数据。
 
 ## 2. 接口选型

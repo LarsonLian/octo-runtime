@@ -78,6 +78,8 @@ export default load;
 
 两个 Channel 内层接收可选 `ChannelDependencies.loadContexts`：`(botConfig, {signal}) => readonly ContextItem[] | Promise<readonly ContextItem[]>`。回调每个准入轮次执行一次，静态与动态同 namespace/name 整项替换并保留位置。业务函数须响应 signal，不缓存历史结果；JSON 的 `context_loading` 可指定 `timeout_ms`（默认 5000，1..30000）及 `max_in_flight`（默认 8，1..32）。超时未结束继续占名额；满额拒绝当前轮次。
 
+宿主更新该函数读取的提示词或业务数据后，下一轮重新取值，无需重载 Extra；更换传入的 JSON 配置或函数引用才整体卸载后加载。完整场景、覆盖示例、当前 SDK 接线限制及初始化方案见[逐轮 Context 专题](channel-dynamic-contexts.md)与[SDK 指南第 7 节](../../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)。
+
 三个 Extra 的新配置示例显式携带下列固定人设。Gateway/WeCom 放在 `config.bots[i].context`，WebUI 放在 `config.context`；不为已有省略或空列表自动填充：
 
 ```json
