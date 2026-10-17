@@ -55,3 +55,5 @@ timestamp: 2026-10-17T00:00:00Z
 普通协议行（包含尚未换行的数据）在 readline / JSON.parse 前限制为 256 KiB。ACP 当前 prompt 明确带原生图片时，原生行允许到既有 INVOKE_REQUEST_MAX_BYTES=32 MiB，容纳输入回显；结束后恢复普通行上限，事件队列始终使用 256 KiB / 4096 / 4 MiB。ZCode 当前不支持图片输入，始终使用普通行上限。不增加可配置参数或动态猜测消息类别。
 
 超限返回 STREAM_EVENT_TOO_LARGE 或 STREAM_BUFFER_OVERFLOW，释放积压、拒绝新输入、关闭 reader 并启动受管组回收；仅当前调用失败，不静默丢事件后报告成功。稳定错误码随错误对象返回。共 7 项新增容量回归覆盖条数、字节、无换行、图片原生 RPC 回显，以及真实 ZCode Provider 管道在消费者停读时主动关闭。相关 ACP、ZCode 与回收共 34 项通过；后续稳定错误码/确定性时序检查另与 native 回归一起验证。
+
+S04 补充：新增 ACP 与 ZCode 正常完成后消费者停读的时序回归，正常退出保留已接纳终态，超限才清空积压；ZCode 在 leader exit 启动清理、stdio close 后判断接收结束。9 项容量/终态专项与进程组回归通过。

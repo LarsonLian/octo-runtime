@@ -378,6 +378,8 @@ export class AcpClient {
           ...(typeof value.stopReason === "string" ? { stopReason: value.stopReason } : {}),
           ...(typeof value.finishReason === "string" ? { finishReason: value.finishReason } : {})
         });
+        // 已收到 prompt 结果后，正常进程退出不能抹掉等待读取的终态更新。
+        this.#updates.delete(sessionId);
         queue.close();
       })
       .catch((error) => queue.close(toError(error)));

@@ -6,6 +6,18 @@ createInterface({ input: process.stdin }).on("line", (line) => {
   send({ id: request.id, result: request.method === "session/create" ? { sessionId: "s" } : {} });
   if (request.method !== "session/send") return;
   setTimeout(() => {
+    if (mode === "complete") {
+      send({
+        method: "session/event",
+        params: {
+          sessionId: "s",
+          seq: 1,
+          type: "turn.completed",
+          payload: { resultType: "success" }
+        }
+      });
+      process.exit(0);
+    }
     if (mode === "line") {
       process.stdout.write("x".repeat(256 * 1024 + 1));
       return;

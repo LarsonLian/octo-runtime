@@ -566,7 +566,6 @@ class ZcodeAppServerClient {
   readonly #child: ChildProcessWithoutNullStreams;
   readonly #pending = new Map<RpcId, PendingRequest>();
   readonly #events = new DriverQueue<ZcodeSessionEvent>({
-    discardOnFailure: true,
     onFailure: (error) => this.#failAll(error)
   });
   readonly #requestTimeoutMs: number;
@@ -638,11 +637,18 @@ class ZcodeAppServerClient {
       this.#resolveExit({ code: null, signal: null });
       this.#failAll(error);
     });
-    this.#child.once("exit", (code, signal) => {
+    // leader exit 启动组回收，close 后才认定 stdout 已排空。
+    this.#child.once("exit", () => {
+      void this.#cleanup().catch((error: Error) => this.#failAll(error));
+    });
+    this.#child.once("close", (code, signal) => {
       const exit = { code, signal };
       this.#resolveExit(exit);
       if (!this.#closed)
-        this.#failAll(new ZcodeAppServerProcessError(this.processErrorMessage(exit), exit));
+        this.#failAll(
+          new ZcodeAppServerProcessError(this.processErrorMessage(exit), exit),
+          code !== 0
+        );
     });
   }
 
@@ -830,7 +836,7 @@ class ZcodeAppServerClient {
     });
   }
 
-  #failAll(error: Error): void {
+  #failAll(error: Error, discard = true): void {
     if (this.#failure) return;
     this.#failure = error;
     this.#reader.close();
@@ -841,7 +847,7 @@ class ZcodeAppServerClient {
       pending.reject(error);
     }
     this.#pending.clear();
-    this.#events.drain();
+    if (discard) this.#events.drain();
     this.#events.close(error);
   }
 }

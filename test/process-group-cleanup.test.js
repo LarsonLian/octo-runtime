@@ -141,10 +141,7 @@ test(
       pids = await ready(readyPath);
       assert.equal(alive(pids.parentPid), false);
       assert.equal(alive(pids.childPid), false);
-      assert.equal(
-        events.filter((event) => ["run.completed", "run.failed"].includes(event.type)).length,
-        1
-      );
+      assert.equal(events.filter((event) => event.type === "run.completed").length, 1);
     } finally {
       pids ??= await ready(readyPath).catch(() => undefined);
       if (pids)

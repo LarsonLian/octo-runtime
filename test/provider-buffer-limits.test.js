@@ -69,9 +69,9 @@ test("ACP image prompt permits bounded large RPC echo while retaining event queu
   await client.close();
 });
 
-for (const mode of ["count", "bytes", "line"]) {
+for (const mode of ["count", "bytes", "line", "complete"]) {
   test(
-    `ZCode ${mode} overflow terminates its transport and yields a stable failure code`,
+    `ZCode slow consumer: ${mode} retains the true terminal outcome`,
     { timeout: 4000 },
     async () => {
       let child, exited;
@@ -95,6 +95,14 @@ for (const mode of ["count", "bytes", "line"]) {
       await exited;
       const events = [];
       for await (const event of stream) events.push(event);
+      if (mode === "complete") {
+        assert.equal(events.filter((event) => event.type === "run.completed").length, 1);
+        assert.equal(
+          events.some((event) => event.type === "run.failed"),
+          false
+        );
+        return;
+      }
       const failures = events.filter((event) => event.type === "run.failed");
       assert.equal(failures.length, 1);
       assert.equal(
@@ -108,3 +116,17 @@ for (const mode of ["count", "bytes", "line"]) {
     }
   );
 }
+
+test("ACP preserves accepted prompt completion when the process exits before the consumer resumes", async () => {
+  const { client, send, child } = fixture();
+  const stream = client.prompt("s", "input");
+  const first = stream.next();
+  send({ method: "session/update", params: { sessionId: "s", update: { text: "answer" } } });
+  await first;
+  send({ id: 1, result: { stopReason: "end_turn" } });
+  await new Promise((resolve) => setImmediate(resolve));
+  child.emit("exit", 0, null);
+  assert.equal((await stream.next()).value.type, "prompt_result");
+  assert.equal((await stream.next()).done, true);
+  await client.close();
+});
