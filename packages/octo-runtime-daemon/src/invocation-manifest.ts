@@ -176,7 +176,7 @@ export async function processStartIdentity(pid: number): Promise<string | undefi
           "-Command",
           `(Get-Process -Id ${pid} -ErrorAction Stop).StartTime.ToUniversalTime().Ticks`
         ],
-        { timeout: 2_000, windowsHide: true },
+        { encoding: "utf8", timeout: 10_000, windowsHide: true },
         (error, stdout) => {
           const value = stdout.trim();
           resolve(error || !/^\d+$/.test(value) ? undefined : `windows:${value}`);

@@ -328,12 +328,17 @@ test("Windows 发行验收通过 taskkill 回收全局 daemon shim 的进程树"
   const daemonManifest = JSON.parse(
     await readFile(resolve(root, "apps/daemon/package.json"), "utf8")
   );
+  const invocationManifest = await readFile(
+    resolve(root, "packages/octo-runtime-daemon/src/invocation-manifest.ts"),
+    "utf8"
+  );
   assert.match(verifier, /execute\("taskkill", \["\/PID", String\(daemon\.pid\), "\/T", "\/F"\]/);
   assert.match(verifier, /await stopDaemon\(\)/);
   assert.match(workflow, /name: Verify release package \(windows-latest\)/);
   assert.match(workflow, /git config --global core\.autocrlf false/);
   assert.match(workflow, /node scripts\/verify-windows-release\.mjs/);
   assert.match(workflow, /needs: \[check, verify-windows-release\]/);
+  assert.match(invocationManifest, /encoding: "utf8", timeout: 10_000, windowsHide: true/);
   assert.doesNotMatch(cliManifest.scripts.build, /\bchmod\b/);
   assert.doesNotMatch(daemonManifest.scripts.build, /\bchmod\b/);
 });
