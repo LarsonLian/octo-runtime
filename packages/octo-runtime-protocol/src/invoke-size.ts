@@ -12,7 +12,8 @@ export function assertInvokeRequestSize(
       input: { ...input },
       ...(environment.executionEnvOverrides
         ? { executionEnvOverrides: environment.executionEnvOverrides }
-        : {})
+        : {}),
+      ...(environment.streamLimits ? { streamLimits: environment.streamLimits } : {})
     },
     INVOKE_REQUEST_MAX_BYTES,
     "INVOKE_REQUEST_TOO_LARGE"

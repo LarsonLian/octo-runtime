@@ -106,11 +106,15 @@ test("all Adapters preserve the same canonical failure detail and structured err
       maxPayloadBytes: 16384
     });
     assert.equal(frame.errorTitle, "执行失败");
-    assert.equal(frame.errorMessage, detail);
+    assert.ok(frame.errorMessage.startsWith(detail.slice(0, 40)));
     assert.ok(frame.phases.at(-1).thought.startsWith(detail));
     assert.match(frame.phases.at(-1).thought, /MODEL_ACCOUNT_RESTRICTION/);
     assert.match(projector.snapshot().failureDetail, /"region": "test"/);
     assert.ok(frame.phases.at(-1).actions[0].detail.includes(event.payload.failure.diagnosticId));
+    assert.match(frame.errorMessage, new RegExp(event.payload.failure.code));
+    assert.match(frame.errorMessage, new RegExp(event.payload.failure.diagnosticId));
+    assert.match(projector.finalReply.text, new RegExp(event.payload.failure.code));
+    assert.match(projector.finalReply.text, new RegExp(event.payload.failure.diagnosticId));
   }
 });
 

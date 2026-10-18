@@ -37,7 +37,13 @@ export interface ProfileConfiguration {
   agent_name?: string;
   adapters?: Record<
     string,
-    { execution: { provider_options: Record<string, string>; credential_ref?: string } }
+    {
+      execution: {
+        provider_options: Record<string, string>;
+        credential_ref?: string;
+        stream_limits?: Record<string, number>;
+      };
+    }
   >;
 }
 

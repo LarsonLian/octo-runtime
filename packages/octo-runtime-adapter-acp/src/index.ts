@@ -17,6 +17,7 @@ import {
   assertMcpOptions,
   normalizeAcpToolUpdate,
   probeCommand,
+  type AdapterInvocationContext,
   type CanonicalEvent,
   type InvokeRequest
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
@@ -242,14 +243,17 @@ export function createAcpAdapter(
         if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
         await bridge.respond(response);
       },
-      async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+      async *invoke(
+        request: InvokeRequest,
+        context?: AdapterInvocationContext
+      ): AsyncGenerator<CanonicalEvent> {
         if (request.approvalMode !== "ask" && request.approvalMode !== "full_access")
           throw new Error("APPROVAL_MODE_UNSUPPORTED: this ACP adapter has no assisted policy");
         if (responders.has(request.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
         const bridge = new AcpApprovalBridge(request);
         responders.set(request.invocationId, bridge);
         try {
-          yield* bridge.stream(execute(request, bridge));
+          yield* bridge.stream(execute(request, bridge, context));
         } finally {
           bridge.close("execution_lost");
           responders.delete(request.invocationId);
@@ -261,7 +265,8 @@ export function createAcpAdapter(
 
   async function* execute(
     request: InvokeRequest,
-    bridge: AcpApprovalBridge
+    bridge: AcpApprovalBridge,
+    context?: AdapterInvocationContext
   ): AsyncGenerator<CanonicalEvent> {
     const args =
       typeof definition.args === "function"
@@ -292,7 +297,8 @@ export function createAcpAdapter(
       cwd: request.workdir,
       permissionHandler: (params) => bridge.requestPermission(params),
       onPermissionResponseWritten: (params) => bridge.responseWritten(params),
-      onPermissionResponseFailed: (params, error) => bridge.responseFailed(params, error)
+      onPermissionResponseFailed: (params, error) => bridge.responseFailed(params, error),
+      ...(context?.streamLimits ? { streamLimits: context.streamLimits } : {})
     });
     bridge.bindTransport(() => client.close());
     let sessionId: string | undefined;

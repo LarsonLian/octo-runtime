@@ -1,5 +1,8 @@
 import {
+  DEFAULT_STREAM_LIMIT_POLICY,
   protocolError,
+  streamCapacityError,
+  type StreamLimitPolicy,
   type NativeInteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { AdapterOutput } from "./index.js";
@@ -15,14 +18,45 @@ export class DriverQueue<T> implements AsyncIterable<T> {
     private readonly options: {
       discardOnFailure?: boolean;
       onFailure?: (error: Error) => void;
+      limits?: Pick<
+        StreamLimitPolicy,
+        "adapterQueueItemMaxBytes" | "adapterQueueMaxBytes" | "adapterQueueMaxItems"
+      >;
+      boundary?: string;
     } = {}
   ) {}
   push(value: T): void {
     if (this.#closed) return;
     const bytes = Buffer.byteLength(JSON.stringify(value));
-    if (bytes > 256 * 1024 || this.#items.length >= 4096 || this.#bytes + bytes > 4 * 1024 * 1024) {
+    const limits = this.options.limits ?? DEFAULT_STREAM_LIMIT_POLICY;
+    const boundary = this.options.boundary ?? "adapter.output_queue";
+    if (bytes > limits.adapterQueueItemMaxBytes) {
       this.close(
-        Object.assign(new Error("STREAM_BUFFER_OVERFLOW"), { code: "STREAM_BUFFER_OVERFLOW" })
+        streamCapacityError("STREAM_QUEUE_ITEM_TOO_LARGE", {
+          boundary,
+          measuredBytes: bytes,
+          limitBytes: limits.adapterQueueItemMaxBytes
+        })
+      );
+      return;
+    }
+    if (this.#items.length >= limits.adapterQueueMaxItems) {
+      this.close(
+        streamCapacityError("STREAM_QUEUE_ITEMS_EXCEEDED", {
+          boundary,
+          itemCount: this.#items.length + 1,
+          limitItems: limits.adapterQueueMaxItems
+        })
+      );
+      return;
+    }
+    if (this.#bytes + bytes > limits.adapterQueueMaxBytes) {
+      this.close(
+        streamCapacityError("STREAM_QUEUE_BYTES_EXCEEDED", {
+          boundary,
+          measuredBytes: this.#bytes + bytes,
+          limitBytes: limits.adapterQueueMaxBytes
+        })
       );
       return;
     }
@@ -75,7 +109,7 @@ export class DriverQueue<T> implements AsyncIterable<T> {
 
 /** Owns raw reverse requests, acknowledged replies, expiry and teardown for one turn. */
 export class NativeInteractionBridge {
-  readonly queue = new DriverQueue<AdapterOutput>();
+  readonly queue: DriverQueue<AdapterOutput>;
   readonly #pending = new Map<
     string | number,
     {
@@ -89,6 +123,9 @@ export class NativeInteractionBridge {
   #closed = false;
   #closeTransport?: () => Promise<void>;
   readonly #seen = new Set<string | number>();
+  constructor(limits?: Readonly<StreamLimitPolicy>) {
+    this.queue = new DriverQueue<AdapterOutput>({ limits, boundary: "adapter.native_queue" });
+  }
   bindTransport(close: () => Promise<void>): void {
     this.#closeTransport = close;
   }

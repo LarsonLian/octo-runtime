@@ -27,6 +27,7 @@ import {
   normalizeAcpToolUpdate,
   probeCommand,
   providerInputText,
+  type AdapterInvocationContext,
   type CanonicalEvent,
   type InvokeRequest
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
@@ -141,7 +142,10 @@ export function createCodeBuddyAdapter({
       if (!bridge) throw new Error("INTERACTION_NOT_ACTIVE");
       await bridge.respond(response);
     },
-    async *invoke(req: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+    async *invoke(
+      req: InvokeRequest,
+      context?: AdapterInvocationContext
+    ): AsyncGenerator<CanonicalEvent> {
       if (hasImageInput(req))
         throw new Error("UNSUPPORTED_INPUT_MODALITY: codebuddy does not encode image input");
       if (responders.has(req.invocationId)) throw new Error("INVOCATION_ALREADY_ACTIVE");
@@ -157,7 +161,9 @@ export function createCodeBuddyAdapter({
             signal: req.signal,
             permissionHandler: (params) => permissions.requestPermission(params),
             onPermissionResponseWritten: (params) => permissions.responseWritten(params),
-            onPermissionResponseFailed: (params, error) => permissions.responseFailed(params, error)
+            onPermissionResponseFailed: (params, error) =>
+              permissions.responseFailed(params, error),
+            ...(context?.streamLimits ? { streamLimits: context.streamLimits } : {})
           })
         );
         permissions.bindTransport(() => client.close());

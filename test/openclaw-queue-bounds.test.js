@@ -139,7 +139,7 @@ test("overflow cleans up a paused invocation immediately without reconnecting or
   const events = [];
   for await (const event of f.source) events.push(event);
   assert.equal(events.at(-1).type, "run.failed");
-  assert.match(events.at(-1).payload.message, /STREAM_BUFFER_OVERFLOW/);
+  assert.match(events.at(-1).payload.message, /STREAM_QUEUE_ITEMS_EXCEEDED/);
   assert.equal(
     events.some((e) => e.type === "run.completed"),
     false
@@ -147,13 +147,18 @@ test("overflow cleans up a paused invocation immediately without reconnecting or
 });
 
 test("DriverQueue exact item, count and byte boundaries discard backlog on failure", async () => {
-  for (const [count, size] of [
-    [4096, 1],
-    [16, 256 * 1024]
+  for (const [count, size, expected] of [
+    [16, 1, "STREAM_QUEUE_ITEMS_EXCEEDED"],
+    [4, 64 * 1024, "STREAM_QUEUE_BYTES_EXCEEDED"]
   ]) {
     let failure;
     const queue = new DriverQueue({
       discardOnFailure: true,
+      limits: {
+        adapterQueueItemMaxBytes: 128 * 1024,
+        adapterQueueMaxBytes: 256 * 1024,
+        adapterQueueMaxItems: 16
+      },
       onFailure: (e) => {
         failure = e;
       }
@@ -162,13 +167,20 @@ test("DriverQueue exact item, count and byte boundaries discard backlog on failu
     for (let i = 0; i < count; i++) queue.push(value);
     assert.equal(failure, undefined);
     queue.push(value);
-    assert.match(failure.message, /STREAM_BUFFER_OVERFLOW/);
+    assert.match(failure.message, new RegExp(expected));
     assert.deepEqual(queue.drain(), []);
-    await assert.rejects(queue[Symbol.asyncIterator]().next(), /STREAM_BUFFER_OVERFLOW/);
+    await assert.rejects(queue[Symbol.asyncIterator]().next(), new RegExp(expected));
   }
-  const queue = new DriverQueue({ discardOnFailure: true });
+  const queue = new DriverQueue({
+    discardOnFailure: true,
+    limits: {
+      adapterQueueItemMaxBytes: 256 * 1024,
+      adapterQueueMaxBytes: 512 * 1024,
+      adapterQueueMaxItems: 16
+    }
+  });
   queue.push("x".repeat(256 * 1024 - 1));
-  await assert.rejects(queue[Symbol.asyncIterator]().next(), /STREAM_BUFFER_OVERFLOW/);
+  await assert.rejects(queue[Symbol.asyncIterator]().next(), /STREAM_QUEUE_ITEM_TOO_LARGE/);
 });
 
 test("early consumer return cancels the accepted provider run and detaches once", async () => {

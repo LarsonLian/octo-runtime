@@ -50,6 +50,10 @@ native 帧的 `messageKind` 为 `response / notification / request / message`。
 有效 JSON 及 Unicode scalar 字符串规则仍适用。
 
 控制状态为 `running / completed / failed / cancelled / lost`。
+容量错误控制帧可携带由中央 failure 机制创建的可选 `failure`，保留公开码、诊断编号、时间和安全测量；
+`params` 仅接受 `boundary / measuredBytes / limitBytes / itemCount / limitItems` 白名单。
+canonical 视图将该事实及测量透传到异常，不把 Host 投递失败伪造为 Provider 的 `run.failed` 或成功结果。
+无 `failure` 的既有错误控制帧仍有效；接收新增字段需同步更新 Schema、生成类型及运行时校验器。
 `lost` 表达执行联系丢失，不能作为成功依据。`isHostTerminal` 只识别 Host 终态控制帧；
 即使 native payload 含有 `result` 或 `completed`，公共层也不据此推断执行终态。
 Codex Driver 依据当前 `turn/completed` 报告真实状态；Claude Driver 依据 `result` 报告状态。
@@ -86,9 +90,14 @@ RPC 从同一源的首个状态帧取得回执并 ACK，继续消费后才启动
 
 Work App 等外部 HostApp 应在组合入口显式选择模式，并保持交互与回放一致；其当前接线和验收由各宿主仓库核对，不列为本仓已验证的实现。
 
-Daemon 缓冲真实 HostFrame，保留原身份、模式、序号和载荷。窗口：每 Run 4 MiB / 4096 帧，
-总计 64 MiB，TTL 120 秒，最多 128 Run、16 订阅、每页 32 帧；单帧上限 256 KiB。
+Daemon 缓冲真实 HostFrame，保留原身份、模式、序号和载荷。默认窗口：每 Run 32 MiB / 4096 帧，
+总计 128 MiB，TTL 120 秒，最多 128 Run、16 订阅、每页 32 帧；完整单帧上限 20 MiB。
+受信 Adapter execution 配置可在中央硬最大值内覆盖容量；每次 invocation 冻结有效策略，
+低预算运行不得借全局清理淘汰其他 Adapter 已保留的帧。
 IPC 队列同样有上限，慢输出使用背压。重放不启动 Provider、不转换事件、不重复写响应。
+Host RPC 与 daemon SDK 的 NDJSON 接收上限共用中央 HostFrame 硬最大值加 64 KiB 包装预算，
+覆盖有界身份的 JSON 转义与重复字段；实际帧、队列和重放仍执行本 invocation 的有效策略。
+SDK 在换行前逐段累计 UTF-8 字节，不用字符长度代替容量，也不反复扫描或拼接完整在途大行。
 daemon SDK 在丢失 ACK 后通过 `agent_run.get` 查回已接纳身份，再订阅原 stream；已知缺口与
 过期明确失败，不能重新 invoke。重启后旧 stream 不可恢复。
 

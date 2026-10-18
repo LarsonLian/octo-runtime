@@ -378,7 +378,7 @@ export function createOpenCodeAdapter({ command = "opencode" }: { command?: stri
       if (request.approvalMode === "assisted")
         throw new Error("APPROVAL_MODE_UNSUPPORTED: opencode has no qualified assisted policy");
       if (request.approvalMode === "ask") {
-        yield* interactive.invoke(request);
+        yield* interactive.invoke(request, context);
         return;
       }
       const normalizer = new OpenCodeEventNormalizer();

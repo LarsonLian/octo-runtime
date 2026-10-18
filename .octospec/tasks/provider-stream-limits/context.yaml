@@ -1,0 +1,63 @@
+rules:
+  - runtime-architecture
+  - runtime-protocol-design
+  - runtime-local-execution
+  - runtime-output-protocol
+  - runtime-stateless
+  - runtime-engineering
+  - runtime-channel
+  - runtime-protocol-schema
+  - commit
+sources:
+  - AGENTS.md
+  - CONTRIBUTING.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/protocol-design.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/output-protocol.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/protocol-schema.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/invoke-request-size-budget/brief.md
+  - .octospec/tasks/openclaw-event-queue-bounds/brief.md
+  - .octospec/tasks/adapter-failure-detail/brief.md
+  - packages/octo-runtime-adapter-sdk/src/line-limit.ts
+  - packages/octo-runtime-adapter-sdk/src/native.ts
+  - packages/octo-runtime-adapter-sdk/src/index.ts
+  - packages/octo-runtime-acp-client/src/index.ts
+  - packages/octo-runtime-adapter-codex/src/app-server.ts
+  - packages/octo-runtime-adapter-zcode-gui/src/app-server.ts
+  - packages/octo-runtime-adapter-host/src/index.ts
+  - packages/octo-runtime-adapter-host/src/rpc.ts
+  - packages/octo-runtime-adapter-host/src/host-run-service.ts
+  - packages/octo-runtime-protocol/src/failure.ts
+  - packages/octo-runtime-extra-channel-gateway/src/presentation/run-projector.ts
+  - packages/octo-runtime-extra-channel-wecom/src/presentation/run-projector.ts
+  - https://github.com/Mininglamp-OSS/octo-runtime/issues/21
+status: implemented-pr-review-in-progress
+baseline: 4fa5a8a536aa815e6a35872748d39a5e98470d27
+priority: P0
+feasibility_score: 94
+confirmed_facts:
+  current_raw_message_limit_bytes: 262144
+  reproduced_valid_message_bytes: 412123
+  reproduced_internal_code: STREAM_EVENT_TOO_LARGE
+  reproduced_public_code: OH-PRV-4099
+  reproduced_retryable: true
+  largest_observed_trajectory_record_bytes: 1430765
+confirmed_decisions:
+  raw_message_max_bytes: 16777216
+  host_frame_max_bytes: 20971520
+  per_invocation_queue_max_bytes: 33554432
+  replay_run_max_bytes: 33554432
+  replay_global_max_bytes: 134217728
+  configuration_owner: trusted-host-adapter-execution-config
+  automatic_retry_on_limit_failure: false
+  first_release_chunking: false
+pending_verification:
+  - real-provider-and-channel-test-environment-matrix
+  - controlled-concurrent-peak-memory-measurement
+  - post-review-fix-ci

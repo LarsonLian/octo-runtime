@@ -10,8 +10,10 @@ import {
   spawnJsonLines,
   type CanonicalEvent,
   type CommandSpec,
+  type AdapterInvocationContext,
   type InvokeRequest
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import { isStreamCapacityReason } from "@mininglamp-oss/octo-runtime-protocol";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -420,7 +422,10 @@ export function createAntigravityAdapter({
         return { ...result, available: false, reason: "provider_version_unsupported" };
       return result;
     },
-    async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+    async *invoke(
+      request: InvokeRequest,
+      context?: AdapterInvocationContext
+    ): AsyncGenerator<CanonicalEvent> {
       buildAntigravityCommand(request, command, commandArgsPrefix);
       const directory = await mkdtemp(join(tmpdir(), "octo-runtime-antigravity-"));
       const logPath = join(directory, "cli.log");
@@ -464,6 +469,7 @@ export function createAntigravityAdapter({
           ...spec,
           env: invocationEnvironment(request, spec.env),
           signal: controller.signal,
+          rawMessageMaxBytes: context?.streamLimits?.rawMessageMaxBytes,
           parseLine: (line): AntigravityNativeEvent | null => {
             if (!line.trim()) return null;
             const value = parseJsonLine(line);
@@ -477,6 +483,8 @@ export function createAntigravityAdapter({
           if (normalizer.hasResult) break;
         }
       } catch (error) {
+        if (error instanceof Error && isStreamCapacityReason(Reflect.get(error, "code")))
+          throw error;
         providerError ??= error instanceof Error ? error : new Error(String(error));
       } finally {
         clearInterval(timer);

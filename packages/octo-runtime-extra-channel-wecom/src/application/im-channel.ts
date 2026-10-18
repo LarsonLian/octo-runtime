@@ -597,14 +597,15 @@ export class ImRuntime {
       }
     }
     if (this.#closed || this.#signal.aborted) return;
-    const terminal = projector.snapshot().terminal;
+    const snapshot = projector.snapshot();
+    const terminal = snapshot.terminal;
     const text =
       terminal === "completed"
         ? projector.finalText || "本轮执行完成，未返回文本。"
         : terminal === "cancelled"
           ? "本轮执行已中断。"
           : terminal === "failed"
-            ? "本轮执行未成功，请查看运行记录。"
+            ? `本轮执行未成功，请查看运行记录。${snapshot.failure ? `\n错误码：${snapshot.failure.code}\n诊断编号：${snapshot.failure.diagnosticId}` : ""}`
             : "本轮执行结果未知，请查看运行记录，避免重复执行。";
     // 最终文本拥有独立投递身份，即使进度卡投递失败，也必须尝试回复用户。
     await this.#reply(message, text, `final:${request.runId}`);

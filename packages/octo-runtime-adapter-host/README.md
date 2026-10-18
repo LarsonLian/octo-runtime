@@ -109,6 +109,32 @@ await host.close();
 
 `spawnAdapterHost` 以首次 `list` 成功作为就绪握手：manifest 错误或可执行文件缺失会在此阶段即时暴露，而非延迟到首次调用。
 
+### Provider 输出容量
+
+Host 默认接纳最大 16 MiB 的 Provider 原始消息和 20 MiB 的完整 HostFrame；Adapter/RPC
+单 invocation 队列为 32 MiB / 4096 项，单 Run 重放窗口为 32 MiB / 4096 帧，全局重放窗口为
+128 MiB。所有边界保持有界，容量错误不会自动重试。
+
+CLI manifest 可在受信的 Adapter 执行配置中覆盖这些值；每项硬上限是默认值的 2 倍，无效配置会使 Host 配置加载失败：
+
+```json
+{
+  "execution": {
+    "stream_limits": {
+      "raw_message_max_bytes": 16777216,
+      "host_frame_max_bytes": 20971520,
+      "adapter_queue_max_bytes": 33554432,
+      "rpc_queue_max_bytes": 33554432,
+      "replay_run_max_bytes": 33554432,
+      "replay_global_max_bytes": 134217728
+    }
+  }
+}
+```
+
+未列出的字段使用中央默认值。覆盖只影响后续 invocation；配置不能来自 Context、聊天正文或
+`agent_config.providerOptions`。
+
 ## 约束与注意事项
 
 模型阶段的 canonical 事件静默时限默认是 **300 秒**（`modelIdleTimeoutMs: 300_000`）。

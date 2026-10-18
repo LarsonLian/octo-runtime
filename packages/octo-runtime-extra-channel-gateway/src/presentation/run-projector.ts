@@ -294,7 +294,7 @@ export class ImRunProjector {
       text =
         this.#terminal === "cancelled"
           ? "本轮执行已中断。"
-          : `执行失败：${clampRunes(this.#failureDetail || "系统未返回具体原因，请查看运行记录。", 8000)}`;
+          : `执行失败：${clampRunes(this.#failureDetail || "系统未返回具体原因，请查看运行记录。", 8000)}${failureIdentity(this.#failure)}`;
     this.#finalReply = { text, allowMention };
   }
   get finalReply(): { text: string; allowMention: boolean } {
@@ -329,6 +329,10 @@ export class ImRunProjector {
       ...(this.#retryNoticeCount ? { retryNoticeCount: this.#retryNoticeCount } : {})
     };
   }
+}
+
+function failureIdentity(failure: FailureEnvelope | undefined): string {
+  return failure ? `\n错误码：${failure.code}\n诊断编号：${failure.diagnosticId}` : "";
 }
 
 function hasVisibleReply(text: string): boolean {

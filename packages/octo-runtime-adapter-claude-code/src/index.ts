@@ -677,7 +677,7 @@ export function createClaudeCodeAdapter({
       if (context?.protocolMode === "native") {
         if (nativeResponders.has(request.invocationId))
           throw new Error("INVOCATION_ALREADY_ACTIVE");
-        const bridge = new NativeInteractionBridge();
+        const bridge = new NativeInteractionBridge(context?.streamLimits);
         nativeResponders.set(request.invocationId, bridge);
         try {
           yield* bridge.stream(execute(request, bridge, context));
@@ -728,6 +728,7 @@ export function createClaudeCodeAdapter({
         cwd: request.workdir,
         env: invocationEnvironment(request),
         signal: request.signal,
+        rawMessageMaxBytes: context?.streamLimits?.rawMessageMaxBytes,
         onSpawn: (close) => permissions.bindTransport(close),
         endInputWhen: (native) => native.type === "result",
         controlHandler: async (native, write) => {

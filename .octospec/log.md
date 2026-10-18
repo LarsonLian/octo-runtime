@@ -1,5 +1,13 @@
 # 工程知识变更记录
 
+## 2026-10-18
+
+- 用户确认推荐参数后实施 Provider 输出容量修复：中央默认策略为原始消息 16 MiB、HostFrame 20 MiB、Adapter/RPC 队列 32 MiB / 4096、单 Run 重放 32 MiB / 4096、全局重放 128 MiB，硬上限为默认值 2 倍；覆盖仅来自受信 Adapter execution 配置。容量失败改为精确、不可重试的公开分类；Channel 256 KiB 经核对只统计公开消息文本，本次不改。专项 62 项通过 61、条件跳过 1；全量 WebUI 35/35、Node 1149 通过/9 跳过，构建、lint、命名、格式和 diff 检查通过。真实 Provider、并发内存和三平台 CI 尚未验收，详见[本地交付记录](journal/shared/2026-10-18-provider-stream-limits.md)；实现已形成 topic branch 提交。
+
+- 合并前双轴审查修复四项阻断：HostFrame 超限保留精确控制原因，Gateway 主错误区与两个 Channel 最终文本直接显示公共码/诊断编号，低全局覆盖不再淘汰兄弟 Run，并同步纯执行与输出协议权威规则的新容量合同。新增对应回归；跨仓 Worker/Harness/桌面及 im-test 真实 Provider 仍列为未执行的发布验收。
+
+- 从 `main` commit `4fa5a8a` 建立独立 worktree，新增[Provider 输出流容量与错误分类专项规划](tasks/provider-stream-limits/brief.md)。确认 412,123 bytes 合法消息仍触发 `STREAM_EVENT_TOO_LARGE`，并误分类为可重试的 `OH-PRV-4099`；清点 Provider 原始行、Adapter 队列、HostFrame、RPC 队列、重放窗口和 Channel 展示边界，排除输入请求、图片和配置大小等同值但不同合同。规划给出 M0-M7 分步评分、自动化/真实验收矩阵及 D1-D6 用户决策；当前总体可执行性 86/100。仅写规划，未修改产品代码、配置或运行环境。
+
 ## 2026-10-17
 
 - 实施[群准入合同修复](journal/shared/2026-10-17-channel-group-admission-delivery.md)：groups_enabled 独立启停，group_ids 省略/null/[] 不限制范围，非空限制父群；不保留旧空名单语义。Schema、整体设计及 CLI/SDK 指南同步，owner/Space/真实 @ 等授权保留。11 项定向及全量 Node 1074 通过、9 跳过，UI 35 通过；im-test 的 CLI/SDK 群和话题真实收发通过，12 条输入、7 次测试 Adapter 执行，模型调用为 0。dc73c28 已推送、发行隔离验收和本地全局安装通过；原前台进程待重启，第三方宿主升级与实际模型尚未验收。

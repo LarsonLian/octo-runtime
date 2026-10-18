@@ -334,10 +334,16 @@ test("RPC native admission rejects unsupported mode before ACK; genuine native f
 });
 
 test("bounded driver queue fails overflow and rejects pushes after close", async () => {
-  const queue = new DriverQueue();
+  const queue = new DriverQueue({
+    limits: {
+      adapterQueueItemMaxBytes: 128 * 1024,
+      adapterQueueMaxBytes: 256 * 1024,
+      adapterQueueMaxItems: 16
+    }
+  });
   queue.push({ text: "x".repeat(256 * 1024) });
   queue.push({ text: "late" });
-  await assert.rejects(collect(queue), /STREAM_BUFFER_OVERFLOW/);
+  await assert.rejects(collect(queue), /STREAM_QUEUE_ITEM_TOO_LARGE/);
 });
 
 test("failed native response delivery invalidates ownership and cannot be retried", async () => {
@@ -421,7 +427,7 @@ test("partial JSON lines are bounded before newline and report overflow once", a
   input.write("more");
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(failures.length, 1);
-  assert.match(failures[0].message, /STREAM_EVENT_TOO_LARGE/);
+  assert.match(failures[0].message, /PROVIDER_MESSAGE_TOO_LARGE/);
   remove();
   input.destroy();
 });

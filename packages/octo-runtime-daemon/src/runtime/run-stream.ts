@@ -7,6 +7,8 @@ import {
   identifyInvokeInput,
   assertJsonByteLimit,
   INVOKE_REQUEST_MAX_BYTES,
+  HOST_RPC_MAX_LINE_BYTES,
+  streamCapacityError,
   type HostFrame,
   type HostRunReceipt,
   type InvokeInput,
@@ -50,16 +52,30 @@ export async function* subscribeDaemonRun(
   socket.setEncoding("utf8");
   socket.setTimeout(5000, () => socket.destroy(new Error("HOST_STREAM_HANDSHAKE_TIMEOUT")));
   socket.write(`${JSON.stringify(wireRequest)}\n`);
-  let pending = "",
+  let pending: string[] = [];
+  let pendingBytes = 0,
     started = false;
+  const assertLineBytes = (measuredBytes: number): void => {
+    if (measuredBytes > HOST_RPC_MAX_LINE_BYTES)
+      throw streamCapacityError("HOST_FRAME_TOO_LARGE", {
+        boundary: "daemon.stream_transport",
+        measuredBytes,
+        limitBytes: HOST_RPC_MAX_LINE_BYTES
+      });
+  };
   try {
     for await (const chunk of socket) {
-      pending += String(chunk);
-      let boundary = pending.indexOf("\n");
+      const text = String(chunk);
+      let start = 0;
+      let boundary = text.indexOf("\n");
       while (boundary >= 0) {
-        const line = pending.slice(0, boundary);
-        pending = pending.slice(boundary + 1);
-        if (line.length > 512 * 1024) throw new Error("HOST_STREAM_FRAME_TOO_LARGE");
+        const segment = text.slice(start, boundary);
+        pending.push(segment);
+        pendingBytes += Buffer.byteLength(segment, "utf8");
+        assertLineBytes(pendingBytes);
+        const line = pending.join("");
+        pending = [];
+        pendingBytes = 0;
         const frame = JSON.parse(line) as Record<string, unknown>;
         if (frame.jsonrpc !== "2.0") throw new Error("HOST_STREAM_PROTOCOL_INVALID");
         if (frame.error) {
@@ -72,11 +88,15 @@ export async function* subscribeDaemonRun(
         }
         yield frame;
         if (input.signal?.aborted) return;
-        boundary = pending.indexOf("\n");
+        start = boundary + 1;
+        boundary = text.indexOf("\n", start);
       }
-      if (pending.length > 512 * 1024) throw new Error("HOST_STREAM_FRAME_TOO_LARGE");
+      const remainder = text.slice(start);
+      if (remainder) pending.push(remainder);
+      pendingBytes += Buffer.byteLength(remainder, "utf8");
+      assertLineBytes(pendingBytes);
     }
-    if (!input.signal?.aborted && (!started || pending.trim()))
+    if (!input.signal?.aborted && (!started || pending.some((segment) => segment.trim())))
       throw new Error("HOST_STREAM_DISCONNECTED");
   } finally {
     input.signal?.removeEventListener("abort", abort);

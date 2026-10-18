@@ -99,6 +99,13 @@ export const FAILURE_CATALOG = Object.freeze({
     true,
     "check_runtime"
   ),
+  "OH-RUN-2009": entry(
+    "runtime_stream_capacity",
+    "运行输出队列超过容量限制，本轮任务已停止。请检查运行设备的输出容量配置。",
+    "error.runtime.stream_queue_capacity",
+    false,
+    "check_runtime"
+  ),
   "OH-ADP-3002": entry(
     "adapter_dependency",
     "未找到 Agent 命令或必要程序。",
@@ -183,6 +190,13 @@ export const FAILURE_CATALOG = Object.freeze({
     true,
     "check_runtime"
   ),
+  "OH-ADP-3014": entry(
+    "adapter_frame_capacity",
+    "Agent 输出帧超过运行时容量限制，本轮任务已停止。",
+    "error.adapter.host_frame_too_large",
+    false,
+    "check_runtime"
+  ),
   "OH-PRV-4001": entry(
     "provider_authentication",
     "模型服务凭据无效或已失效。",
@@ -240,6 +254,13 @@ export const FAILURE_CATALOG = Object.freeze({
     "error.provider.configuration_missing",
     false,
     "change_model"
+  ),
+  "OH-PRV-4009": entry(
+    "provider_message_capacity",
+    "模型服务返回的单条消息超过运行时容量限制，本轮任务已停止。",
+    "error.provider.message_too_large",
+    false,
+    "check_runtime"
   ),
   "OH-PRV-4099": entry(
     "provider_unknown",
@@ -330,7 +351,7 @@ export function failurePayload(
     ].includes(reason)
       ? reason
       : undefined;
-  const failure =
+  const baseFailure =
     timeoutStage || timeoutMs !== undefined
       ? {
           ...classified,
@@ -343,6 +364,11 @@ export function failurePayload(
           }
         }
       : classified;
+  const capacity = safeCapacityEvidence(record);
+  const failure =
+    Object.keys(capacity).length > 0
+      ? { ...baseFailure, params: { ...baseFailure.params, ...capacity } }
+      : baseFailure;
   const adapterType = safeAdapterType(record.adapterType) ?? failure.source.adapter;
   const legacyCode = safeReasonCode(record.code) ?? failure.reasonCode;
   return {
@@ -408,6 +434,18 @@ function safeWatchdogEvidence(value: unknown): Record<string, unknown> {
   }
   if (input.activitySupport === "native_progress" || input.activitySupport === "canonical_only")
     result.activitySupport = input.activitySupport;
+  return result;
+}
+
+export function safeCapacityEvidence(value: unknown): Record<string, string | number> {
+  const input = asRecord(value) ?? {};
+  const result: Record<string, string | number> = {};
+  if (typeof input.boundary === "string" && /^[a-z0-9][a-z0-9._-]{0,127}$/i.test(input.boundary))
+    result.boundary = input.boundary;
+  for (const key of ["measuredBytes", "limitBytes", "itemCount", "limitItems"] as const) {
+    const entry = input[key];
+    if (typeof entry === "number" && Number.isSafeInteger(entry) && entry >= 0) result[key] = entry;
+  }
   return result;
 }
 
@@ -555,6 +593,17 @@ function classify(
     CODEX_FINALIZATION_TIMEOUT: "OH-ADP-3013"
   };
   if (explicit && timeouts[explicit]) return result(timeouts[explicit], explicit);
+  if (explicit === "PROVIDER_MESSAGE_TOO_LARGE")
+    return result("OH-PRV-4009", "PROVIDER_MESSAGE_TOO_LARGE");
+  if (explicit === "HOST_FRAME_TOO_LARGE") return result("OH-ADP-3014", "HOST_FRAME_TOO_LARGE");
+  if (
+    [
+      "STREAM_QUEUE_ITEM_TOO_LARGE",
+      "STREAM_QUEUE_BYTES_EXCEEDED",
+      "STREAM_QUEUE_ITEMS_EXCEEDED"
+    ].includes(explicit ?? "")
+  )
+    return result("OH-RUN-2009", explicit!);
   if (explicit === "RUNTIME_DRAINING") return result("OH-RUN-2002", "RUNTIME_DRAINING");
   if (explicit === "IM_SESSION_QUEUE_FULL") return result("OH-RUN-2004", explicit);
   if (explicit === "IM_DELIVERY_UNKNOWN") return result("OH-RUN-2005", explicit);

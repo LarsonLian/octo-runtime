@@ -11,7 +11,11 @@ import {
   type CanonicalEvent,
   type InvokeRequest
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
-import { canonicalTerminalStatus } from "@mininglamp-oss/octo-runtime-protocol";
+import {
+  canonicalTerminalStatus,
+  resolveStreamLimitPolicy,
+  type StreamLimitPolicy
+} from "@mininglamp-oss/octo-runtime-protocol";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
 
@@ -392,6 +396,7 @@ export async function* runZcodeAppServerTurn({
   request,
   spec,
   spawnFn = defaultSpawn,
+  context,
   approvalBridge
 }: {
   request: InvokeRequest;
@@ -414,6 +419,7 @@ export async function* runZcodeAppServerTurn({
     spawnFn,
     requestTimeoutMs: requestTimeout(request),
     autoApprove,
+    streamLimits: context?.streamLimits,
     permissionHandler: approvalBridge
       ? async (params, write) => {
           const permission = {
@@ -565,9 +571,8 @@ export async function* runZcodeAppServerTurn({
 class ZcodeAppServerClient {
   readonly #child: ChildProcessWithoutNullStreams;
   readonly #pending = new Map<RpcId, PendingRequest>();
-  readonly #events = new DriverQueue<ZcodeSessionEvent>({
-    onFailure: (error) => this.#failAll(error)
-  });
+  readonly #events: DriverQueue<ZcodeSessionEvent>;
+  readonly #streamLimits: Readonly<StreamLimitPolicy>;
   readonly #requestTimeoutMs: number;
   readonly #autoApprove: boolean;
   readonly #permissionHandler?: (
@@ -592,17 +597,25 @@ class ZcodeAppServerClient {
     spawnFn,
     requestTimeoutMs,
     autoApprove,
+    streamLimits,
     permissionHandler
   }: {
     spec: ZcodeAppServerCommand;
     spawnFn: ZcodeAppServerSpawn;
     requestTimeoutMs: number;
     autoApprove: boolean;
+    streamLimits?: StreamLimitPolicy;
     permissionHandler?: (
       params: JsonRecord,
       write: (result: JsonRecord) => Promise<void>
     ) => Promise<void>;
   }) {
+    this.#streamLimits = resolveStreamLimitPolicy(streamLimits);
+    this.#events = new DriverQueue<ZcodeSessionEvent>({
+      limits: this.#streamLimits,
+      boundary: "zcode.event_queue",
+      onFailure: (error) => this.#failAll(error)
+    });
     this.#requestTimeoutMs = requestTimeoutMs;
     this.#autoApprove = autoApprove;
     this.#permissionHandler = permissionHandler;
@@ -624,12 +637,17 @@ class ZcodeAppServerClient {
     for (const source of [this.#child.stdin, this.#child.stdout, this.#child.stderr]) {
       source.on("error", (error: Error) => this.#failAll(error));
     }
-    // S04：ZCode 不支持图片输入，所有原生行按普通 256 KiB 上限控制。
+    // ZCode 不支持图片输入，所有原生行使用本 invocation 的 Provider 上限。
     // .octospec/tasks/pr1-yujiawei-review/assessment.md
-    this.#removeLineGuard = watchLineLimit(this.#child.stdout, 256 * 1024, (error) => {
-      this.#failAll(error);
-      this.#child.stdout.destroy();
-    });
+    this.#removeLineGuard = watchLineLimit(
+      this.#child.stdout,
+      this.#streamLimits.rawMessageMaxBytes,
+      (error) => {
+        Object.assign(error, { boundary: "zcode.stdout" });
+        this.#failAll(error);
+        this.#child.stdout.destroy();
+      }
+    );
     this.#reader = createInterface({ input: this.#child.stdout });
     this.#reader.on("error", (error) => this.#failAll(error));
     this.#reader.on("line", (line) => this.#receiveLine(line));
@@ -906,11 +924,8 @@ function failureReason(error: unknown): string {
 }
 
 function errorCode(error: unknown): string | number {
-  if (
-    error instanceof Error &&
-    ["STREAM_BUFFER_OVERFLOW", "STREAM_EVENT_TOO_LARGE"].includes(error.message)
-  )
-    return error.message;
+  if (error instanceof Error && "code" in error && typeof error.code === "string")
+    return error.code;
   if (error instanceof ZcodeAppServerRpcError) return error.code;
   if (error instanceof ZcodeAppServerProcessError) return "ZCODE_PROCESS_EXITED";
   return "ZCODE_ADAPTER_ERROR";

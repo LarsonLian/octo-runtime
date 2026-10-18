@@ -6,7 +6,11 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertCanonicalEvent } from "@mininglamp-oss/octo-runtime-protocol";
+import {
+  assertCanonicalEvent,
+  invocationInput,
+  resolveStreamLimitPolicy
+} from "@mininglamp-oss/octo-runtime-protocol";
 import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
 import {
   AntigravityEventNormalizer,
@@ -43,6 +47,31 @@ const collect = async (iterable) => {
 const step = (index, overrides = {}) => ({
   event: "step_update",
   step_update: { step_index: index, step_type: "agent_response", state: "ACTIVE", ...overrides }
+});
+
+test("Antigravity preserves non-retryable provider capacity evidence through the Host", async (context) => {
+  const host = new AdapterHost();
+  host.register(create());
+  context.after(() => host.shutdown());
+  const frames = [];
+  for await (const frame of host.invokeFrames(
+    invocationInput(request, "canonical", "antigravity"),
+    {
+      streamLimits: resolveStreamLimitPolicy({ rawMessageMaxBytes: 64 })
+    }
+  ))
+    frames.push(frame);
+  const failure = frames.find(
+    (frame) => frame.kind === "canonical" && frame.event.type === "run.failed"
+  )?.event.payload.failure;
+  assert.equal(failure.code, "OH-PRV-4009");
+  assert.equal(failure.reasonCode, "PROVIDER_MESSAGE_TOO_LARGE");
+  assert.equal(failure.retryable, false);
+  assert.ok(failure.diagnosticId);
+  assert.equal(failure.params.boundary, "provider.stdout");
+  assert.equal(failure.params.limitBytes, 64);
+  assert.ok(failure.params.measuredBytes > 64);
+  assert.equal(frames.at(-1).control.state, "failed");
 });
 
 test("Antigravity builds an isolated stdin carrier, exact model and explicit yolo mode", () => {

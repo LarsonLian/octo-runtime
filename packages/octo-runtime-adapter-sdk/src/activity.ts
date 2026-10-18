@@ -1,4 +1,4 @@
-import type { ProtocolMode } from "@mininglamp-oss/octo-runtime-protocol";
+import type { ProtocolMode, StreamLimitPolicy } from "@mininglamp-oss/octo-runtime-protocol";
 
 /** Provider progress used by the host watchdog to enforce execution deadlines. */
 export interface ProviderActivity {
@@ -17,6 +17,7 @@ export interface ProviderActivity {
 
 export interface AdapterInvocationContext {
   protocolMode?: ProtocolMode;
+  streamLimits?: Readonly<StreamLimitPolicy>;
   reportConversion?(): void;
   reportActivity?(activity: ProviderActivity): void;
 }

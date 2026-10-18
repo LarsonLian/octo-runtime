@@ -6,9 +6,10 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { AcpClient } from "@mininglamp-oss/octo-runtime-acp-client";
 import { createZcodeGuiAdapter } from "@mininglamp-oss/octo-runtime-adapter-zcode-gui";
+import { resolveStreamLimitPolicy } from "@mininglamp-oss/octo-runtime-protocol";
 import { invokeRequest } from "./runtime-fixture.js";
 
-function fixture() {
+function fixture(overrides) {
   const child = Object.assign(new EventEmitter(), {
     stdin: new PassThrough(),
     stdout: new PassThrough(),
@@ -18,13 +19,24 @@ function fixture() {
   });
   return {
     child,
-    client: new AcpClient({ child }),
+    client: new AcpClient({
+      child,
+      ...(overrides ? { streamLimits: resolveStreamLimitPolicy(overrides) } : {})
+    }),
     send: (message) => child.stdout.write(JSON.stringify(message) + "\n")
   };
 }
 for (const limit of ["count", "bytes"]) {
   test(`ACP ${limit} overflow discards queued events, fails only that client and rejects later input`, async () => {
-    const { child, client, send } = fixture();
+    const { child, client, send } = fixture(
+      limit === "count"
+        ? { adapterQueueMaxItems: 16 }
+        : {
+            rawMessageMaxBytes: 96 * 1024,
+            adapterQueueItemMaxBytes: 128 * 1024,
+            adapterQueueMaxBytes: 256 * 1024
+          }
+    );
     const stream = client.prompt("s", "input");
     const first = stream.next();
     const update = {
@@ -33,9 +45,10 @@ for (const limit of ["count", "bytes"]) {
     };
     send(update);
     await first;
-    for (let i = 0; i < (limit === "count" ? 4097 : 65); i++) send(update);
-    await assert.rejects(stream.next(), /STREAM_BUFFER_OVERFLOW/);
-    await assert.rejects(client.initialize(), /STREAM_BUFFER_OVERFLOW/);
+    for (let i = 0; i < (limit === "count" ? 17 : 5); i++) send(update);
+    const code = limit === "count" ? "STREAM_QUEUE_ITEMS_EXCEEDED" : "STREAM_QUEUE_BYTES_EXCEEDED";
+    await assert.rejects(stream.next(), new RegExp(code));
+    await assert.rejects(client.initialize(), new RegExp(code));
     assert.equal(child.stdout.listenerCount("data"), 0);
     await client.close();
     const sibling = fixture();
@@ -47,12 +60,26 @@ for (const limit of ["count", "bytes"]) {
 }
 
 test("ACP bounds an unterminated line before JSON parsing", async () => {
-  const { child, client } = fixture();
+  const { child, client } = fixture({ rawMessageMaxBytes: 256 * 1024 });
   const request = client.initialize();
   child.stdout.write("x".repeat(256 * 1024));
   child.stdout.write("x");
-  await assert.rejects(request, /STREAM_EVENT_TOO_LARGE/);
+  await assert.rejects(request, (error) => {
+    assert.match(error.message, /PROVIDER_MESSAGE_TOO_LARGE/);
+    assert.equal(error.boundary, "acp.stdout");
+    assert.equal(error.measuredBytes, 256 * 1024 + 1);
+    assert.equal(error.limitBytes, 256 * 1024);
+    return true;
+  });
   assert.equal(child.stdout.destroyed, true);
+  await client.close();
+});
+
+test("ACP accepts the observed 1.43 MB provider response under the default policy", async () => {
+  const { client, send } = fixture();
+  const request = client.initialize();
+  send({ id: 1, result: { output: "x".repeat(1_430_765) } });
+  assert.equal((await request).output.length, 1_430_765);
   await client.close();
 });
 
@@ -88,7 +115,15 @@ for (const mode of ["count", "bytes", "line", "complete"]) {
         ]
       });
       const stream = adapter.invoke(
-        invokeRequest({ approvalMode: "full_access", signal: AbortSignal.timeout(3000) })
+        invokeRequest({ approvalMode: "full_access", signal: AbortSignal.timeout(3000) }),
+        {
+          streamLimits: resolveStreamLimitPolicy({
+            rawMessageMaxBytes: 256 * 1024,
+            adapterQueueItemMaxBytes: 256 * 1024,
+            adapterQueueMaxBytes: 512 * 1024,
+            adapterQueueMaxItems: 16
+          })
+        }
       );
       assert.equal((await stream.next()).value.type, "session.update");
       // 消费者停读，直到容量保护主动关闭 Provider；不靠固定 sleep 制造时序。
@@ -107,7 +142,11 @@ for (const mode of ["count", "bytes", "line", "complete"]) {
       assert.equal(failures.length, 1);
       assert.equal(
         failures[0].payload.code,
-        mode === "line" ? "STREAM_EVENT_TOO_LARGE" : "STREAM_BUFFER_OVERFLOW"
+        mode === "line"
+          ? "PROVIDER_MESSAGE_TOO_LARGE"
+          : mode === "count"
+            ? "STREAM_QUEUE_ITEMS_EXCEEDED"
+            : "STREAM_QUEUE_BYTES_EXCEEDED"
       );
       assert.equal(
         events.some((event) => event.type === "run.completed"),

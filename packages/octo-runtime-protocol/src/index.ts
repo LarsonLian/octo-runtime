@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 export { assertJsonByteLimit } from "./json-size.js";
 export { INVOKE_REQUEST_MAX_BYTES, assertInvokeRequestSize } from "./invoke-size.js";
+export * from "./stream-limits.js";
 export * from "./run-protocol.js";
 export * from "./invoke-input.js";
 export * from "./model-context.js";

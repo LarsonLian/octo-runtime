@@ -10,14 +10,16 @@ export function preparedFrames(host, type, request, options = {}) {
   assertInvokeRequest(request);
   return host.invokeFrames(invocationInput(request, options.protocolMode ?? "native", type), {
     signal: request.signal,
-    executionEnvOverrides: request.executionEnvOverrides
+    executionEnvOverrides: request.executionEnvOverrides,
+    ...(options.streamLimits ? { streamLimits: options.streamLimits } : {})
   });
 }
 
 export function preparedSubmit(host, type, request, options = {}) {
   return host.submit(invocationInput(request, options.protocolMode ?? "native", type), {
     signal: request.signal,
-    executionEnvOverrides: request.executionEnvOverrides
+    executionEnvOverrides: request.executionEnvOverrides,
+    ...(options.streamLimits ? { streamLimits: options.streamLimits } : {})
   });
 }
 

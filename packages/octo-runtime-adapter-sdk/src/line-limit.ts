@@ -1,4 +1,5 @@
 import type { Readable } from "node:stream";
+import { streamCapacityError } from "@mininglamp-oss/octo-runtime-protocol";
 
 /** Guard readline's partial-line buffer before it allocates an unbounded record. */
 export function watchLineLimit(
@@ -14,10 +15,15 @@ export function watchLineLimit(
     let start = 0;
     for (let end = buffer.indexOf(10); end >= 0; end = buffer.indexOf(10, start)) {
       bytes += end - start;
-      if (bytes > (typeof maximum === "function" ? maximum() : maximum)) {
+      const limit = typeof maximum === "function" ? maximum() : maximum;
+      if (bytes > limit) {
         failed = true;
         fail(
-          Object.assign(new Error("STREAM_EVENT_TOO_LARGE"), { code: "STREAM_EVENT_TOO_LARGE" })
+          streamCapacityError("PROVIDER_MESSAGE_TOO_LARGE", {
+            boundary: "provider.line",
+            measuredBytes: bytes,
+            limitBytes: limit
+          })
         );
         return;
       }
@@ -25,9 +31,16 @@ export function watchLineLimit(
       start = end + 1;
     }
     bytes += buffer.byteLength - start;
-    if (bytes > (typeof maximum === "function" ? maximum() : maximum)) {
+    const limit = typeof maximum === "function" ? maximum() : maximum;
+    if (bytes > limit) {
       failed = true;
-      fail(Object.assign(new Error("STREAM_EVENT_TOO_LARGE"), { code: "STREAM_EVENT_TOO_LARGE" }));
+      fail(
+        streamCapacityError("PROVIDER_MESSAGE_TOO_LARGE", {
+          boundary: "provider.line",
+          measuredBytes: bytes,
+          limitBytes: limit
+        })
+      );
     }
   };
   input.prependListener("data", observe);

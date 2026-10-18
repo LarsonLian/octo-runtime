@@ -621,6 +621,8 @@ async function* invokeOpenClawGateway(
   permissions.bindTransport(() => stop(!terminal));
   const queue = new DriverQueue<EventQueueItem>({
     discardOnFailure: true,
+    limits: context?.streamLimits,
+    boundary: "openclaw.event_queue",
     onFailure: () => {
       resourceFailure = true;
       void stop(true);

@@ -1,5 +1,9 @@
 import { DriverQueue, watchLineLimit } from "@mininglamp-oss/octo-runtime-adapter-sdk";
-import { INVOKE_REQUEST_MAX_BYTES } from "@mininglamp-oss/octo-runtime-protocol";
+import {
+  INVOKE_REQUEST_MAX_BYTES,
+  resolveStreamLimitPolicy,
+  type StreamLimitPolicy
+} from "@mininglamp-oss/octo-runtime-protocol";
 import { createProcessCleanup } from "@mininglamp-oss/octo-runtime-adapter-sdk/process-cleanup";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface } from "node:readline";
@@ -29,6 +33,7 @@ export interface SpawnAcpClientOptions {
   permissionHandler?: PermissionHandler;
   onPermissionResponseWritten?: (params: JsonRecord) => void;
   onPermissionResponseFailed?: (params: JsonRecord, error: Error) => void;
+  streamLimits?: StreamLimitPolicy;
 }
 
 export interface AcpRequestOptions {
@@ -96,13 +101,15 @@ export class AcpClient {
   #closePromise?: Promise<void>;
   readonly #reader: ReturnType<typeof createInterface>;
   readonly #removeLineGuard: () => void;
-  #lineLimit = 256 * 1024;
+  #lineLimit: number;
+  readonly #streamLimits: Readonly<StreamLimitPolicy>;
 
   constructor({
     child,
     permissionHandler,
     onPermissionResponseWritten,
     onPermissionResponseFailed,
+    streamLimits,
     processGroup = false
   }: {
     child: ChildProcessWithoutNullStreams;
@@ -110,7 +117,10 @@ export class AcpClient {
     permissionHandler?: PermissionHandler;
     onPermissionResponseWritten?: (params: JsonRecord) => void;
     onPermissionResponseFailed?: (params: JsonRecord, error: Error) => void;
+    streamLimits?: StreamLimitPolicy;
   }) {
+    this.#streamLimits = resolveStreamLimitPolicy(streamLimits);
+    this.#lineLimit = this.#streamLimits.rawMessageMaxBytes;
     this.#child = child;
     this.#cleanup = createProcessCleanup(child, { processGroup });
     this.#permission = permissionHandler ?? denyPermission;
@@ -132,6 +142,7 @@ export class AcpClient {
       child.stdout,
       () => this.#lineLimit,
       (error) => {
+        Object.assign(error, { boundary: "acp.stdout" });
         this.#failAll(error);
         child.stdout.destroy();
       }
@@ -353,9 +364,11 @@ export class AcpClient {
       Array.isArray(params.prompt) &&
       params.prompt.some((part: unknown) => isRecord(part) && part.type === "image")
         ? INVOKE_REQUEST_MAX_BYTES
-        : 256 * 1024;
+        : this.#streamLimits.rawMessageMaxBytes;
     const queue = new DriverQueue<AcpUpdate>({
       discardOnFailure: true,
+      limits: this.#streamLimits,
+      boundary: "acp.update_queue",
       onFailure: (error) => this.#failAll(error)
     });
     this.#updates.set(sessionId, queue);
@@ -389,7 +402,7 @@ export class AcpClient {
       await result;
     } finally {
       queue.drain();
-      this.#lineLimit = 256 * 1024;
+      this.#lineLimit = this.#streamLimits.rawMessageMaxBytes;
       this.#updates.delete(sessionId);
     }
   }
@@ -425,7 +438,8 @@ export function spawnAcpClient(options: SpawnAcpClientOptions): AcpClient {
     signal,
     permissionHandler,
     onPermissionResponseWritten,
-    onPermissionResponseFailed
+    onPermissionResponseFailed,
+    streamLimits
   } = options;
   const child = spawn(command, args, {
     cwd,
@@ -438,7 +452,8 @@ export function spawnAcpClient(options: SpawnAcpClientOptions): AcpClient {
     processGroup: process.platform !== "win32",
     permissionHandler,
     onPermissionResponseWritten,
-    onPermissionResponseFailed
+    onPermissionResponseFailed,
+    streamLimits
   });
   const abort = (): void => {
     // 异步取消先启动清理；调用方随后 await close 仍取得同一失败。

@@ -1,6 +1,8 @@
 import { assertJsonValue } from "./context.js";
 import { assertExecutionEvidence } from "./actmode.js";
-import { assertCanonicalEvent, type CanonicalEvent } from "./index.js";
+import { assertCanonicalEvent, assertFailureEnvelope, type CanonicalEvent } from "./index.js";
+import { safeCapacityEvidence } from "./failure.js";
+import { isStreamCapacityReason } from "./stream-limits.js";
 import type {
   ProtocolMode,
   RunProtocolErrorCode,
@@ -39,6 +41,11 @@ export const RUN_PROTOCOL_ERRORS = [
   "INTERACTION_NOT_ACTIVE",
   "HOST_EXECUTION_FAILED",
   "HOST_ENDED_WITHOUT_TERMINAL",
+  "PROVIDER_MESSAGE_TOO_LARGE",
+  "HOST_FRAME_TOO_LARGE",
+  "STREAM_QUEUE_ITEM_TOO_LARGE",
+  "STREAM_QUEUE_BYTES_EXCEEDED",
+  "STREAM_QUEUE_ITEMS_EXCEEDED",
   "STREAM_GAP",
   "STREAM_EXPIRED",
   "REMOTE_NATIVE_UNSUPPORTED",
@@ -168,11 +175,48 @@ export function assertHostControl(value: unknown): asserts value is HostControl 
     return;
   if (
     value.type === "error" &&
-    exactKeys(value, ["type", "code", "message"]) &&
+    exactKeys(value, ["type", "code", "message"], ["failure"]) &&
     RUN_PROTOCOL_ERRORS.some((code) => code === value.code) &&
     typeof value.message === "string"
-  )
+  ) {
+    if (Object.hasOwn(value, "failure")) {
+      try {
+        assertFailureEnvelope(value.failure);
+        const evidence = safeCapacityEvidence(value.failure.params);
+        if (
+          !isStreamCapacityReason(value.code) ||
+          value.failure.reasonCode !== value.code ||
+          !exactKeys(
+            value.failure,
+            [
+              "schemaVersion",
+              "code",
+              "reasonCode",
+              "category",
+              "stage",
+              "messageKey",
+              "params",
+              "retryable",
+              "action",
+              "diagnosticId",
+              "source",
+              "occurredAt"
+            ],
+            ["retryAfterMs", "cause"]
+          ) ||
+          !exactKeys(value.failure.source, ["component"], ["adapter"]) ||
+          !exactKeys(value.failure.action, ["type", "labelKey"]) ||
+          (value.failure.cause !== undefined &&
+            !exactKeys(value.failure.cause, ["reasonCode"], ["httpStatus"])) ||
+          Object.entries(value.failure.params).some(([key, entry]) => evidence[key] !== entry)
+        )
+          throw protocolError("HOST_CONTROL_INVALID");
+      } catch {
+        throw protocolError("HOST_CONTROL_INVALID");
+      }
+    }
     return;
+  }
   if (
     value.type === "interaction" &&
     exactKeys(value, ["type", "requestId", "status"], ["expiresAt"]) &&
@@ -279,7 +323,15 @@ export async function* canonicalEvents(
     } else if (frame.kind === "control" && frame.control.type === "gap")
       throw protocolError("STREAM_GAP");
     else if (frame.kind === "control" && frame.control.type === "error")
-      throw Object.assign(new Error(frame.control.message), { code: frame.control.code });
+      throw Object.assign(new Error(frame.control.message), {
+        code: frame.control.code,
+        ...(frame.control.failure
+          ? {
+              ...safeCapacityEvidence(frame.control.failure.params),
+              failure: frame.control.failure
+            }
+          : {})
+      });
   }
 }
 
@@ -314,11 +366,7 @@ function requestId(value: unknown): boolean {
   return nonemptyString(value, 256) || (typeof value === "number" && Number.isSafeInteger(value));
 }
 
-function exactKeys(
-  value: Record<string, unknown>,
-  required: string[],
-  optional: string[] = []
-): boolean {
+function exactKeys(value: object, required: string[], optional: string[] = []): boolean {
   return (
     required.every((key) => Object.hasOwn(value, key)) &&
     Object.keys(value).every((key) => required.includes(key) || optional.includes(key))

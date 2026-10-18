@@ -169,7 +169,10 @@ test("byte pressure reports a gap while terminal state remains independently que
     yield { protocolVersion: 2, type: "run.completed", payload: {} };
   });
   const request = input();
-  await preparedSubmit(host, "fixture", request, { protocolMode: "canonical" });
+  await preparedSubmit(host, "fixture", request, {
+    protocolMode: "canonical",
+    streamLimits: { hostFrameMaxBytes: 128 * 1024, replayRunMaxBytes: 512 * 1024 }
+  });
   await waitFor(() => host.get(request.runId).terminal);
   assert.throws(
     () => host.read(request.runId, undefined, 0),
@@ -185,6 +188,48 @@ test("byte pressure reports a gap while terminal state remains independently que
     release();
   });
   host.acquireSubscription()();
+  await host.close();
+});
+
+test("a lower global replay override does not evict another active adapter run", async () => {
+  const host = fixture(async function* () {
+    for (let i = 0; i < 80; i++)
+      yield {
+        protocolVersion: 2,
+        type: "message.delta",
+        payload: { text: "x".repeat(1024), channel: "final" }
+      };
+    yield { protocolVersion: 2, type: "run.completed", payload: {} };
+  });
+  const first = input();
+  await preparedSubmit(host, "fixture", first, {
+    protocolMode: "canonical",
+    streamLimits: {
+      hostFrameMaxBytes: 4096,
+      rpcQueueMaxBytes: 8192,
+      replayRunMaxBytes: 256 * 1024,
+      replayGlobalMaxBytes: 256 * 1024
+    }
+  });
+  await waitFor(() => host.get(first.runId).terminal);
+  assert.equal(host.get(first.runId).oldest_seq, 1);
+
+  const second = {
+    ...input(),
+    invocationId: "invoke-low-global",
+    runId: "run-low-global"
+  };
+  await preparedSubmit(host, "fixture", second, {
+    protocolMode: "canonical",
+    streamLimits: {
+      hostFrameMaxBytes: 4096,
+      rpcQueueMaxBytes: 8192,
+      replayRunMaxBytes: 32 * 1024,
+      replayGlobalMaxBytes: 32 * 1024
+    }
+  });
+  await waitFor(() => host.get(second.runId).terminal);
+  assert.equal(host.get(first.runId).oldest_seq, 1);
   await host.close();
 });
 test("unsupported native is rejected before acceptance and never invokes a canonical adapter", async () => {

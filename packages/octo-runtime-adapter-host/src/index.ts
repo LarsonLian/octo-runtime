@@ -38,6 +38,10 @@ import {
   assertInteractionResponse,
   assertInvokeRequest,
   failurePayload,
+  isStreamCapacityReason,
+  resolveStreamLimitPolicy,
+  streamCapacityError,
+  type StreamLimitPolicy,
   isTerminal,
   type CanonicalEvent,
   type InteractionResponse,
@@ -291,7 +295,12 @@ export class AdapterHost {
       });
       const frozenRequest = withModelContexts({ ...run.request!, signal: request.signal });
       run.request = undefined;
-      return this.#streamInvocation(adapterType, frozenRequest, receipt);
+      return this.#streamInvocation(
+        adapterType,
+        frozenRequest,
+        receipt,
+        resolveStreamLimitPolicy(environment.streamLimits)
+      );
     } catch (error) {
       this.#log("warn", "invoke.rejected", {
         code: errorCode(error) ?? "INVOKE_REJECTED",
@@ -304,7 +313,8 @@ export class AdapterHost {
   async *#streamInvocation(
     adapterType: string,
     request: InvokeRequest,
-    receipt: HostRunReceipt
+    receipt: HostRunReceipt,
+    streamLimits: Readonly<StreamLimitPolicy>
   ): AsyncGenerator<HostFrame> {
     const started = Date.now();
     const identity = {
@@ -329,7 +339,12 @@ export class AdapterHost {
       assertHostFrame(result);
       assertHostFrameIdentity(result, receipt);
       const size = Buffer.byteLength(JSON.stringify(result));
-      if (size > 256 * 1024) throw new Error("STREAM_EVENT_TOO_LARGE");
+      if (size > streamLimits.hostFrameMaxBytes)
+        throw streamCapacityError("HOST_FRAME_TOO_LARGE", {
+          boundary: "adapter_host.frame",
+          measuredBytes: size,
+          limitBytes: streamLimits.hostFrameMaxBytes
+        });
       seq++;
       return result;
     };
@@ -338,8 +353,8 @@ export class AdapterHost {
     const pendingInteractions = new Set<string | number>();
     const source =
       receipt.protocol_mode === "canonical"
-        ? this.#invokeCanonical(adapterType, request)
-        : this.#invokeProvider(adapterType, request, "native");
+        ? this.#invokeCanonical(adapterType, request, streamLimits)
+        : this.#invokeProvider(adapterType, request, "native", streamLimits);
     try {
       yield frame({ kind: "control", control: { type: "state", state: "running" } });
       let pending = source.next();
@@ -410,6 +425,20 @@ export class AdapterHost {
       this.#active.get(request.invocationId)?.abort(error);
       await source.return(undefined);
       state = { type: "state", state: "failed" };
+      const causeCode = errorCode(error);
+      const controlCode = isStreamCapacityReason(causeCode) ? causeCode : "HOST_FRAME_INVALID";
+      failureCode = controlCode;
+      const failure = isStreamCapacityReason(causeCode)
+        ? failurePayload(
+            { code: causeCode, ...capacityFailureDetails(error) },
+            {
+              stage: "adapter_host.frame",
+              defaultDomain: "adapter",
+              runId: request.runId,
+              source: { component: "octo-runtime", adapter: adapterType }
+            }
+          ).failure
+        : undefined;
       for (const requestId of pendingInteractions)
         yield {
           ...receipt,
@@ -423,8 +452,9 @@ export class AdapterHost {
         seq: ++seq,
         control: {
           type: "error",
-          code: "HOST_FRAME_INVALID",
-          message: "Host output violated the selected stream contract"
+          code: controlCode,
+          message: "Host output violated the selected stream contract",
+          ...(failure ? { failure } : {})
         }
       };
       yield { ...receipt, kind: "control", seq: ++seq, control: state };
@@ -452,10 +482,11 @@ export class AdapterHost {
 
   async *#invokeCanonical(
     adapterType: string,
-    request: InvokeRequest
+    request: InvokeRequest,
+    streamLimits: Readonly<StreamLimitPolicy>
   ): AsyncGenerator<CanonicalEvent> {
     const experience = new InvocationExperience();
-    const provider = this.#invokeProvider(adapterType, request);
+    const provider = this.#invokeProvider(adapterType, request, "canonical", streamLimits);
     let pending = provider.next();
     void pending.catch(() => undefined);
     let finalBody = false;
@@ -502,7 +533,8 @@ export class AdapterHost {
   async *#invokeProvider(
     adapterType: string,
     request: InvokeRequest,
-    protocolMode: "native" | "canonical" = "canonical"
+    protocolMode: "native" | "canonical" = "canonical",
+    streamLimits: Readonly<StreamLimitPolicy> = resolveStreamLimitPolicy(undefined)
   ): AsyncGenerator<AdapterOutput> {
     this.#log("info", "invoke.started", {
       run_id: request.runId,
@@ -554,6 +586,7 @@ export class AdapterHost {
     let messageNumber = 0;
     const context: AdapterInvocationContext = {
       protocolMode,
+      streamLimits,
       reportConversion: () => {
         if (protocolMode === "native")
           throw protocolError(
@@ -771,6 +804,7 @@ export class AdapterHost {
           message: errorMessage(error),
           adapterType,
           ...(errorCode(error) ? { code: errorCode(error) } : {}),
+          ...capacityFailureDetails(error),
           ...watchdogFailureDetails(error)
         },
         request.workdir,
@@ -802,18 +836,20 @@ export class AdapterHost {
       if (!controller.signal.aborted) controller.abort(error);
       await waitCleanup().catch(() => undefined);
       if (protocolMode === "native") {
+        const nativeFailureCode = errorCode(error);
         if (!userCancelled)
           yield {
             kind: "control",
             control: {
               type: "error",
               code:
-                error instanceof Error &&
-                "code" in error &&
-                error.code === "HOST_ENDED_WITHOUT_TERMINAL"
+                nativeFailureCode === "HOST_ENDED_WITHOUT_TERMINAL"
                   ? "HOST_ENDED_WITHOUT_TERMINAL"
-                  : "HOST_EXECUTION_FAILED",
-              message: String(failure.message)
+                  : isStreamCapacityReason(nativeFailureCode)
+                    ? nativeFailureCode
+                    : "HOST_EXECUTION_FAILED",
+              message: String(failure.message),
+              ...(isStreamCapacityReason(nativeFailureCode) ? { failure: failure.failure } : {})
             }
           };
         yield {
@@ -985,6 +1021,16 @@ function errorCode(error: unknown): string | undefined {
     typeof error.code === "string"
     ? error.code
     : undefined;
+}
+
+function capacityFailureDetails(error: unknown): Record<string, unknown> {
+  if (!error || typeof error !== "object") return {};
+  const input = error as Record<string, unknown>;
+  return Object.fromEntries(
+    ["boundary", "measuredBytes", "limitBytes", "itemCount", "limitItems"]
+      .filter((key) => Object.hasOwn(input, key))
+      .map((key) => [key, input[key]])
+  );
 }
 
 async function waitForNext<T>(pending: Promise<T>, signal: AbortSignal): Promise<T> {

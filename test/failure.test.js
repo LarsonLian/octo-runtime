@@ -45,7 +45,25 @@ test("global failure classifier covers runtime admission and adapter roots", () 
     [{ code: "ADAPTER_INVOCATION_FAILED" }, "adapter", "OH-ADP-3004", "ADAPTER_INVOCATION_FAILED"],
     [{ code: "INVALID_JSON" }, "adapter", "OH-ADP-3005", "ADAPTER_PROTOCOL_ERROR"],
     [{ code: "RPC_TIMEOUT" }, "adapter", "OH-ADP-3013", "RPC_TIMEOUT"],
-    [{ code: "CODEX_FINALIZATION_TIMEOUT" }, "adapter", "OH-ADP-3013", "CODEX_FINALIZATION_TIMEOUT"]
+    [
+      { code: "CODEX_FINALIZATION_TIMEOUT" },
+      "adapter",
+      "OH-ADP-3013",
+      "CODEX_FINALIZATION_TIMEOUT"
+    ],
+    [{ code: "HOST_FRAME_TOO_LARGE" }, "adapter", "OH-ADP-3014", "HOST_FRAME_TOO_LARGE"],
+    [
+      { code: "PROVIDER_MESSAGE_TOO_LARGE" },
+      "provider",
+      "OH-PRV-4009",
+      "PROVIDER_MESSAGE_TOO_LARGE"
+    ],
+    [
+      { code: "STREAM_QUEUE_BYTES_EXCEEDED" },
+      "runtime",
+      "OH-RUN-2009",
+      "STREAM_QUEUE_BYTES_EXCEEDED"
+    ]
   ];
   for (const [input, domain, code, reasonCode] of cases) {
     const failure = classify(

@@ -1,9 +1,15 @@
 import { readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import type { AdapterProbeOptions } from "@mininglamp-oss/octo-runtime-adapter-sdk";
+import {
+  resolveStreamLimitPolicy,
+  type StreamLimitOverrides,
+  type StreamLimitPolicy
+} from "@mininglamp-oss/octo-runtime-protocol";
 interface AdapterExecutionManifest {
   provider_options?: unknown;
   credential_ref?: unknown;
+  stream_limits?: unknown;
 }
 interface AdapterCredentialManifest {
   schema_version?: unknown;
@@ -45,12 +51,42 @@ export function readAdapterConfigurations(
         return [
           adapterType,
           {
-            providerOptions: { ...publicOptions, ...credentialOptions }
+            providerOptions: { ...publicOptions, ...credentialOptions },
+            ...(execution.stream_limits === undefined
+              ? {}
+              : { streamLimits: readStreamLimits(execution.stream_limits, adapterType) })
           }
         ];
       })
     )
   };
+}
+
+const STREAM_LIMIT_FIELDS = {
+  raw_message_max_bytes: "rawMessageMaxBytes",
+  adapter_queue_item_max_bytes: "adapterQueueItemMaxBytes",
+  adapter_queue_max_bytes: "adapterQueueMaxBytes",
+  adapter_queue_max_items: "adapterQueueMaxItems",
+  host_frame_max_bytes: "hostFrameMaxBytes",
+  rpc_queue_max_bytes: "rpcQueueMaxBytes",
+  rpc_queue_max_items: "rpcQueueMaxItems",
+  replay_run_max_bytes: "replayRunMaxBytes",
+  replay_run_max_items: "replayRunMaxItems",
+  replay_global_max_bytes: "replayGlobalMaxBytes"
+} as const;
+
+function readStreamLimits(value: unknown, adapterType: string): StreamLimitPolicy {
+  const record = objectValue(value);
+  if (!record) throw new TypeError(`managed ${adapterType} stream_limits must be an object`);
+  const overrides: StreamLimitOverrides = {};
+  for (const [key, entry] of Object.entries(record)) {
+    const field = STREAM_LIMIT_FIELDS[key as keyof typeof STREAM_LIMIT_FIELDS];
+    if (!field) throw new TypeError(`managed ${adapterType} stream_limits.${key} is unknown`);
+    if (!Number.isSafeInteger(entry) || (entry as number) < 1)
+      throw new TypeError(`managed ${adapterType} stream_limits.${key} must be a positive integer`);
+    overrides[field] = entry as number;
+  }
+  return { ...resolveStreamLimitPolicy(overrides) };
 }
 
 function readCredentialOptions(

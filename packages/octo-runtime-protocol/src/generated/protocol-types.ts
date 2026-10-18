@@ -18,6 +18,11 @@ export type RunProtocolErrorCode =
   | "INTERACTION_NOT_ACTIVE"
   | "HOST_EXECUTION_FAILED"
   | "HOST_ENDED_WITHOUT_TERMINAL"
+  | "PROVIDER_MESSAGE_TOO_LARGE"
+  | "HOST_FRAME_TOO_LARGE"
+  | "STREAM_QUEUE_ITEM_TOO_LARGE"
+  | "STREAM_QUEUE_BYTES_EXCEEDED"
+  | "STREAM_QUEUE_ITEMS_EXCEEDED"
   | "STREAM_GAP"
   | "STREAM_EXPIRED"
   | "REMOTE_NATIVE_UNSUPPORTED"
@@ -70,6 +75,7 @@ export type HostControl =
       type: "error";
       code: RunProtocolErrorCode;
       message: string;
+      failure?: FailureEnvelope;
     }
   | {
       type: "interaction";

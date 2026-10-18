@@ -316,7 +316,11 @@ export function buildReasoningFrame(
           ]
         }
       ];
-      frame.errorMessage = clampRunes(frame.errorMessage, 121);
+      const identity = snapshot.failure
+        ? `\n错误码：${snapshot.failure.code}\n诊断编号：${snapshot.failure.diagnosticId}`
+        : "";
+      frame.errorMessage =
+        clampRunes(frame.errorMessage, Math.max(1, 121 - Array.from(identity).length)) + identity;
     }
   }
   const thoughtMax = template.ref.version === "0.4.0" ? 4000 : 280;

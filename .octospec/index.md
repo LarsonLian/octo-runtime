@@ -49,6 +49,8 @@
 
 ## 历史与取舍
 
+- [Provider 输出流容量与错误分类专项](tasks/provider-stream-limits/brief.md)：P0，对应 GitHub Issue #21。已按确认方案实现统一容量策略、受信 Adapter 覆盖、精确非重试错误及 Adapter/Host/RPC/重放接线；1.43 MB Provider 消息和 HostFrame 专项回归通过。Channel 的 256 KiB 只约束公开消息文本，工具原始输出不计入，本次不改。当前可执行性 94/100，真实 Provider、并发内存和三平台 CI 仍待验收。
+
 - [PR 1 yujiawei 与 Jerry-Xin 评审整改](tasks/pr1-yujiawei-review/brief.md)：R01/R02 按决策删除无消费者的查群与上传 API，R03 明确同账号 IPC 互信；第一轮修复已提交；[第二轮 R06b/R07](tasks/pr1-yujiawei-review/second-review.md) 分别记录 Codex 回收遗漏（本次已修复并补回归）与共享 workflow 版本建议（已核对公司规范，保留 @v1，已发表评审说明），Windows 真机仍待验收。本地 Node 1104 项与 UI 35 项通过，见[交付记录](journal/shared/2026-10-17-pr1-review-remediation.md)；具体结果见[实施记录](tasks/pr1-yujiawei-review/implementation.md)，历史证据见[评分与同类项](tasks/pr1-yujiawei-review/assessment.md)；第一轮已推送，第二轮 R06b 本地实施，见[Codex 回收验收](journal/shared/2026-10-17-codex-owned-process-cleanup.md)，未合并。
 
 - [群聊明确点名无响应事故](tasks/channel-group-admission/brief.md)：已修正 CLI/SDK 共用准入；groups_enabled 独立启停，group_ids 省略/null/[] 不限制范围、非空限制父群，无旧空名单兼容。11 项定向测试、类型/lint、Node 1074 通过（9 跳过）、UI 35 通过；im-test 的 CLI/SDK 真实 WS 群和话题收发通过。dc73c28 已推送、发行隔离验收和本地全局安装通过；原前台进程待重启，第三方宿主与实际模型尚未验收，不能宣称事故全部恢复；见[实施证据](journal/shared/2026-10-17-channel-group-admission-delivery.md)。

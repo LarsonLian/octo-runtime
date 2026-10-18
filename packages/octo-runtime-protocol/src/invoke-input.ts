@@ -20,6 +20,7 @@ import { assertJsonValue } from "./context.js";
 import { canonicalEvents } from "./run-protocol.js";
 import { assertJsonByteLimit } from "./json-size.js";
 import { INVOKE_REQUEST_MAX_BYTES } from "./invoke-size.js";
+import type { StreamLimitPolicy } from "./stream-limits.js";
 
 /**
  * Public JSON invocation contract shared by CLI, SDK and channels.
@@ -85,6 +86,8 @@ export interface InvokeEnvironment {
   signal?: AbortSignal;
   /** Trusted per-invocation values; forwarded privately across the Host process boundary. */
   executionEnvOverrides?: ContextEnvsPayload;
+  /** Trusted transport and replay budgets; never sourced from caller Context. */
+  streamLimits?: StreamLimitPolicy;
 }
 
 export type InputFrames = (

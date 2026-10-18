@@ -24,14 +24,14 @@ Runtime 接收已准备的请求、校验执行配置、调用 Provider、传递
 
 ## 源流窗口
 
-以 [HostRunService](../../packages/octo-runtime-adapter-host/src/host-run-service.ts) 常量及容量检查为准：
+以中央 `StreamLimitPolicy`、[HostRunService](../../packages/octo-runtime-adapter-host/src/host-run-service.ts) 及容量检查为准：
 
 | 项目 | 当前上限 |
 | --- | --- |
 | Run 数量，含正在接纳的调用 | 128 |
-| 每 Run 帧数 / 序列化大小 | 4096 / 4 MiB |
-| 总帧序列化大小 | 64 MiB |
-| 单帧大小 | 256 KiB |
+| 每 Run 帧数 / 序列化大小 | 4096 / 32 MiB |
+| 总帧序列化大小 | 128 MiB |
+| 单帧大小 | 20 MiB |
 | TTL | 120 秒 |
 | 同时订阅 / 每页帧数 | 16 / 32 |
 
@@ -41,9 +41,11 @@ daemon/Host 重启后旧 stream 不恢复，不自动重放业务请求，不从
 
 ## Provider 接收缓冲
 
-ACP 的每个 session 更新队列、ZCode 的每次客户端事件队列复用 DriverQueue：单项不超过 256 KiB，排队不超过 4096 条，排队序列化总量不超过 4 MiB。任一超过上限即返回 STREAM_BUFFER_OVERFLOW，清空积压并关闭当前传输；不静默丢事件后报告成功，不影响其他客户端。这些是序列化字节及条数上限，不是整个进程的 RSS 上限。
+ACP 的每个 session 更新队列、ZCode 的每次客户端事件队列复用 DriverQueue：默认单项不超过 20 MiB，排队不超过 4096 条，排队序列化总量不超过 32 MiB。单项、累计字节和条数分别返回 `STREAM_QUEUE_ITEM_TOO_LARGE`、`STREAM_QUEUE_BYTES_EXCEEDED`、`STREAM_QUEUE_ITEMS_EXCEEDED`，清空积压并关闭当前传输；不静默丢事件后报告成功，不影响其他客户端。这些是序列化字节及条数上限，不是整个进程的 RSS 上限。
 
-普通协议行在 readline / JSON.parse 前限制为 256 KiB，包括尚未收到换行的数据；超限返回 STREAM_EVENT_TOO_LARGE。ACP 当前 prompt 显式包含原生图片时，原生行按既有 INVOKE_REQUEST_MAX_BYTES（32 MiB）限制，以容纳输入回显；prompt 结束恢复普通上限，事件队列预算始终不变。ZCode 当前不支持图片输入，协议行始终使用普通上限。
+普通协议行在 readline / JSON.parse 前默认限制为 16 MiB，包括尚未收到换行的数据；超限返回 `PROVIDER_MESSAGE_TOO_LARGE`。ACP 当前 prompt 显式包含原生图片时，原生行按既有 `INVOKE_REQUEST_MAX_BYTES`（32 MiB）限制，以容纳输入回显；prompt 结束恢复本 invocation 的有效上限，事件队列预算始终不变。ZCode 当前不支持图片输入，协议行始终使用有效普通上限。
+
+各 Adapter 同类限制继承中央默认值，可由受信 `execution.stream_limits` 显式覆盖；每项硬最大值为默认值两倍，关系矛盾或越界配置直接拒绝，不静默裁剪。策略在 invocation 开始时冻结，不读取 Context、聊天正文或 Provider 参数。全局重放清理采用活跃策略中的最高受信预算，较低覆盖不得淘汰其他 Adapter 已保留的帧。
 
 超限是本次调用的真实失败，清理队列、reader、pending 和受管进程。正常结束时已接纳的终态仍须交给消费者；不能把正常退出等同于容量溢出。具体实现、回归及边界见 [S04 实施记录](../tasks/pr1-yujiawei-review/implementation.md#s04acp--zcode-接收缓冲)。
 

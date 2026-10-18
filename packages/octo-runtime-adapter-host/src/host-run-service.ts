@@ -5,6 +5,11 @@ import {
   identifyInvokeInput,
   assertHostFrameIdentity,
   isHostTerminal,
+  isStreamCapacityReason,
+  resolveStreamLimitPolicy,
+  streamCapacityError,
+  type StreamLimitPolicy,
+  type StreamCapacityReason,
   type HostFrame,
   type HostRunReceipt,
   type InvokeInput,
@@ -30,11 +35,9 @@ interface Run {
   terminal?: HostFrame;
   source: AsyncGenerator<HostFrame>;
   first: HostFrame;
+  streamLimits: Readonly<StreamLimitPolicy>;
 }
-const TTL = 120_000,
-  MAX_RUN_BYTES = 4 << 20,
-  MAX_BYTES = 64 << 20,
-  MAX_EVENTS = 4096;
+const TTL = 120_000;
 
 /** One process-local event authority around the existing adapter-host IPC client. */
 export class HostRunService implements AdapterHostRpc {
@@ -48,7 +51,10 @@ export class HostRunService implements AdapterHostRpc {
   #tasks = new Set<Promise<void>>();
   #starting = new Set<string>();
   readonly #cleanup: NodeJS.Timeout;
-  constructor(readonly transport: AdapterHostRpc) {
+  constructor(
+    readonly transport: AdapterHostRpc,
+    private readonly resolveStreamLimits?: (input: InvokeInput) => InvokeEnvironment["streamLimits"]
+  ) {
     this.#cleanup = setInterval(() => this.#prune(), 10_000);
     this.#cleanup.unref();
   }
@@ -78,13 +84,17 @@ export class HostRunService implements AdapterHostRpc {
     input: ReturnType<typeof identifyInvokeInput>,
     environment: InvokeEnvironment
   ): Promise<Run> {
-    assertInvokeRequestSize(input, environment);
+    const streamLimits = resolveStreamLimitPolicy(
+      this.resolveStreamLimits ? this.resolveStreamLimits(input) : environment.streamLimits
+    );
+    const frozenEnvironment = { ...environment, streamLimits };
+    assertInvokeRequestSize(input, frozenEnvironment);
     this.#prune();
     if (this.#draining) throw new Error("DAEMON_DRAINING");
     if (this.#runs.has(input.runId) || this.#starting.has(input.runId))
       throw new Error("RUN_ALREADY_ACCEPTED");
     if (this.#runs.size + this.#starting.size >= 128) throw new Error("RUN_CAPACITY_EXHAUSTED");
-    const source = this.transport.invokeFrames(input, environment);
+    const source = this.transport.invokeFrames(input, frozenEnvironment);
     this.#starting.add(input.runId);
     let first: HostFrame;
     try {
@@ -128,7 +138,8 @@ export class HostRunService implements AdapterHostRpc {
       next: 1,
       bytes: 0,
       updated: Date.now(),
-      events: []
+      events: [],
+      streamLimits
     };
     this.#runs.set(input.runId, run);
     return run;
@@ -157,7 +168,7 @@ export class HostRunService implements AdapterHostRpc {
           kind: "control",
           control: {
             type: "error",
-            code: "HOST_EXECUTION_FAILED",
+            code: streamErrorCode(error) ?? "HOST_EXECUTION_FAILED",
             message: "Host execution failed"
           }
         });
@@ -201,15 +212,28 @@ export class HostRunService implements AdapterHostRpc {
     // Consumers own persistence and presentation filtering; replay retains the complete event.
     const safe = structuredClone(event),
       bytes = Buffer.byteLength(JSON.stringify(safe));
-    if (bytes > 256 << 10) throw new Error("STREAM_EVENT_TOO_LARGE");
+    if (bytes > run.streamLimits.hostFrameMaxBytes)
+      throw streamCapacityError("HOST_FRAME_TOO_LARGE", {
+        boundary: "host_run.replay_frame",
+        measuredBytes: bytes,
+        limitBytes: run.streamLimits.hostFrameMaxBytes
+      });
     const now = Date.now();
     run.updated = now;
     run.events.push({ seq: run.next++, event: safe, bytes, at: now });
     run.bytes += bytes;
     this.#bytes += bytes;
     if (isHostTerminal(safe)) run.terminal = safe;
-    while (run.bytes > MAX_RUN_BYTES || run.events.length > MAX_EVENTS) this.#drop(run);
-    while (this.#bytes > MAX_BYTES) {
+    while (
+      run.bytes > run.streamLimits.replayRunMaxBytes ||
+      run.events.length > run.streamLimits.replayRunMaxItems
+    )
+      this.#drop(run);
+    // A stricter per-adapter override must not evict replay retained for another active adapter.
+    const globalMaxBytes = Math.max(
+      ...[...this.#runs.values()].map((value) => value.streamLimits.replayGlobalMaxBytes)
+    );
+    while (this.#bytes > globalMaxBytes) {
       const oldest = [...this.#runs.values()]
         .filter((value) => value.events.length)
         .sort((a, b) => a.events[0].at - b.events[0].at)[0];
@@ -331,4 +355,10 @@ export class HostRunService implements AdapterHostRpc {
     this.#runs.clear();
     this.#bytes = 0;
   }
+}
+
+function streamErrorCode(error: unknown): StreamCapacityReason | undefined {
+  if (!error || typeof error !== "object" || !("code" in error)) return undefined;
+  const code = (error as { code?: unknown }).code;
+  return isStreamCapacityReason(code) ? code : undefined;
 }

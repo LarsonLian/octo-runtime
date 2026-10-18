@@ -9,7 +9,10 @@ import {
 } from "@mininglamp-oss/octo-runtime-adapter-sdk";
 import {
   createInputInvoke,
+  HOST_RPC_MAX_LINE_BYTES,
   INVOKE_REQUEST_MAX_BYTES,
+  resolveStreamLimitPolicy,
+  streamCapacityError,
   assertJsonByteLimit,
   type InputFrames,
   type InvokeInput,
@@ -59,23 +62,58 @@ interface Deferred<T> {
 
 /** A single-consumer async queue: producers `push`, one consumer iterates, and `close` ends the stream (optionally with an error). */
 class AsyncQueue<T> implements AsyncIterableIterator<T> {
-  readonly #items: T[] = [];
+  readonly #items: { value: T; bytes: number }[] = [];
   #bytes = 0;
   readonly #waiters: Array<Deferred<IteratorResult<T>>> = [];
   #closed = false;
   #error?: Error;
 
+  constructor(
+    private readonly limits: {
+      itemMaxBytes: number;
+      maxBytes: number;
+      maxItems: number;
+      boundary: string;
+    }
+  ) {}
+
   push(value: T): void {
     if (this.#closed) return;
     const bytes = Buffer.byteLength(JSON.stringify(value));
-    if (bytes > 256 * 1024 || this.#items.length >= 4096 || this.#bytes + bytes > 4 * 1024 * 1024) {
-      this.close(new Error("STREAM_BUFFER_OVERFLOW"));
+    if (bytes > this.limits.itemMaxBytes) {
+      this.close(
+        streamCapacityError("STREAM_QUEUE_ITEM_TOO_LARGE", {
+          boundary: this.limits.boundary,
+          measuredBytes: bytes,
+          limitBytes: this.limits.itemMaxBytes
+        })
+      );
+      return;
+    }
+    if (this.#items.length >= this.limits.maxItems) {
+      this.close(
+        streamCapacityError("STREAM_QUEUE_ITEMS_EXCEEDED", {
+          boundary: this.limits.boundary,
+          itemCount: this.#items.length + 1,
+          limitItems: this.limits.maxItems
+        })
+      );
+      return;
+    }
+    if (this.#bytes + bytes > this.limits.maxBytes) {
+      this.close(
+        streamCapacityError("STREAM_QUEUE_BYTES_EXCEEDED", {
+          boundary: this.limits.boundary,
+          measuredBytes: this.#bytes + bytes,
+          limitBytes: this.limits.maxBytes
+        })
+      );
       return;
     }
     const waiter = this.#waiters.shift();
     if (waiter) waiter.resolve({ value, done: false });
     else {
-      this.#items.push(value);
+      this.#items.push({ value, bytes });
       this.#bytes += bytes;
     }
   }
@@ -91,10 +129,10 @@ class AsyncQueue<T> implements AsyncIterableIterator<T> {
   }
 
   next(): Promise<IteratorResult<T>> {
-    const value = this.#items.shift();
-    if (value !== undefined) {
-      this.#bytes -= Buffer.byteLength(JSON.stringify(value));
-      return Promise.resolve({ value, done: false });
+    const item = this.#items.shift();
+    if (item !== undefined) {
+      this.#bytes -= item.bytes;
+      return Promise.resolve({ value: item.value, done: false });
     }
     if (this.#error) return Promise.reject(this.#error);
     if (this.#closed) return Promise.resolve({ value: undefined, done: true });
@@ -279,7 +317,10 @@ export class AdapterHostRpcServer {
           ...(method === "invoke.with-environment"
             ? {
                 executionEnvOverrides:
-                  params.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"]
+                  params.executionEnvOverrides as InvokeEnvironment["executionEnvOverrides"],
+                streamLimits: resolveStreamLimitPolicy(
+                  params.streamLimits as InvokeEnvironment["streamLimits"]
+                )
               }
             : {})
         });
@@ -363,7 +404,10 @@ export class AdapterHostRpcServer {
       this.#send({
         jsonrpc: "2.0",
         method: "invoke.done",
-        params: { invocationId, error: { message: errorMessage(error) } }
+        params: {
+          invocationId,
+          error: { message: errorMessage(error), ...safeStreamErrorDetails(error) }
+        }
       });
     } finally {
       this.#log(failed ? "error" : "info", "rpc.stream_closed", {
@@ -417,11 +461,31 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
   readonly #invocations = new Map<string, AsyncQueue<HostFrame>>();
   #closedError?: Error;
 
-  constructor({ input, output, trace }: { input: Readable; output: Writable; trace?: RpcTrace }) {
+  constructor({
+    input,
+    output,
+    trace,
+    maximumInputBytes = HOST_RPC_MAX_LINE_BYTES
+  }: {
+    input: Readable;
+    output: Writable;
+    trace?: RpcTrace;
+    maximumInputBytes?: number;
+  }) {
     this.#send = writer(output, trace, (error) => this.close(error));
-    const removeGuard = watchLineLimit(input, 512 * 1024, (error) => {
-      this.close(error);
-      input.destroy(error);
+    const removeGuard = watchLineLimit(input, maximumInputBytes, (error) => {
+      const measuredBytes =
+        "measuredBytes" in error && typeof error.measuredBytes === "number"
+          ? error.measuredBytes
+          : undefined;
+      const failure = streamCapacityError("HOST_FRAME_TOO_LARGE", {
+        boundary: "host.rpc_transport",
+        limitBytes: maximumInputBytes,
+        ...(measuredBytes === undefined ? {} : { measuredBytes })
+      });
+      failure.cause = error;
+      this.close(failure);
+      input.destroy(failure);
     });
     const lines = createInterface({ input });
     lines.once("close", removeGuard);
@@ -452,7 +516,10 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
       const params = message.params ?? {};
       const invocationId = requiredString(params.invocationId, "invocationId");
       const queue = this.#invocations.get(invocationId);
-      const rpcError = isRecord(params.error) ? new Error(errorMessage(params.error)) : undefined;
+      const detail = isRecord(params.error) ? params.error : undefined;
+      const rpcError = detail
+        ? Object.assign(new Error(errorMessage(detail)), safeStreamErrorDetails(detail))
+        : undefined;
       queue?.close(rpcError);
       this.#invocations.delete(invocationId);
       return;
@@ -549,11 +616,17 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
     environment: InvokeEnvironment = {}
   ): AsyncGenerator<HostFrame> {
     const { signal, executionEnvOverrides } = environment;
+    const streamLimits = resolveStreamLimitPolicy(environment.streamLimits);
     const invocationId = input.invocationId ?? randomUUID();
     const wireInput = { ...input, invocationId };
     if (signal?.aborted) throw abortError(signal);
     if (this.#invocations.has(invocationId)) throw new Error("EXECUTION_IDENTITY_CONFLICT");
-    const queue = new AsyncQueue<HostFrame>();
+    const queue = new AsyncQueue<HostFrame>({
+      itemMaxBytes: streamLimits.hostFrameMaxBytes,
+      maxBytes: streamLimits.rpcQueueMaxBytes,
+      maxItems: streamLimits.rpcQueueMaxItems,
+      boundary: "host.rpc_queue"
+    });
     let terminal = false;
     let accepted = false;
     this.#invocations.set(invocationId, queue);
@@ -569,8 +642,14 @@ export class AdapterHostRpcClient implements AdapterHostRpc {
     signal?.addEventListener("abort", onAbort, { once: true });
     try {
       const receipt = await this.request(
-        executionEnvOverrides?.env_variables.length ? "invoke.with-environment" : "invoke",
-        { input: wireInput, ...(executionEnvOverrides ? { executionEnvOverrides } : {}) },
+        executionEnvOverrides?.env_variables.length || environment.streamLimits
+          ? "invoke.with-environment"
+          : "invoke",
+        {
+          input: wireInput,
+          ...(executionEnvOverrides ? { executionEnvOverrides } : {}),
+          ...(environment.streamLimits ? { streamLimits } : {})
+        },
         signal
       );
       assertHostRunReceipt(receipt);
@@ -619,6 +698,20 @@ function asRpcMessage(value: unknown): RpcMessage {
 
 function isRecord(value: unknown): value is JsonRecord {
   return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function safeStreamErrorDetails(value: unknown): JsonRecord {
+  if (!isRecord(value)) return {};
+  const result: JsonRecord = {};
+  if (typeof value.code === "string" && /^[A-Z][A-Z0-9_]{0,127}$/.test(value.code))
+    result.code = value.code;
+  if (typeof value.boundary === "string" && /^[a-z0-9][a-z0-9._-]{0,127}$/i.test(value.boundary))
+    result.boundary = value.boundary;
+  for (const key of ["measuredBytes", "limitBytes", "itemCount", "limitItems"] as const) {
+    const entry = value[key];
+    if (typeof entry === "number" && Number.isSafeInteger(entry) && entry >= 0) result[key] = entry;
+  }
+  return result;
 }
 
 function requiredString(value: unknown, name: string): string {
@@ -671,7 +764,12 @@ function probeOptions(value: unknown): AdapterProbeOptions | undefined {
       Object.values(options.providerOptions).some((v) => typeof v !== "string"))
   )
     throw new TypeError("invalid probe provider options");
-  return options;
+  return {
+    ...options,
+    ...(options.streamLimits === undefined
+      ? {}
+      : { streamLimits: resolveStreamLimitPolicy(options.streamLimits) })
+  };
 }
 function probeConfigurations(value: unknown): Record<string, AdapterProbeOptions> | undefined {
   if (value === undefined) return undefined;

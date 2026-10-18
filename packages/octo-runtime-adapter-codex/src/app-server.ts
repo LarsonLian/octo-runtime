@@ -12,7 +12,10 @@ import {
   INVOKE_REQUEST_MAX_BYTES,
   hasImageInput,
   providerInputParts,
-  PROVIDER_DIAGNOSTIC_MAX_BYTES
+  PROVIDER_DIAGNOSTIC_MAX_BYTES,
+  resolveStreamLimitPolicy,
+  streamCapacityError,
+  type StreamLimitPolicy
 } from "@mininglamp-oss/octo-runtime-protocol";
 import { codexEnvironmentConfig } from "./environment.js";
 import { createProcessCleanup } from "@mininglamp-oss/octo-runtime-adapter-sdk/process-cleanup";
@@ -1181,7 +1184,8 @@ class CodexAppServerClient {
   #closePromise?: Promise<void>;
   readonly #reader: ReadLineInterface;
   readonly #removeLineGuard: () => void;
-  readonly #queue = new DriverQueue<AdapterOutput>();
+  readonly #queue: DriverQueue<AdapterOutput>;
+  readonly #streamLimits: Readonly<StreamLimitPolicy>;
   readonly #normalizer?: CodexEventNormalizer;
   readonly #native: boolean;
   readonly #pending = new Map<RpcId, PendingRequest>();
@@ -1348,6 +1352,11 @@ class CodexAppServerClient {
     readonly invocation: InvokeRequest,
     readonly context?: AdapterInvocationContext
   ) {
+    this.#streamLimits = resolveStreamLimitPolicy(context?.streamLimits);
+    this.#queue = new DriverQueue<AdapterOutput>({
+      limits: this.#streamLimits,
+      boundary: "codex.event_queue"
+    });
     this.#native = context?.protocolMode === "native";
     if (!this.#native) this.#normalizer = new CodexEventNormalizer();
     this.#requestTimeoutMs = requestTimeoutMs;
@@ -1365,7 +1374,9 @@ class CodexAppServerClient {
 
     // The app-server protocol requires one JSON-RPC frame per line; readline handles chunk boundaries.
     const transportLimit =
-      !this.#native && hasImageInput(invocation) ? INVOKE_REQUEST_MAX_BYTES : 256 * 1024;
+      !this.#native && hasImageInput(invocation)
+        ? INVOKE_REQUEST_MAX_BYTES
+        : this.#streamLimits.rawMessageMaxBytes;
     this.#removeLineGuard = watchLineLimit(this.#child.stdout, transportLimit, (error) => {
       this.#reader.close();
       this.#child.stdout.destroy();
@@ -1662,8 +1673,13 @@ class CodexAppServerClient {
   /** Dispatch one stdout frame. Ordering of the checks matters: a response may also lack a method. */
   #handleLine(line: string): void {
     const message = parseRecord(line);
-    if (Buffer.byteLength(line) > 256 * 1024 && !this.#isBoundedInputEcho(message)) {
-      const error = new Error("STREAM_EVENT_TOO_LARGE");
+    const bytes = Buffer.byteLength(line);
+    if (bytes > this.#streamLimits.rawMessageMaxBytes && !this.#isBoundedInputEcho(message)) {
+      const error = streamCapacityError("PROVIDER_MESSAGE_TOO_LARGE", {
+        boundary: "codex.stdout",
+        measuredBytes: bytes,
+        limitBytes: this.#streamLimits.rawMessageMaxBytes
+      });
       this.#rejectPending(error);
       this.#queue.fail(error);
       signalProcessTree(this.#child, "SIGTERM");
@@ -1772,7 +1788,11 @@ class CodexAppServerClient {
       return value;
     };
     try {
-      assertJsonByteLimit(withoutEcho(message), 256 * 1024, "STREAM_EVENT_TOO_LARGE");
+      assertJsonByteLimit(
+        withoutEcho(message),
+        this.#streamLimits.rawMessageMaxBytes,
+        "PROVIDER_MESSAGE_TOO_LARGE"
+      );
       return matched;
     } catch {
       return false;

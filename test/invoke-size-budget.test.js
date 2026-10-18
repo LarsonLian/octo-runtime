@@ -9,7 +9,8 @@ import {
 } from "../packages/octo-runtime-adapter-host/dist/index.js";
 import {
   INVOKE_REQUEST_MAX_BYTES,
-  assertInvokeRequestSize
+  assertInvokeRequestSize,
+  resolveStreamLimitPolicy
 } from "../packages/octo-runtime-protocol/dist/index.js";
 import { readBoundedLines } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
 import { invokeDaemonRun } from "../packages/octo-runtime-daemon/dist/runtime/run-stream.js";
@@ -204,8 +205,14 @@ test("unterminated oversized record has a finite discard timeout", async () => {
 test("oversized response errors are handled by both input and readline", async () => {
   const input = new PassThrough(),
     output = new PassThrough();
-  const client = new AdapterHostRpcClient({ input, output });
-  const rejected = assert.rejects(client.request("list"), /STREAM_EVENT_TOO_LARGE/);
+  const client = new AdapterHostRpcClient({ input, output, maximumInputBytes: 512 * 1024 });
+  const rejected = assert.rejects(client.request("list"), (error) => {
+    assert.match(error.message, /HOST_FRAME_TOO_LARGE/);
+    assert.equal(error.boundary, "host.rpc_transport");
+    assert.equal(error.measuredBytes, 512 * 1024 + 1);
+    assert.equal(error.limitBytes, 512 * 1024);
+    return true;
+  });
   input.write("x".repeat(512 * 1024 + 1));
   await rejected;
   input.destroy();
@@ -251,9 +258,12 @@ test("Codex canonical accepts bounded image echoes and excludes hydrated resume 
       invokeRequest({
         modelInputParts: [{ type: "text", text: "oversized-other-content" }, image]
       }),
-      { protocolMode: "canonical" }
+      {
+        protocolMode: "canonical",
+        streamLimits: resolveStreamLimitPolicy({ rawMessageMaxBytes: 256 * 1024 })
+      }
     )
   );
   assert.equal(invalid.at(-1).type, "run.failed");
-  assert.match(invalid.at(-1).payload.message, /STREAM_EVENT_TOO_LARGE/);
+  assert.match(invalid.at(-1).payload.message, /PROVIDER_MESSAGE_TOO_LARGE/);
 });

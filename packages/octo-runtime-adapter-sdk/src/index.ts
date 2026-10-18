@@ -15,13 +15,15 @@ export { invocationMcpServers, expandMcpValue, assertMcpOptions } from "./mcp.js
 export { actmodeEvidence } from "./actmode.js";
 
 import {
+  DEFAULT_STREAM_LIMIT_POLICY,
   isTerminal,
   assertProtocolSupport,
   type CanonicalEvent,
   type AdapterProtocolSupport,
   type HostControl,
   type NativeHostFrame,
-  type InvokeRequest
+  type InvokeRequest,
+  type StreamLimitPolicy
 } from "@mininglamp-oss/octo-runtime-protocol";
 
 export {
@@ -78,6 +80,7 @@ export interface AdapterMetadata {
 /** Trusted local connection settings; never sourced from model Context. */
 export interface AdapterProbeOptions {
   providerOptions?: Record<string, string>;
+  streamLimits?: StreamLimitPolicy;
 }
 
 export interface ProbeResult {
@@ -127,6 +130,7 @@ interface SpawnJsonLinesOptions<TNative> extends CommandSpec {
   controlHandler?: (event: TNative, write: (response: unknown) => Promise<void>) => Promise<void>;
   endInputWhen?: (event: TNative) => boolean;
   onSpawn?: (close: () => Promise<void>) => void;
+  rawMessageMaxBytes?: number;
 }
 
 interface ProcessExit {
@@ -241,12 +245,17 @@ export async function* spawnJsonLines<TNative>(
   // would incorrectly classify a synchronous write failure as dispatched.
   let controlError: Error | undefined;
   const reader = createInterface({ input: child.stdout });
-  const removeLineGuard = watchLineLimit(child.stdout, 256 * 1024, (error) => {
-    controlError ??= error;
-    reader.close();
-    child.stdout.destroy();
-    abort();
-  });
+  const removeLineGuard = watchLineLimit(
+    child.stdout,
+    options.rawMessageMaxBytes ?? DEFAULT_STREAM_LIMIT_POLICY.rawMessageMaxBytes,
+    (error) => {
+      Object.assign(error, { boundary: "provider.stdout" });
+      controlError ??= error;
+      reader.close();
+      child.stdout.destroy();
+      abort();
+    }
+  );
   const handlers = new Set<Promise<void>>();
   child.stdin.on("error", (error) => {
     controlError ??= error;
@@ -334,7 +343,10 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
   return defineAdapter({
     metadata,
     ...(probe ? { probe } : {}),
-    async *invoke(request: InvokeRequest): AsyncGenerator<CanonicalEvent> {
+    async *invoke(
+      request: InvokeRequest,
+      context?: AdapterInvocationContext
+    ): AsyncGenerator<CanonicalEvent> {
       const spec = await buildCommand(request);
       let terminal = false;
       try {
@@ -348,6 +360,7 @@ export function createJsonCliAdapter<TNative = Record<string, unknown>>(
           cwd: spec.cwd ?? request.workdir,
           env: invocationEnvironment(request, spec.env),
           signal: request.signal,
+          rawMessageMaxBytes: context?.streamLimits?.rawMessageMaxBytes,
           parseLine: parseJsonLine as (line: string) => TNative | null
         })) {
           const events = normalize(native, request) ?? [];
