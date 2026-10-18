@@ -80,7 +80,7 @@
     "@mininglamp-oss/octo-runtime-cross-service": "workspace:*",
     "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
     "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
-    "ws": "^8.18.3",
+    "ws": "^8.22.0",
     "@mininglamp-oss/octo-runtime-extra-channel-wecom": "workspace:*"
   },
   "devDependencies": {
