@@ -34,7 +34,7 @@
     "remark-gfm": "^4.0.1",
     "clsx": "^2.1.1",
     "shell-quote": "^1.8.3",
-    "eventsource-parser": "^3.1.1",
+    "eventsource-parser": "^4.1.2",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",
     "@types/shell-quote": "^1.7.5",
