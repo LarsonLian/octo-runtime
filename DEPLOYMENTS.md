@@ -74,6 +74,10 @@ node scripts/verify-release.mjs ./dist/release/mininglamp-oss-octo-runtime-1.0.0
 
 本地命令只用于验证，不用于正式上传。正式发布在最新 `main` 提交上创建并推送 `vX.Y.Z` annotated tag；GitHub Actions 校验 tag、重新构建并验证 commit 后，先交付不可变 npm 版本和对应 GitHub Release，再把两端 latest 收敛到已完整交付的最高稳定版。并发 tag 或历史版本恢复不会回退 `@latest`。不要修改源码清单版本，也不要直接 npm publish 或 pnpm publish workspace 根目录。
 
+版本命令和根帮助中的 `build:<UTC ISO 8601>` 表示产物构建时间，不是提交、安装或上次升级时间；旧产物没有有效时间时显示 `build:unknown`。打包及安装不重写 `apps/cli/dist/build-info.json`。
+
+正式发布会捕获一次 UTC 构建会话时间，经 `OCTO_RUNTIME_BUILD_TIME` 传给所有平台及重复构建。恢复已发布版本时，流程先下载 npm 原始 archive，验证 SHA512、来源 commit 与 clean 状态，再复用其中的时间；最终仍要求重新打包的完整 integrity 与已发布版本完全一致，否则停止，不覆盖也不跳过完整性检查。旧版本没有时间字段时保持旧构建逻辑；尚未发布成功的版本可创建新构建会话时间。手工复验应保留原 archive；需要重建时，只能使用其中的原始构建时间，不能把 commit/tag 日期或任意时间当成构建时间。
+
 使用者安装：
 
 ```bash

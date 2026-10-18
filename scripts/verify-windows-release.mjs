@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
+import { readReleaseBuildInfo } from "./read-release-build-info.mjs";
 
 const execute = promisify(execFile);
 const diagnosticLimit = 4_000;
@@ -149,9 +150,27 @@ export async function verifyWindowsRelease(archiveInput, expectedCommit) {
     );
     assert.equal(build.commit, expectedCommit);
     assert.equal(build.dirty, false);
+    assert.match(build.buildTime, /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+    assert.equal(new Date(build.buildTime).toISOString(), build.buildTime);
+    const archivedBuild = readReleaseBuildInfo(archive);
+    assert.deepEqual(build, archivedBuild);
 
     const command = join(directory, "octo-runtime.cmd");
     const daemonCommand = join(directory, "octo-runtime-daemon.cmd");
+    const versionInfo = `${metadata.version}\ncommit:${build.commit.slice(0, 12)}\nbuild:${build.buildTime}`;
+    for (const args of [["--version"], ["-v"], ["version"]]) {
+      assert.equal(
+        (await execute(command, args, { cwd: directory, shell: true })).stdout.trim(),
+        versionInfo
+      );
+    }
+    for (const args of [[], ["--help"], ["-h"], ["help"]]) {
+      assert.ok(
+        (await execute(command, args, { cwd: directory, shell: true })).stdout.includes(
+          `\nbuild:${build.buildTime}\n`
+        )
+      );
+    }
     assert.match(
       (await execute(command, ["--help"], { cwd: directory, shell: true })).stdout,
       /Octo Runtime CLI/

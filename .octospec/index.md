@@ -49,6 +49,8 @@
 
 ## 历史与取舍
 
+- [CLI UTC 构建时间](journal/shared/2026-10-18-cli-build-timestamp.md)：版本及根帮助显示产物时间；兼容旧 metadata，发行恢复复用经过校验的原始时间并保留完整 integrity 门禁。
+
 - [Provider 输出流容量与错误分类专项](tasks/provider-stream-limits/brief.md)：P0，对应 GitHub Issue #21。已按确认方案实现统一容量策略、受信 Adapter 覆盖、精确非重试错误及 Adapter/Host/RPC/重放接线；1.43 MB Provider 消息和 HostFrame 专项回归通过。Channel 的 256 KiB 只约束公开消息文本，工具原始输出不计入，本次不改。当前可执行性 94/100，真实 Provider、并发内存和三平台 CI 仍待验收。
 
 - [PR 1 yujiawei 与 Jerry-Xin 评审整改](tasks/pr1-yujiawei-review/brief.md)：R01/R02 按决策删除无消费者的查群与上传 API，R03 明确同账号 IPC 互信；第一轮修复已提交；[第二轮 R06b/R07](tasks/pr1-yujiawei-review/second-review.md) 分别记录 Codex 回收遗漏（本次已修复并补回归）与共享 workflow 版本建议（已核对公司规范，保留 @v1，已发表评审说明），Windows 真机仍待验收。本地 Node 1104 项与 UI 35 项通过，见[交付记录](journal/shared/2026-10-17-pr1-review-remediation.md)；具体结果见[实施记录](tasks/pr1-yujiawei-review/implementation.md)，历史证据见[评分与同类项](tasks/pr1-yujiawei-review/assessment.md)；第一轮已推送，第二轮 R06b 本地实施，见[Codex 回收验收](journal/shared/2026-10-17-codex-owned-process-cleanup.md)，未合并。

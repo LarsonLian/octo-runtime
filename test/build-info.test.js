@@ -12,8 +12,16 @@ test("build metadata records source commit and dirty state; absent Git stays unk
   const root = await mkdtemp(join(tmpdir(), "octo-build-info-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const build = async () => {
-    execFileSync(process.execPath, [script, root]);
-    return JSON.parse(await readFile(join(root, "apps/cli/dist/build-info.json"), "utf8"));
+    const before = Date.now();
+    execFileSync(process.execPath, [script, root], {
+      env: { ...process.env, OCTO_RUNTIME_BUILD_TIME: "" }
+    });
+    const { buildTime, ...source } = JSON.parse(
+      await readFile(join(root, "apps/cli/dist/build-info.json"), "utf8")
+    );
+    assert.equal(new Date(buildTime).toISOString(), buildTime);
+    assert.ok(Date.parse(buildTime) >= before && Date.parse(buildTime) <= Date.now());
+    return source;
   };
   assert.deepEqual(await build(), { commit: null, dirty: null });
   await writeFile(join(root, ".gitignore"), "apps/cli/dist/\n");
@@ -51,4 +59,33 @@ test("build metadata records source commit and dirty state; absent Git stays unk
   const nextCommit = git(["rev-parse", "HEAD"]);
   assert.notEqual(nextCommit, commit);
   assert.deepEqual(await build(), { commit: nextCommit, dirty: false });
+});
+
+test("release rebuilds preserve an explicit build timestamp and reject invalid overrides", async (t) => {
+  const root = await mkdtemp(join(tmpdir(), "octo-build-time-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const buildTime = "2026-10-18T12:34:56.789Z";
+  for (const timezone of ["Pacific/Honolulu", "Asia/Shanghai"]) {
+    execFileSync(process.execPath, [script, root], {
+      env: { ...process.env, TZ: timezone, OCTO_RUNTIME_BUILD_TIME: buildTime }
+    });
+    assert.deepEqual(
+      JSON.parse(await readFile(join(root, "apps/cli/dist/build-info.json"), "utf8")),
+      {
+        commit: null,
+        dirty: null,
+        buildTime
+      }
+    );
+  }
+  for (const invalid of ["invalid", "2026-02-30T12:34:56.789Z", "2026-10-18T12:34:56+08:00"]) {
+    assert.throws(
+      () =>
+        execFileSync(process.execPath, [script, root], {
+          env: { ...process.env, OCTO_RUNTIME_BUILD_TIME: invalid },
+          stdio: "pipe"
+        }),
+      /UTC timestamp/
+    );
+  }
 });

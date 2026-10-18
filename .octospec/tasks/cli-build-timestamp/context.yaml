@@ -1,0 +1,16 @@
+rules:
+  - runtime-architecture
+  - runtime-lifecycle
+  - runtime-engineering
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/cli-build-commit/brief.md
+decisions:
+  - 只读构建元数据，不改变业务或运行时生命周期。
+  - 同版本恢复复用已发布时间，但保留完整发行物 integrity 门禁。

@@ -313,6 +313,10 @@ test("workflow 将不可变发布、Release 修复和共享 promotion 分离", a
   assert.doesNotMatch(npmWorkflow, /npm publish[^\n]+--tag latest/);
   assert.match(npmWorkflow, /dist\.integrity --json/);
   assert.match(npmWorkflow, /registry_integrity=.*jq -er/);
+  assert.match(npmWorkflow, /node scripts\/resolve-release-build-time\.mjs "\$VERSION" "\$SHA"/);
+  assert.match(npmWorkflow, /build_time: \$\{\{ needs\.validate\.outputs\.build_time \}\}/);
+  const ciWorkflow = await readFile(resolve(root, ".github/workflows/ci.yml"), "utf8");
+  assert.match(ciWorkflow, /OCTO_RUNTIME_BUILD_TIME: \$\{\{ inputs\.build_time \|\| '' \}\}/);
   assert.match(releaseWorkflow, /'octo-runtime-latest-promotion'/);
   assert.match(releaseWorkflow, /octo-runtime-latest-dry-run-/);
   assert.doesNotMatch(publishReleaseJob, /concurrency:/);

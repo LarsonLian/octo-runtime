@@ -34,6 +34,7 @@ jobs:
     outputs:
       sha: ${{ steps.release.outputs.sha }}
       version: ${{ steps.release.outputs.version }}
+      build_time: ${{ steps.build-time.outputs.build_time }}
     steps:
       - name: Validate tag format
         env:
@@ -75,6 +76,15 @@ jobs:
           VERSION=${TAG#v}
           echo "sha=$SHA" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "24"
+      - name: Resolve immutable build timestamp
+        id: build-time
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          SHA: ${{ steps.release.outputs.sha }}
+        run: node scripts/resolve-release-build-time.mjs "$VERSION" "$SHA"
 
   verify:
     needs: validate
@@ -82,6 +92,7 @@ jobs:
     with:
       ref: ${{ needs.validate.outputs.sha }}
       release_version: ${{ needs.validate.outputs.version }}
+      build_time: ${{ needs.validate.outputs.build_time }}
     permissions:
       contents: read
 

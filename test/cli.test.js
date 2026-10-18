@@ -132,6 +132,7 @@ test("CLI help, version and removed commands never initialize Home or start a da
   const version = JSON.parse(await readFile(join(root, "package.json"), "utf8")).version;
   const build = JSON.parse(await readFile(join(root, "apps/cli/dist/build-info.json"), "utf8"));
   const commit = `commit:${build.commit?.slice(0, 12) ?? "unknown"}${build.dirty ? " (dirty)" : ""}`;
+  const buildTime = `build:${build.buildTime}`;
   const run = (args) =>
     execute(process.execPath, [cli, "--home", home, ...args], { timeout: 5000, cwd: directory });
   try {
@@ -139,6 +140,7 @@ test("CLI help, version and removed commands never initialize Home or start a da
       const { stdout, stderr } = await run(args);
       assert.ok(stdout.startsWith(`Octo Runtime CLI (${version})\n`));
       assert.ok(stdout.includes(`\n${commit}\n`));
+      assert.ok(stdout.includes(`\n${buildTime}\n`));
       assert.match(stdout, /Manage the local Agent runtime/);
       assert.match(stdout, /Usage:\n/);
       assert.match(stdout, /Flags:\n/);
@@ -148,7 +150,7 @@ test("CLI help, version and removed commands never initialize Home or start a da
       assert.match(list, /\n  playboard\s+[^\n]+$/);
     }
     for (const args of [["--version"], ["-v"], ["version"]]) {
-      assert.equal((await run(args)).stdout.trim(), `${version}\n${commit}`);
+      assert.equal((await run(args)).stdout.trim(), `${version}\n${commit}\n${buildTime}`);
     }
     const daemon = (await run(["daemon"])).stdout;
     assert.equal(daemon, (await run(["daemon", "--help"])).stdout);

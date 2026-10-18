@@ -6,16 +6,26 @@ const releasePackage = JSON.parse(
   readFileSync(new URL("../../../package.json", import.meta.url), "utf8")
 ) as { version: string };
 export const cliVersion = releasePackage.version;
-let buildInfo: { commit: string | null; dirty: boolean | null } = { commit: null, dirty: null };
+let buildInfo: { commit?: unknown; dirty?: unknown; buildTime?: unknown } = {};
 try {
-  buildInfo = JSON.parse(
+  const metadata: unknown = JSON.parse(
     readFileSync(new URL("./build-info.json", import.meta.url), "utf8")
-  ) as typeof buildInfo;
+  );
+  if (metadata !== null && typeof metadata === "object") buildInfo = metadata;
 } catch (error) {
-  if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+  if (!(error instanceof SyntaxError) && (error as NodeJS.ErrnoException).code !== "ENOENT")
+    throw error;
 }
-const cliCommitInfo = `commit:${buildInfo.commit?.slice(0, 12) ?? "unknown"}${buildInfo.dirty ? " (dirty)" : ""}`;
-export const cliVersionInfo = `${cliVersion}\n${cliCommitInfo}`;
+const cliCommitInfo = `commit:${typeof buildInfo.commit === "string" ? buildInfo.commit.slice(0, 12) : "unknown"}${buildInfo.dirty === true ? " (dirty)" : ""}`;
+const buildTime = buildInfo.buildTime;
+const validBuildTime =
+  typeof buildTime === "string" &&
+  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(buildTime) &&
+  Number.isFinite(Date.parse(buildTime)) &&
+  new Date(buildTime).toISOString() ===
+    (buildTime.includes(".") ? buildTime : buildTime.replace("Z", ".000Z"));
+const cliBuildInfo = `build:${validBuildTime ? buildTime : "unknown"}`;
+export const cliVersionInfo = `${cliVersion}\n${cliCommitInfo}\n${cliBuildInfo}`;
 
 interface Command {
   description: string;
@@ -131,7 +141,7 @@ export function helpText(path: string[] = []): string {
   const command = commandAt(path);
   const invocation = ["octo-runtime", ...path].join(" ");
   const sections = [
-    ...(path.length ? [] : [`Octo Runtime CLI (${cliVersion})\n${cliCommitInfo}`]),
+    ...(path.length ? [] : [`Octo Runtime CLI (${cliVersion})\n${cliCommitInfo}\n${cliBuildInfo}`]),
     command.description,
     ...(command.details ? [command.details] : []),
     `Usage:\n  ${invocation}${command.children ? " [command]" : command.usage ? ` ${command.usage}` : ""} [flags]`,

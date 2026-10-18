@@ -17,6 +17,14 @@ on:
         type: string
         required: false
         default: ""
+      build_time:
+        description: Original UTC artifact build timestamp for release verification and recovery
+        type: string
+        required: false
+        default: ""
+
+env:
+  OCTO_RUNTIME_BUILD_TIME: ${{ inputs.build_time || '' }}
 
 permissions:
   contents: read
