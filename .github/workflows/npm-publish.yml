@@ -1,4 +1,4 @@
-name: npm Publish
+name: Package Publish
 
 on:
   workflow_call:
@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       dry_run:
-        description: 仅验证发布，不上传 npm
+        description: 仅验证发布，不上传任何 registry
         required: false
         type: boolean
         default: false
@@ -31,6 +31,7 @@ jobs:
     timeout-minutes: 5
     permissions:
       contents: read
+      packages: read
     outputs:
       sha: ${{ steps.release.outputs.sha }}
       version: ${{ steps.release.outputs.version }}
@@ -84,6 +85,7 @@ jobs:
         env:
           VERSION: ${{ steps.release.outputs.version }}
           SHA: ${{ steps.release.outputs.sha }}
+          GH_PACKAGES_TOKEN: ${{ github.token }}
         run: node scripts/resolve-release-build-time.mjs "$VERSION" "$SHA"
 
   verify:
@@ -99,85 +101,69 @@ jobs:
   publish:
     needs: [validate, verify]
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - registry: npm
+            url: https://registry.npmjs.org
+            provenance: "true"
+          - registry: github-packages
+            url: https://npm.pkg.github.com
+            provenance: "false"
     concurrency:
-      group: octo-runtime-npm-publish-${{ inputs.tag }}
+      group: octo-runtime-package-publish-${{ matrix.registry }}-${{ inputs.tag }}
       cancel-in-progress: false
     permissions:
       contents: read
+      packages: write
       id-token: write
+    env:
+      NODE_AUTH_TOKEN: ${{ matrix.registry == 'github-packages' && github.token || secrets.NPM_TOKEN }}
+      REGISTRY: ${{ matrix.url }}
+      VERSION: ${{ needs.validate.outputs.version }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: "24"
-          registry-url: https://registry.npmjs.org
+          registry-url: ${{ matrix.url }}
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: octo-runtime-release
           path: release
       - name: Check registry version
         id: registry
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
-          package='@mininglamp-oss/octo-runtime'
-          archive="release/mininglamp-oss-octo-runtime-$VERSION.tgz"
-          test -f "$archive"
-          local_integrity=$(node -e '
-            const { createHash } = require("node:crypto");
-            const { readFileSync } = require("node:fs");
-            process.stdout.write("sha512-" + createHash("sha512").update(readFileSync(process.argv[1])).digest("base64"));
-          ' "$archive")
-          set +e
-          output=$(npm view "$package@$VERSION" dist.integrity --json 2>&1)
-          status=$?
-          set -e
-          if [ "$status" -eq 0 ]; then
-            registry_integrity=$(printf '%s' "$output" | jq -er \
-              'if type == "string" then . else error("expected registry integrity string") end')
-            if [ "$registry_integrity" != "$local_integrity" ]; then
-              echo "::error::$package@$VERSION exists with different tarball integrity"
-              exit 1
-            fi
-            echo "exists=true" >> "$GITHUB_OUTPUT"
-            echo "$package@$VERSION already contains this verified archive; immutable npm version will not be overwritten."
-          elif printf '%s' "$output" | grep -Eiq 'E404|404 Not Found|is not in this registry'; then
-            echo "exists=false" >> "$GITHUB_OUTPUT"
-          else
-            printf '%s\n' "$output" >&2
-            exit "$status"
-          fi
+          node scripts/check-release-registry.mjs \
+            "./release/mininglamp-oss-octo-runtime-$VERSION.tgz" "$VERSION" "$REGISTRY"
       - name: Publish verified archive
         if: steps.registry.outputs.exists != 'true'
         env:
-          VERSION: ${{ needs.validate.outputs.version }}
           DRY_RUN: ${{ inputs.dry_run }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          PROVENANCE: ${{ matrix.provenance }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           ARCHIVE="./release/mininglamp-oss-octo-runtime-$VERSION.tgz"
           test -f "$ARCHIVE"
           if [ "$DRY_RUN" = true ]; then
-            npm publish "$ARCHIVE" --access public --tag "release-$VERSION" --provenance --dry-run
+            npm publish "$ARCHIVE" --registry "$REGISTRY" --access public --tag "release-$VERSION" --ignore-scripts --provenance="$PROVENANCE" --dry-run
           else
-            test -n "$NODE_AUTH_TOKEN" || {
+            if [ "$REGISTRY" = https://registry.npmjs.org ] && [ -z "$NPM_TOKEN" ]; then
               echo "::error::NPM_TOKEN is required for a production npm publish"
               exit 1
-            }
-            npm publish "$ARCHIVE" --access public --tag "release-$VERSION" --provenance
+            fi
+            npm publish "$ARCHIVE" --registry "$REGISTRY" --access public --tag "release-$VERSION" --ignore-scripts --provenance="$PROVENANCE"
           fi
       - name: Verify published registry version
         if: inputs.dry_run == false
-        env:
-          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
-          for attempt in 1 2 3 4 5 6; do
-            if [ "$(npm view @mininglamp-oss/octo-runtime@"$VERSION" version 2>/dev/null || true)" = "$VERSION" ]; then
-              exit 0
-            fi
-            sleep $((attempt * 5))
-          done
-          echo "::error::Published npm version $VERSION is not visible"
-          exit 1
+          node scripts/check-release-registry.mjs \
+            "./release/mininglamp-oss-octo-runtime-$VERSION.tgz" "$VERSION" "$REGISTRY" --wait

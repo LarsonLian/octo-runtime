@@ -3,7 +3,7 @@ type: Rule
 title: Runtime 开发与验证约定
 description: TypeScript、协议生成、进程通信与验证证据的维护要求。
 tags: [typescript, protocol, testing, integration]
-timestamp: 2026-10-18T00:00:00Z
+timestamp: 2026-10-19T00:00:00Z
 id: runtime-engineering
 tier: repo
 priority: 80
@@ -38,5 +38,16 @@ supersedes: []
 - 修改 Run / Context 协议后，同步构建 Worker、Runtime 和桌面应用，重启受影响的本地进程，验证内置运行时注册及执行。仅完成全局链接不算重启验证。
 - UI 或真实桌面接口变更，还须通过 CDP 驱动真实 renderer，对着线上测试环境验证；具体方法遵循生态根目录的开发约束。
 - 凭据从受保护配置读取，不进入知识文件、模型上下文、日志、截图或提交。Provider workdir 不代表操作系统安全隔离。
+
+## 稳定版双 registry 交付
+
+- 源码保持 `0.0.0`；稳定 annotated tag `vX.Y.Z` 注入发行版本。完整 CI 验证的同一份 tgz
+  直接发布到 npmjs 与 GitHub Packages，并作为 GitHub Release 附件，不走 stage/审批转正。
+- npm 使用 `NPM_TOKEN` 与 provenance；GitHub Packages 使用仓库 `GITHUB_TOKEN` 和
+  `packages: write`，不请求 npm provenance。组织权限与 package 可见性不由 workflow 擅自修改。
+- 任一 registry 的已有版本都必须匹配完整 SHA-512；恢复时验证并复用任一已发布归档的源码
+  commit、clean 标记和构建时间。鉴权或网络错误不得当作缺包，上传后的可读性检查必须有界。
+- 两个 registry 的版本专属 dist-tag 不等于预发布流程。只有两个 registry 内容相同且 Release
+  资产字节一致的稳定版本可推进共享 latest；三端已有 latest 都是不可回退的下界。dry-run 零远端写入。
 
 架构与协议版本的约束以 [基础架构](architecture.md) 为准。本文件是开发要求，不表示上述所有链路在本次变更中均已验证。

@@ -1,0 +1,29 @@
+baseline: 6fee2e1828587c26c97d185a60590d956ee10192
+rules:
+  - runtime-architecture
+  - runtime-engineering
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .octospec/tasks/release-latest-consistency/brief.md
+  - .octospec/tasks/single-npm-release/brief.md
+  - .github/CI.md
+  - .github/workflows/npm-publish.yml
+  - .github/workflows/release-publish.yml
+  - scripts/resolve-release-build-time.mjs
+  - scripts/reconcile-release-latest.mjs
+  - test/release-manifest.test.js
+  - test/release-latest.test.js
+  - test/release-build-time.test.js
+references:
+  - https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry
+decisions:
+  - 使用最新 main 的独立 worktree，不修改主工作区现有本地发布任务。
+  - npm 与 GitHub Packages 指向两个不同 registry，不将 GitHub Release 附件冒充 GitHub Packages。
+  - 保留稳定 tag、源码占位、完整矩阵、归档完整性和 latest 单调合同。
+  - 暂存冲突保持显式失败，不调用 stage 子命令或绕过服务端扫描和审批。

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import test from "node:test";
 import {
@@ -16,7 +17,8 @@ function fixture(initial = {}) {
   const state = {
     completeVersions: [...(initial.completeVersions ?? [])],
     npmLatest: initial.npmLatest ?? null,
-    githubLatest: initial.githubLatest ?? null
+    githubLatest: initial.githubLatest ?? null,
+    ...("packagesLatest" in initial ? { packagesLatest: initial.packagesLatest } : {})
   };
   const actions = [];
   return {
@@ -29,6 +31,10 @@ function fixture(initial = {}) {
       async setNpmLatest(version) {
         actions.push(["npm", version]);
         state.npmLatest = version;
+      },
+      async setPackagesLatest(version) {
+        actions.push(["github-packages", version]);
+        state.packagesLatest = version;
       },
       async setGitHubLatest(version) {
         actions.push(["github", version]);
@@ -311,8 +317,8 @@ test("workflow 将不可变发布、Release 修复和共享 promotion 分离", a
     .split("\n  publish-release:")[1];
   assert.match(npmWorkflow, /--tag "release-\$VERSION"/);
   assert.doesNotMatch(npmWorkflow, /npm publish[^\n]+--tag latest/);
-  assert.match(npmWorkflow, /dist\.integrity --json/);
-  assert.match(npmWorkflow, /registry_integrity=.*jq -er/);
+  assert.match(npmWorkflow, /node scripts\/check-release-registry\.mjs/);
+  assert.match(npmWorkflow, /"\$REGISTRY" --wait/);
   assert.match(npmWorkflow, /node scripts\/resolve-release-build-time\.mjs "\$VERSION" "\$SHA"/);
   assert.match(npmWorkflow, /build_time: \$\{\{ needs\.validate\.outputs\.build_time \}\}/);
   const ciWorkflow = await readFile(resolve(root, ".github/workflows/ci.yml"), "utf8");
@@ -323,6 +329,100 @@ test("workflow 将不可变发布、Release 修复和共享 promotion 分离", a
   assert.match(releaseWorkflow, /node scripts\/reconcile-release-latest\.mjs/);
   assert.match(releaseWorkflow, /--dry-run --candidate "\$VERSION"/);
   assert.doesNotMatch(releaseWorkflow, /release edit "\$TAG"[^\n]+--latest=false/);
+});
+
+test("three latest pointers converge and a higher GitHub Packages pointer prevents downgrade", async () => {
+  const current = fixture({
+    completeVersions: ["1.2.0"],
+    npmLatest: "1.0.0",
+    githubLatest: "1.1.0",
+    packagesLatest: null
+  });
+  const preview = await reconcileLatest(current.client, { dryRun: true });
+  assert.ok(preview.actions.some(([registry]) => registry === "github-packages"));
+  assert.deepEqual(current.actions, []);
+  assert.equal((await reconcileLatest(current.client)).target, "1.2.0");
+  assert.equal(current.state.packagesLatest, "1.2.0");
+  current.state.packagesLatest = "1.3.0";
+  current.actions.length = 0;
+  await assert.rejects(reconcileLatest(current.client, { maxAttempts: 1 }), /拒绝.*回退/);
+  assert.deepEqual(current.actions, []);
+});
+
+test("dual-registry coordinator intersects versions and verifies archive integrity before promotion", async () => {
+  const calls = [];
+  let mismatch = false;
+  let invalidIntegrity;
+  let corruptRelease = false;
+  const client = createCommandClient({
+    packageName: "@mininglamp-oss/octo-runtime",
+    repository: "Mininglamp-OSS/octo-runtime",
+    githubPackages: true,
+    runCommand: async (command, arguments_) => {
+      calls.push([command, ...arguments_]);
+      const packages = arguments_.includes("--registry=https://npm.pkg.github.com");
+      if (command === "npm") {
+        if (arguments_[0] === "dist-tag") return "";
+        if (arguments_[2] === "versions")
+          return JSON.stringify(packages ? ["1.1.0"] : ["1.1.0", "1.2.0"]);
+        if (arguments_[2] === "version") return JSON.stringify("0.0.0-stage");
+        if (arguments_[2] === "dist.integrity")
+          return JSON.stringify(
+            invalidIntegrity ??
+              `sha512-${createHash("sha512")
+                .update(packages && mismatch ? "other" : "same")
+                .digest("base64")}`
+          );
+      }
+      if (command === "gh" && arguments_[1] === "download") {
+        await writeFile(
+          resolve(
+            arguments_[arguments_.indexOf("--dir") + 1],
+            arguments_[arguments_.indexOf("--pattern") + 1]
+          ),
+          corruptRelease ? "" : "same"
+        );
+        return "";
+      }
+      if (command === "gh" && arguments_[1] === "list")
+        return JSON.stringify(
+          ["1.1.0", "1.2.0"].map((version) => ({
+            tagName: `v${version}`,
+            isDraft: false,
+            isPrerelease: false,
+            isLatest: false
+          }))
+        );
+      if (command === "gh" && arguments_[1] === "view")
+        return JSON.stringify({
+          assets: [{ name: `mininglamp-oss-octo-runtime-${arguments_[2].slice(1)}.tgz` }]
+        });
+      throw new Error(`Unexpected command ${command} ${arguments_.join(" ")}`);
+    }
+  });
+  assert.deepEqual(await client.readState(), {
+    completeVersions: ["1.1.0"],
+    npmLatest: null,
+    githubLatest: null,
+    packagesLatest: null
+  });
+  await client.setPackagesLatest("1.1.0");
+  assert.ok(
+    calls.some(
+      (call) => call.includes("dist-tag") && call.includes("--registry=https://npm.pkg.github.com")
+    )
+  );
+  assert.ok(!calls.some((call) => call.includes("v1.2.0") && call.includes("view")));
+  mismatch = true;
+  await assert.rejects(client.readState(), /integrity mismatch/);
+  mismatch = false;
+  for (const invalid of ["", "sha1-same", "sha512-short"]) {
+    invalidIntegrity = invalid;
+    await assert.rejects(client.readState(), /Invalid registry integrity/);
+  }
+  invalidIntegrity = undefined;
+  corruptRelease = true;
+  await assert.rejects(client.readState(), /GitHub Release archive integrity mismatch/);
 });
 
 test("Windows 发行验收通过 taskkill 回收全局 daemon shim 的进程树", async () => {

@@ -95,3 +95,104 @@ test("archive metadata extraction avoids interpreting drive letters or parent-pa
   execFileSync("tar", ["-czf", "release.tgz", "package"], { cwd: directory });
   assert.deepEqual(readReleaseBuildInfo(join(directory, "release.tgz")), build);
 });
+
+test("GitHub-only recovery reuses immutable build metadata without sending its token to npm or foreign hosts", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "octo-packages-recovery-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const dist = join(directory, "package/apps/cli/dist");
+  await mkdir(dist, { recursive: true });
+  await writeFile(
+    join(dist, "build-info.json"),
+    JSON.stringify({ commit, dirty: false, buildTime })
+  );
+  execFileSync("tar", ["-czf", "package.tgz", "package"], { cwd: directory });
+  const archive = await readFile(join(directory, "package.tgz"));
+  const metadata = {
+    name: "@mininglamp-oss/octo-runtime",
+    version: "1.0.1",
+    dist: {
+      tarball: "https://npm.pkg.github.com/package.tgz",
+      integrity: `sha512-${createHash("sha512").update(archive).digest("base64")}`
+    }
+  };
+  const calls = [];
+  const request = async (url, options) => {
+    calls.push(String(url));
+    if (String(url).startsWith("https://registry.npmjs.org/")) {
+      assert.equal(options, undefined);
+      return new Response(null, { status: 404 });
+    }
+    assert.ok(String(url).startsWith("https://npm.pkg.github.com/"));
+    assert.equal(options.headers.authorization, "Bearer fixture-token");
+    if (String(url).endsWith(".tgz")) return new Response(archive);
+    assert.equal(String(url), "https://npm.pkg.github.com/@mininglamp-oss%2focto-runtime");
+    return Response.json({ name: metadata.name, versions: { "1.0.1": metadata } });
+  };
+  assert.equal(
+    await resolveReleaseBuildTime("1.0.1", commit, request, {
+      githubPackagesToken: "fixture-token"
+    }),
+    buildTime
+  );
+  assert.equal(calls.length, 3);
+  metadata.dist.tarball = "https://example.invalid/package.tgz";
+  await assert.rejects(
+    resolveReleaseBuildTime("1.0.1", commit, request, {
+      githubPackagesToken: "fixture-token"
+    }),
+    /archive origin/
+  );
+  await assert.rejects(
+    resolveReleaseBuildTime(
+      "1.0.1",
+      commit,
+      async (url) =>
+        new Response(null, { status: String(url).includes("registry.npmjs.org") ? 404 : 403 }),
+      {
+        githubPackagesToken: "fixture-token"
+      }
+    ),
+    /Registry lookup failed/
+  );
+  const before = Date.now();
+  const timestamp = await resolveReleaseBuildTime(
+    "1.0.1",
+    commit,
+    async (url) =>
+      String(url).includes("registry.npmjs.org")
+        ? new Response(null, { status: 404 })
+        : Response.json({ name: metadata.name, versions: { "1.0.0": metadata } }),
+    {
+      githubPackagesToken: "fixture-token"
+    }
+  );
+  assert.ok(Date.parse(timestamp) >= before);
+});
+
+test("malformed GitHub packuments never become synthetic missing versions or new build times", async () => {
+  const name = "@mininglamp-oss/octo-runtime";
+  for (const metadata of [
+    null,
+    {},
+    { name, versions: [] },
+    { name, versions: "invalid" },
+    { name, versions: { "1.0.1": null } },
+    { name, versions: { "1.0.1": "invalid" } },
+    { name: "other", versions: {} }
+  ]) {
+    await assert.rejects(
+      resolveReleaseBuildTime(
+        "1.0.1",
+        commit,
+        async (url) =>
+          String(url).includes("registry.npmjs.org")
+            ? new Response(null, { status: 404 })
+            : Response.json(metadata),
+        {
+          githubPackagesToken: "fixture-token"
+        }
+      ),
+      /Invalid GitHub Packages/
+    );
+  }
+});
