@@ -166,14 +166,33 @@ export class WukongConnection {
   #lastPacket = Date.now();
   #closed = false;
   #ready = false;
-  #sends = new Map<number, { operation: ImTextSend; key: string }>();
+  #sends = new Map<
+    number,
+    {
+      operation: ImTextSend;
+      key: string;
+      channelId: string;
+      channelType: number;
+      spaceId?: string;
+      onPosition?: (sequence: number) => void;
+    }
+  >();
   #active = new Set<ImTextSend>();
   #confirmed = new Set<string>();
   #retained = new Map<ImTextSend, NodeJS.Timeout>();
   #abort = new AbortController();
   constructor(
     readonly onMessage: (message: ImMessage) => void,
-    readonly onDisconnect: (error: Error) => void = () => {}
+    readonly onDisconnect: (error: Error) => void = () => {},
+    readonly onPosition?: (position: {
+      channelId: string;
+      channelType: number;
+      messageSeq: number;
+      fromUid: string;
+      messageId: string;
+      clientMsgNo: string;
+      spaceId?: unknown;
+    }) => void
   ) {}
   get connected(): boolean {
     return this.#ready && this.#socket?.readyState === WebSocket.OPEN;
@@ -314,11 +333,12 @@ export class WukongConnection {
             else if (kind === 4) {
               const id = reader.u64().toString();
               const seq = reader.u32();
-              reader.u32();
+              const messageSeq = reader.u32();
               const reason = reader.byte();
               const pending = this.#sends.get(seq);
               if (pending) {
                 if (reason === 1) {
+                  pending.onPosition?.(messageSeq);
                   this.#confirmed.add(pending.key);
                   if (this.#confirmed.size > 512)
                     this.#confirmed.delete(this.#confirmed.values().next().value!);
@@ -374,6 +394,25 @@ export class WukongConnection {
     const payload = JSON.parse(plain.toString()) as Record<string, unknown>;
     if (!payload || typeof payload !== "object" || Array.isArray(payload))
       throw new Error("IM_PAYLOAD_INVALID");
+    if (fromUid === ownUid) {
+      const pending = [...this.#sends.values()].find(
+        (entry) =>
+          entry.key === clientNo &&
+          entry.channelId === channelId &&
+          entry.channelType === channelType &&
+          (!payload.space_id || payload.space_id === entry.spaceId)
+      );
+      pending?.onPosition?.(messageSeq);
+    }
+    this.onPosition?.({
+      channelId,
+      channelType,
+      messageSeq,
+      fromUid,
+      messageId: messageId.toString(),
+      clientMsgNo: clientNo,
+      spaceId: payload.space_id
+    });
     if (fromUid !== ownUid)
       this.onMessage({
         messageId: messageId.toString(),
@@ -394,7 +433,8 @@ export class WukongConnection {
     clientMsgNo: string = randomUUID(),
     spaceId?: string,
     mention?: ImTextMention,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    onPosition?: (sequence: number) => void
   ): Promise<string> {
     if (this.#socket?.readyState !== WebSocket.OPEN || !this.#key)
       return Promise.reject(new ImSendError("IM_NOT_READY", "failed"));
@@ -428,7 +468,14 @@ export class WukongConnection {
         body
           .string(md5(this.#encrypt(`${seq}${clientMsgNo}${channelId}${channelType}${encrypted}`)))
           .bytes(Buffer.from(encrypted));
-        this.#sends.set(seq, { operation, key: clientMsgNo });
+        this.#sends.set(seq, {
+          operation,
+          key: clientMsgNo,
+          channelId,
+          channelType,
+          spaceId,
+          onPosition
+        });
         this.#socket!.send(frame(3, body.finish(), 2), (error) => {
           if (error) operation.disconnected();
         });

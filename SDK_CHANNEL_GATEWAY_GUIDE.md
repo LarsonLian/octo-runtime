@@ -606,3 +606,9 @@ await runtime.stop("quit");
 逐轮加载保证**本轮请求取得最新 Context**。普通业务 Context 按当轮材料交给模型；`octo.control/instructions` 则走可信控制通道，当前按 Provider 新会话初始化合同应用，正常续聊不重复注入。更新宿主提示词不等于已有 Provider 会话已接受新 system 指令，Channel 不因此自动 reset。
 
 产品要求新系统指令实际生效时，由业务方显式新建/reset Provider 会话，再让下一轮读取新指令；这不要求重载 Gateway 或重启 daemon。会话内替换 system 的支持范围须逐 Provider 核实，不能把动态取值成功当作原生 Provider 应用成功。实际合同见 [Context 输入规则](.octospec/rules/context-input.md#系统指令的会话时机与协议变更)。
+
+### 7.7 群与话题续聊的历史缺口
+
+同一Provider session不表示模型看过未 @ 它的讨论。Gateway只观察授权群/话题的位置，不因普通讨论执行任务或新增本地聊天库；再次被 @ 时，模型前固定输入准备直接调用现有TypeScript API层的`getChannelMessagePage`，将正文放入`extra.im/history`，将加载状态放入`extra.im/history-gap`。不委托模型调用CLI，不分类“总结”等关键词，独立问题也遵循相同的有缺口才补取策略。Host和Adapter仍只消费本轮快照。
+
+未知基线与冷启动共用最近最多15条的上限，已知缺口为min(15,跨度)；本轮冷/续聊合并为最多一次sync API、10秒、1 MiB响应，禁用429自动重试和分页，代码再按冻结范围过滤、去重并截至15条/1500 Unicode码点。较早记录、非文本或截断使材料不全时明确标注；失败不换身份或频道、不自动启动CLI补救，不阻断当前任务。材料被最终预算移除时改为omitted，不声称已提供；失败或省略保留待补边界。reset、重启及淘汰不恢复旧游标，同代次重试不重新采集；自定义session store未实现可选原子metadata patch时只能按unknown处理。模型额外业务工具调用仍使用宿主提供的octo-cli，与此流程无关。当前本地实现及尚未完成的线上验收见[实施记录](.octospec/tasks/channel-context-gap/implementation.md)。

@@ -15,6 +15,7 @@ import {
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { ImBotConfig, ImInboundMessage, ImSession } from "../contracts.js";
 import { validateImConfig } from "../lifecycle/configuration.js";
+import { compactHistoryGap, historyGapContext } from "../application/context-gap.js";
 
 export type ImInvocationInput = InvokeInput & {
   runId: string;
@@ -103,7 +104,13 @@ export function createImInvocation(
   let submitted = context;
   let snapshot: ContextEnvelope | undefined;
   // 执行默认项也占协议预算；只降级本渠道自动追加的辅助材料，不丢弃显式业务项。
-  for (const optional of ["history", "mention-instructions", undefined]) {
+  for (const optional of [
+    "history",
+    "history-gap-compact",
+    "mention-instructions",
+    "history-gap",
+    undefined
+  ]) {
     try {
       snapshot = mergeContext(defaults, submitted);
       break;
@@ -112,15 +119,75 @@ export function createImInvocation(
         throw error;
       submitted = {
         ...submitted,
-        items: submitted.items.filter(
-          (item) =>
-            !(
-              item.namespace === "extra.im" &&
-              item.name === optional &&
-              item.payload.automatic === true
-            )
-        )
+        items:
+          optional === "history-gap-compact"
+            ? submitted.items.flatMap((item) => {
+                if (
+                  item.namespace !== "extra.im" ||
+                  item.name !== "history-gap" ||
+                  item.payload.automatic !== true
+                )
+                  return [item];
+                const compact = compactHistoryGap(item);
+                return compact ? [compact] : [];
+              })
+            : submitted.items.filter(
+                (item) =>
+                  !(
+                    item.namespace === "extra.im" &&
+                    item.name === optional &&
+                    item.payload.automatic === true
+                  )
+              )
       };
+      if (optional === "history") {
+        const history = context.items.find(
+          (item) =>
+            item.namespace === "extra.im" &&
+            item.name === "history" &&
+            item.payload.automatic === true
+        );
+        const source = history?.payload.source as Record<string, unknown> | undefined;
+        if (
+          source &&
+          [2, 5].includes(Number(source.channelType)) &&
+          !submitted.items.some(
+            (item) =>
+              item.namespace === "extra.im" &&
+              item.name === "history-gap" &&
+              item.payload.automatic !== true
+          )
+        ) {
+          const existing = submitted.items.find(
+            (item) => item.namespace === "extra.im" && item.name === "history-gap"
+          );
+          const replacement = existing
+            ? {
+                ...existing,
+                payload: {
+                  ...existing.payload,
+                  status: "omitted",
+                  materialProvided: false,
+                  reason: "context-budget"
+                }
+              }
+            : historyGapContext(source, message.messageId, {
+                mode: "unavailable",
+                beforeSeq: Number(history!.payload.upperMessageSeq),
+                retrieval: "omitted",
+                reason: "context-budget"
+              });
+          submitted.items = submitted.items.filter(
+            (item) =>
+              !(
+                item.namespace === "extra.im" &&
+                item.name === "history-gap" &&
+                item.payload.automatic === true
+              )
+          );
+          if (replacement) submitted.items.push(replacement);
+        }
+      }
     }
   }
   if (!snapshot) throw new Error("IM_EXECUTION_CONFIG_INVALID");

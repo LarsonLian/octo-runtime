@@ -1,6 +1,7 @@
 import type { ImInvocationInput } from "../execution/dispatcher.js";
 import type { ProviderSession } from "@mininglamp-oss/octo-runtime-protocol";
 import type { ImTaskAttempt } from "../contracts.js";
+import type { ImGapMetadata, ImGapTurnToken } from "./context-gap.js";
 
 export interface ImSessionOccurrence {
   text: string;
@@ -16,6 +17,7 @@ export interface ImSessionBinding {
   lastEventId?: string;
   lastRunId?: string;
   initialContextPrepared?: boolean;
+  gap?: ImGapMetadata;
 }
 export interface ImSessionStore {
   read(key: string): ImSessionBinding | undefined;
@@ -23,6 +25,11 @@ export interface ImSessionStore {
   reset(key: string, controlId: string): ImSessionBinding;
   occurrence(key: string, id: string): ImSessionOccurrence | undefined;
   remember(key: string, id: string, value: ImSessionOccurrence): void;
+  patchGap?(
+    key: string,
+    identity: Pick<ImGapTurnToken, "sessionId" | "generation">,
+    update: (current: ImGapMetadata | undefined) => ImGapMetadata
+  ): boolean;
   close?(): void;
 }
 
@@ -58,6 +65,20 @@ class BoundedEntries<T> {
     const now = Date.now();
     for (const [key, entry] of this.#entries) if (entry.expires <= now) this.#delete(key);
   }
+  /** 同步合并最新条目；观察不续TTL、不改变淘汰顺序，超预算拒绝辅助patch而不淘汰其他binding。 */
+  patch(key: string, update: (value: T) => T | undefined): boolean {
+    this.prune();
+    const entry = this.#entries.get(key);
+    if (!entry) return false;
+    const value = update(structuredClone(entry.value));
+    if (!value) return false;
+    const bytes = Buffer.byteLength(key) + Buffer.byteLength(JSON.stringify(value));
+    if (bytes > this.bytes || this.#bytes - entry.bytes + bytes > this.bytes) return false;
+    this.#bytes += bytes - entry.bytes;
+    entry.value = structuredClone(value);
+    entry.bytes = bytes;
+    return true;
+  }
   #delete(key: string): void {
     const previous = this.#entries.get(key);
     if (previous) this.#bytes -= previous.bytes;
@@ -85,7 +106,28 @@ export class MemoryImSessionStore implements ImSessionStore {
     return this.#bindings.get(key);
   }
   save(key: string, value: ImSessionBinding): void {
+    if (
+      value.gap &&
+      Buffer.byteLength(key) + Buffer.byteLength(JSON.stringify(value)) > this.#bindings.bytes
+    ) {
+      value = { ...value };
+      delete value.gap;
+    }
     this.#bindings.set(key, value);
+  }
+  patchGap(
+    key: string,
+    identity: Pick<ImGapTurnToken, "sessionId" | "generation">,
+    update: (current: ImGapMetadata | undefined) => ImGapMetadata
+  ): boolean {
+    return this.#bindings.patch(key, (binding) => {
+      if (binding.id !== identity.sessionId || binding.generation !== identity.generation)
+        return undefined;
+      const previous = binding.gap;
+      binding.gap = update(previous);
+      binding.gap.revision = (previous?.revision ?? 0) + 1;
+      return binding;
+    });
   }
   reset(key: string, id: string): ImSessionBinding {
     const controlKey = JSON.stringify([key, id]);

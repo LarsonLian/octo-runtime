@@ -14,6 +14,15 @@ import type {
   ProviderSession
 } from "@mininglamp-oss/octo-runtime-protocol";
 import type { RunPresentation } from "./presentation/run-projector.js";
+import type { ImGapPlan, ImGapTurnToken } from "./application/context-gap.js";
+
+export interface ImPositionObservation {
+  conversationId: string;
+  conversationKind: "group" | "thread";
+  messageSeq: number;
+  own?: boolean;
+  turn?: ImGapTurnToken;
+}
 
 export interface ImAdapterConfig {
   adapter_type?: string;
@@ -60,6 +69,9 @@ export type ScopedOctoBotConfig = OctoBotConfig & { spaceId: string };
 
 /** 平台归一化后的单条消息。平台回调身份与正文保留在 connector 的闭包内。 */
 export interface ImInboundMessage {
+  position?: { messageSeq: number };
+  historyRetry?: boolean;
+  bindHistoryTurn?(token: ImGapTurnToken): void;
   markRead?(signal: AbortSignal): Promise<void>;
   messageId: string;
   senderId: string;
@@ -83,6 +95,8 @@ export interface ImInboundMessage {
       initialSession: boolean;
       mentionGuidance?: boolean;
       configuredItems?: readonly ContextItem[];
+      historyGap?: ImGapPlan;
+      onHistoryGapPrepared?(plan: ImGapPlan): void;
     }
   ): Promise<ContextEnvelope>;
   executionEnvironment?(): InvokeEnvironment;
@@ -116,6 +130,7 @@ export interface ImTaskAttempt {
 }
 
 export interface ChannelCallbacks {
+  onPosition?(position: ImPositionObservation): void;
   authorizeSpace?: (spaceId: string) => void;
   onMessage(message: ImInboundMessage): void;
   onDisconnect(code: string, retryable?: boolean): void;

@@ -17,6 +17,7 @@ import type {
   ImConnectionState,
   ImSession,
   ImInboundMessage,
+  ImPositionObservation,
   ImRunControls,
   ImPresentation
 } from "../contracts.js";
@@ -30,8 +31,16 @@ import { ImRunProjector } from "../presentation/run-projector.js";
 import { deliveryNotice } from "../presentation/delivery-notice.js";
 import { MemoryImSessionStore, type ImSessionStore } from "./session-store.js";
 import { connectionFailure, ImConnectionError } from "../transport/connection-error.js";
+import {
+  commitHistoryGap,
+  gapMetadata,
+  planHistoryGap,
+  validMessageSeq,
+  type ImGapPlan
+} from "./context-gap.js";
 
 export class ImRuntime {
+  readonly #processEpoch = randomUUID();
   readonly #preparing = new Map<string, AbortController>();
   readonly config: ImBotConfig;
   #connector?: GatewayTransport;
@@ -162,6 +171,9 @@ export class ImRuntime {
       this.dependencies.credentials ?? ((config) => Promise.resolve(config.bf_token));
     const connector = new GatewayTransport(this.config, credentials, {
       authorizeSpace: this.dependencies.authorizeSpace,
+      onPosition: (position) => {
+        if (connector === this.#connector && !signal.aborted) this.#observePosition(position);
+      },
       onMessage: (message) => {
         if (connector === this.#connector && !signal.aborted) this.#receive(message);
       },
@@ -275,7 +287,7 @@ export class ImRuntime {
       /* 诊断不改变业务结果。 */
     }
   }
-  #key(message: ImInboundMessage): string {
+  #key(message: Pick<ImInboundMessage, "conversationKind" | "conversationId">): string {
     return [
       this.#connector!.identity,
       imBotIdentity(this.config),
@@ -285,6 +297,38 @@ export class ImRuntime {
     ]
       .map(encodeURIComponent)
       .join("/");
+  }
+  #observePosition(position: ImPositionObservation): void {
+    if (this.#closed || !validMessageSeq(position.messageSeq)) return;
+    const key = this.#key(position);
+    try {
+      const binding = this.#sessionStore.read(key);
+      if (!binding?.id || !this.#sessionStore.patchGap) return;
+      if (
+        position.own &&
+        (!position.turn ||
+          position.turn.processEpoch !== this.#processEpoch ||
+          position.turn.sessionId !== binding.id ||
+          position.turn.generation !== binding.generation)
+      )
+        return;
+      this.#sessionStore.patchGap(
+        key,
+        { sessionId: binding.id, generation: binding.generation },
+        (previous) => {
+          const next = gapMetadata(this.#processEpoch, previous);
+          next.latestObservedSeq = Math.max(next.latestObservedSeq ?? 0, position.messageSeq);
+          next.observationVisibility = "partial";
+          if (position.own)
+            next.localOutputSeqs = [...new Set([...next.localOutputSeqs, position.messageSeq])]
+              .sort((left, right) => left - right)
+              .slice(-32);
+          return next;
+        }
+      );
+    } catch {
+      this.#diagnostic("IM_HISTORY_POSITION_UNAVAILABLE");
+    }
   }
   #receive(message: ImInboundMessage): void {
     if (
@@ -401,8 +445,29 @@ export class ImRuntime {
       cancel: async () =>
         this.#tasks.get(key)?.rootInvocationId === invocationId &&
         (await this.#tasks.get(key)!.task.cancel("IM card stop")),
-      retry: (senderId: string, id: string): boolean =>
-        controls.failed && this.#enqueue({ ...message, senderId }, key, id)
+      retry: (senderId: string, id: string): boolean => {
+        if (!controls.failed) return false;
+        if (!message.position) return this.#enqueue({ ...message, senderId }, key, id);
+        const saved = this.#sessionStore.occurrence(key, message.messageId)?.snapshot;
+        if (!saved) return false;
+        const binding = this.#sessionStore.read(key);
+        if (saved.sessionId !== binding?.id || saved.sessionGeneration !== binding.generation)
+          return this.#enqueue({ ...message, senderId }, key, id);
+        const images = saved.inputs.filter((part) => part.type === "image");
+        return this.#enqueue(
+          {
+            ...message,
+            senderId,
+            historyRetry: true,
+            buildContext: () => Promise.resolve(structuredClone(saved.contexts)),
+            ...(images.length
+              ? { buildInputs: () => Promise.resolve(structuredClone(images)) }
+              : {})
+          },
+          key,
+          id
+        );
+      }
     };
     return controls;
   }
@@ -447,10 +512,14 @@ export class ImRuntime {
         session.id = binding.id;
       }
       const executionSession = { ...session };
+      const frozenMessage = {
+        ...message,
+        ...(message.position ? { position: { ...message.position } } : {})
+      };
       this.#queuedOccurrences.add(queuedKey);
       if (session.pending++ === 0) this.#working++;
       session.tail = session.tail
-        .then(() => this.#turn(message, key, session, occurrenceId, executionSession))
+        .then(() => this.#turn(frozenMessage, key, session, occurrenceId, executionSession))
         .catch(() => this.#diagnostic("IM_TURN_FAILED"))
         .finally(() => {
           this.#queuedOccurrences.delete(queuedKey);
@@ -638,6 +707,8 @@ export class ImRuntime {
     this.#preparing.set(key, preparation);
     const turnSignal = AbortSignal.any([this.#signal, preparation.signal]);
     let prepared: ReturnType<typeof createImInvocation>;
+    let gapPlan: ImGapPlan = { mode: "none" };
+    let failureAfterSeq: number | null = null;
     // Octospec F05: .octospec/tasks/gateway-august-feature-assessment/assessment.md
     // 仅普通任务开始时回执；通知失败不阻断 Context 准备和模型执行。
     if (message.markRead)
@@ -653,24 +724,70 @@ export class ImRuntime {
       const initialSession = !initialization.attempted;
       initialization.attempted = true;
       if (session.id === executionSession.id) this.#saveBinding(key, session);
+      const binding = this.#sessionStore.read(key);
+      const gapEnabled =
+        message.conversationKind !== "direct" &&
+        message.position !== undefined &&
+        !message.historyRetry;
+      if (gapEnabled) {
+        gapPlan = planHistoryGap(
+          message.position?.messageSeq,
+          binding &&
+            binding.id === executionSession.id &&
+            binding.generation === executionSession.generation
+            ? binding.gap
+            : undefined,
+          this.#processEpoch,
+          typeof this.#sessionStore.patchGap === "function"
+        );
+        message.bindHistoryTurn?.({
+          sessionId: executionSession.id!,
+          generation: executionSession.generation,
+          processEpoch: this.#processEpoch
+        });
+      }
+      const context = await message.buildContext(turnSignal, {
+        configuredItems: message.historyRetry
+          ? undefined
+          : await this.dependencies.prepareContexts?.(
+              this.config as unknown as JsonObject,
+              turnSignal
+            ),
+        initialSession,
+        mentionGuidance: initialSession || !executionSession.providerSession,
+        ...(gapEnabled
+          ? {
+              historyGap: gapPlan,
+              onHistoryGapPrepared: (plan: ImGapPlan) => {
+                gapPlan = plan;
+              }
+            }
+          : {})
+      });
+      if (gapEnabled) failureAfterSeq = gapPlan.afterSeq ?? null;
       // 资格先占用再异步读取；同代次队列共享标记，重试只使用本轮冻结快照。
       prepared = createImInvocation(
         this.config,
         message,
-        await message.buildContext(turnSignal, {
-          // 每个已准入的逻辑轮只加载一次；下面的 Provider 重试复用快照，不重复调用宿主 IO。
-          configuredItems: await this.dependencies.prepareContexts?.(
-            this.config as unknown as JsonObject,
-            turnSignal
-          ),
-          initialSession,
-          mentionGuidance: initialSession || !executionSession.providerSession
-        }),
+        context,
         key,
         executionSession,
         turnSignal,
         occurrenceId
       );
+      if (
+        gapEnabled &&
+        context.items.some(
+          (item) =>
+            item.namespace === "extra.im" &&
+            item.name === "history" &&
+            item.payload.automatic === true
+        ) &&
+        !prepared.request.contexts.items.some(
+          (item) => item.namespace === "extra.im" && item.name === "history"
+        )
+      )
+        gapPlan = { ...gapPlan, retrieval: "omitted" };
       if (message.buildInputs) {
         if (prepared.adapterType !== "codex")
           throw new ImImageInputError("本期仅 Codex 支持独立图片输入，当前引擎不支持。");
@@ -724,6 +841,7 @@ export class ImRuntime {
     const startedAt = performance.now();
     let presentationSeq = 0;
     let projector = new ImRunProjector(rootRunId, message.conversationKind === "direct");
+    let handedOff = false;
     const task = new ImTask(
       this.dependencies.host,
       request,
@@ -731,6 +849,31 @@ export class ImRuntime {
       this.config,
       { ...environment, signal: this.#signal },
       (attempt) => {
+        if (
+          !handedOff &&
+          message.position &&
+          message.conversationKind !== "direct" &&
+          !message.historyRetry
+        ) {
+          handedOff = true;
+          try {
+            this.#sessionStore.patchGap?.(
+              key,
+              { sessionId: executionSession.id!, generation: executionSession.generation },
+              (previous) =>
+                commitHistoryGap(
+                  gapMetadata(this.#processEpoch, previous),
+                  message.position?.messageSeq,
+                  gapPlan,
+                  attempt.contexts.items.find(
+                    (item) => item.namespace === "extra.im" && item.name === "history"
+                  )
+                )
+            );
+          } catch {
+            this.#diagnostic("IM_HISTORY_POSITION_UNAVAILABLE");
+          }
+        }
         for (const [id, entry] of this.#interactions)
           if (entry.invocationId === request.invocationId) this.#interactions.delete(id);
         request = attempt;
@@ -764,6 +907,21 @@ export class ImRuntime {
         if (event.type === "session.update" && session.id === request.sessionId) {
           session.providerSession = event.payload.providerSession;
           this.#saveBinding(key, session);
+          if (event.payload.providerSession?.resumeOutcome === "fresh_fallback") {
+            try {
+              this.#sessionStore.patchGap?.(
+                key,
+                { sessionId: request.sessionId, generation: executionSession.generation },
+                (previous) => ({
+                  ...gapMetadata(this.#processEpoch, previous),
+                  continuityUnknown: true,
+                  pendingAfterSeq: null
+                })
+              );
+            } catch {
+              this.#diagnostic("IM_HISTORY_POSITION_UNAVAILABLE");
+            }
+          }
         }
         // 只有执行策略与事件策略均为 full_access 的审批才是自动处理的审计记录。
         // 问题/elicitation 仍须展示并交回原交互入口，不能一并过滤。
@@ -857,6 +1015,24 @@ export class ImRuntime {
         presentation?.update({ ...snapshot(), resultUnknown: true });
       }
     } finally {
+      if (handedOff && projector.snapshot().terminal !== "completed") {
+        try {
+          this.#sessionStore.patchGap?.(
+            key,
+            { sessionId: executionSession.id!, generation: executionSession.generation },
+            (previous) => {
+              const next = gapMetadata(this.#processEpoch, previous);
+              next.pendingAfterSeq =
+                next.pendingAfterSeq === null || failureAfterSeq === null
+                  ? null
+                  : Math.min(next.pendingAfterSeq ?? failureAfterSeq, failureAfterSeq);
+              return next;
+            }
+          );
+        } catch {
+          this.#diagnostic("IM_HISTORY_POSITION_UNAVAILABLE");
+        }
+      }
       if (task.stopReason) this.#diagnostic(task.stopReason, rootRunId);
       this.#log("agent_run.finished", {
         run_id: rootRunId,
@@ -900,13 +1076,20 @@ export class ImRuntime {
     );
   }
   #saveBinding(key: string, session: ImSession): void {
+    const binding = this.#sessionStore.read(key);
     this.#sessionStore.save(key, {
       id: session.id,
       generation: session.generation,
       providerSession: session.providerSession,
       lastEventId: session.lastEventId,
       lastRunId: session.lastRunId,
-      initialContextPrepared: session.initialization?.attempted === true
+      initialContextPrepared: session.initialization?.attempted === true,
+      ...(binding &&
+      binding.id === session.id &&
+      binding.generation === session.generation &&
+      binding.gap
+        ? { gap: binding.gap }
+        : {})
     });
   }
   close(): Promise<void> {

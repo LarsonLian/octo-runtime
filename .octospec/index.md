@@ -49,6 +49,8 @@
 
 ## 历史与取舍
 
+- [群/话题续聊上下文缺口（Issue #32）](tasks/channel-context-gap/brief.md)：服务端位置、有界binding、模型前固定API准备最近最多15条；不委托模型CLI补历史，包含逐文件改动、29项验收及91/100可执行性评分；部署合同及真实Provider联验待验。
+
 - [CLI UTC 构建时间](journal/shared/2026-10-18-cli-build-timestamp.md)：版本及根帮助显示产物时间；兼容旧 metadata，发行恢复复用经过校验的原始时间并保留完整 integrity 门禁。
 
 - [Provider 输出流容量与错误分类专项](tasks/provider-stream-limits/brief.md)：P0，对应 GitHub Issue #21。已按确认方案实现统一容量策略、受信 Adapter 覆盖、精确非重试错误及 Adapter/Host/RPC/重放接线；1.43 MB Provider 消息和 HostFrame 专项回归通过。Channel 的 256 KiB 只约束公开消息文本，工具原始输出不计入，本次不改。当前可执行性 94/100，真实 Provider、并发内存和三平台 CI 仍待验收。

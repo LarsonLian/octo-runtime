@@ -30,6 +30,8 @@ import { connectionFailure, ImConnectionError } from "./connection-error.js";
 import { sendReadReceipt } from "./api/messages.js";
 import { deliveryNoticeCard } from "../presentation/delivery-notice.js";
 import { ImSendError } from "../delivery/text-send.js";
+import type { ImGapTurnToken } from "../application/context-gap.js";
+import { observesImScope } from "./normalize.js";
 
 /** Octo IM 平台连接器：WuKong 与 Octo REST 适配；不是 MCP 连接器。 */
 export class GatewayTransport {
@@ -58,6 +60,7 @@ export class GatewayTransport {
       controls: ImRunControls;
       expires: number;
       active: boolean;
+      turn?: ImGapTurnToken;
       interactions: Map<string, { request: InteractionRequestedPayload; messageId: string }>;
     }
   >();
@@ -92,8 +95,32 @@ export class GatewayTransport {
         if (this.#closed || !acceptsImMessage(this.scopedConfig, registration.owner_uid, message))
           return;
         let finalReply: { key: string; value: ReturnType<typeof prepareFinalMention> } | undefined;
+        let historyTurn: ImGapTurnToken | undefined;
+        const outputObserver = () => {
+          const turn = historyTurn;
+          if (!turn || !observesImScope(this.scopedConfig, message.channelId, message.channelType))
+            return undefined;
+          return (messageSeq: number) => {
+            if (this.#closed || signal.aborted) return;
+            this.callbacks.onPosition?.({
+              conversationId: message.channelId,
+              conversationKind: message.channelType === 5 ? "thread" : "group",
+              messageSeq,
+              own: true,
+              turn
+            });
+          };
+        };
         this.callbacks.onMessage({
           messageId: message.messageId,
+          ...(message.channelType === 2 || message.channelType === 5
+            ? {
+                position: { messageSeq: message.messageSeq },
+                bindHistoryTurn: (turn: ImGapTurnToken) => {
+                  historyTurn = structuredClone(turn);
+                }
+              }
+            : {}),
           markRead: (turnSignal) =>
             sendReadReceipt({
               apiUrl: this.config.api_url,
@@ -198,7 +225,10 @@ export class GatewayTransport {
               message.channelType,
               text,
               key,
-              this.#spaceId
+              this.#spaceId,
+              undefined,
+              undefined,
+              outputObserver()
             );
           },
           replyFinal: async (text, effectKey) => {
@@ -232,7 +262,9 @@ export class GatewayTransport {
               result.text,
               stableEffectKey(this.identity, message, effectKey, "text"),
               this.#spaceId,
-              result.mention
+              result.mention,
+              undefined,
+              outputObserver()
             );
           },
           buildContext: async (turnSignal, options) => ({
@@ -278,6 +310,7 @@ export class GatewayTransport {
               controls,
               expires: Date.now() + 86_400_000 + 30 * 60_000,
               active: true,
+              turn: historyTurn,
               interactions
             });
             if (this.#bindings.size > 128) {
@@ -336,6 +369,39 @@ export class GatewayTransport {
         this.#connected = false;
         const failure = connectionFailure(error);
         this.callbacks.onDisconnect(failure.message, failure.retryable);
+      },
+      (position) => {
+        if (
+          this.#closed ||
+          signal.aborted ||
+          !observesImScope(
+            this.scopedConfig,
+            position.channelId,
+            position.channelType,
+            position.spaceId
+          )
+        )
+          return;
+        const own = position.fromUid === this.config.bot_id;
+        const binding = own
+          ? [...this.#bindings.values()].find(
+              (candidate) =>
+                candidate.address.channelId === position.channelId &&
+                candidate.address.channelType === position.channelType &&
+                (candidate.card.effectKey === position.clientMsgNo ||
+                  candidate.card.messageId === position.messageId ||
+                  [...candidate.interactions.values()].some(
+                    (entry) => entry.messageId === position.messageId
+                  ))
+            )
+          : undefined;
+        this.callbacks.onPosition?.({
+          conversationId: position.channelId,
+          conversationKind: position.channelType === 5 ? "thread" : "group",
+          messageSeq: position.messageSeq,
+          own,
+          ...(binding?.turn ? { turn: binding.turn } : {})
+        });
       }
     );
     this.#connection = connection;

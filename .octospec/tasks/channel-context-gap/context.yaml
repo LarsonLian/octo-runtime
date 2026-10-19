@@ -1,0 +1,96 @@
+status: implemented-locally-live-acceptance-pending
+issue: Mininglamp-OSS/octo-runtime#32
+baseline: 65728c17ec33a6a68f255f70678f76b52ad68ac6
+branch: plan/channel-context-gap
+rules:
+  - runtime-architecture
+  - runtime-channel
+  - runtime-session-reset
+  - runtime-context-input
+  - runtime-stateless
+  - runtime-engineering
+  - runtime-protocol-design
+  - runtime-invoke-input
+  - runtime-extras
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/session-reset.md
+  - .octospec/rules/context-input.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .octospec/rules/protocol-design.md
+  - .octospec/rules/invoke-input.md
+  - .octospec/rules/extras.md
+  - .octospec/tasks/channel-new-session-history/brief.md
+  - .octospec/tasks/channel-new-session-history/context.yaml
+  - .octospec/tasks/im-session-scheduling-release/brief.md
+  - packages/octo-runtime-extra-channel-gateway/src/contracts.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/context-gap.ts
+  - test/im-context-gap.test.js
+  - test/im-context-gap-policy.test.js
+  - test/im-context-gap-wire.test.js
+  - packages/octo-runtime-extra-channel-gateway/src/transport/contexts.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/normalize.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/wukong.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/conversations.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/index.ts
+  - packages/octo-runtime-extra-channel-gateway/src/transport/api/client.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts
+  - packages/octo-runtime-extra-channel-gateway/src/application/session-store.ts
+  - packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts
+  - packages/octo-runtime-extra-channel-gateway/src/execution/task.ts
+  - test/im-new-session-history.test.js
+external_evidence:
+  installed_octo_cli:
+    role: historical-contract-inspection-not-fixed-pipeline-dependency
+    version: 0.18.0
+    commit: d564a63bbd8ec2dd4305a40a64fe0179ca9c667f
+    operations: [version, message.sync.help, message.sync.schema]
+  source_snapshots:
+    - repository: Mininglamp-OSS/octo-server
+      commit_prefix: 5cf83f57
+      files: [modules/bot_api/sync.go]
+    - repository: Mininglamp-OSS/octo-im
+      commit_prefix: 613fc2b2
+      files:
+        - internal/usecase/message/sync.go
+        - internal/usecase/message/sync_test.go
+        - internal/access/api/channel_messagesync.go
+        - pkg/protocol/frame/sendack.go
+  deployed_semantics_verified: false
+decisions:
+  scope: octo-groups-and-threads-only
+  execute_unmentioned_messages: false
+  counter_is_authoritative: false
+  same_channel_server_positions_preferred: true
+  transcript_persistence: false
+  metadata_location: bounded-session-binding
+  observation_refreshes_binding_ttl: false
+  cold_messages: 15
+  cold_text_codepoints: 1500
+  fixed_pre_model_api: true
+  model_toolcall_uses_octo_cli: true
+  unknown_warm_messages: 15
+  warm_total_message_cap: 15
+  automatic_backward_pagination: false
+  local_output_position_cap: 32
+  full_hint_max_bytes: 4096
+  compact_hint_max_bytes: 1024
+  history_http_requests_per_turn: 1
+  history_api_timeout_seconds: 10
+  history_api_retry_on_429: false
+  history_api_response_max_bytes: 1048576
+  history_record_and_text_limits_enforced_by_code: true
+  dm_cold_start_api_policy_unchanged: true
+  failed_run_restores_effective_after_seq: true
+  confirmed_read_watermark_available: false
+  retry_reuses_frozen_context: true
+  feasibility_score: 91
+  feasibility_score_is_completion: false

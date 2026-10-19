@@ -13,6 +13,23 @@ export function groupScope(channelId: string): { groupNo: string; shortId?: stri
     : { groupNo: channelId.slice(0, separator), shortId: channelId.slice(separator + 4) };
 }
 
+export function observesImScope(
+  config: ScopedOctoBotConfig,
+  channelId: string,
+  channelType: number,
+  spaceId?: unknown
+): boolean {
+  return (
+    Boolean(channelId) &&
+    [2, 5].includes(channelType) &&
+    (!spaceId || spaceId === config.spaceId) &&
+    config.groups_enabled !== false &&
+    (config.group_ids == null ||
+      config.group_ids.length === 0 ||
+      config.group_ids.includes(groupScope(channelId).groupNo))
+  );
+}
+
 export function acceptsImMessage(
   config: ScopedOctoBotConfig,
   owner: string,
@@ -33,13 +50,7 @@ export function acceptsImMessage(
   if (message.channelType === 1) return contentSupported();
   // .octospec/tasks/channel-group-admission/plan.md：启停与范围分开。
   // 空名单不承担“禁用”语义；只有非空名单限制父群，且永不影响上面的私聊分支。
-  if (
-    ![2, 5].includes(message.channelType) ||
-    config.groups_enabled === false ||
-    (config.group_ids != null &&
-      config.group_ids.length > 0 &&
-      !config.group_ids.includes(groupScope(message.channelId).groupNo))
-  )
+  if (!observesImScope(config, message.channelId, message.channelType, message.payload.space_id))
     return false;
   return mentionsBot(message.payload.mention, config.bot_id) && contentSupported();
 }

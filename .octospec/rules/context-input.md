@@ -3,7 +3,7 @@ type: Rule
 title: 本轮模型输入与工作目录
 description: Context v3 的业务归属、固定 renderer、控制通道和工作目录边界。
 tags: ["context","model-input","workspace"]
-timestamp: 2026-10-15T00:00:00Z
+timestamp: 2026-10-19T00:00:00Z
 implementation_baseline: df63c8f
 id: runtime-context-input
 tier: repo
@@ -64,6 +64,8 @@ renderer 只匹配 namespace/name 的白名单 pattern，保序输出全部数�
 本条为目标责任约束，不表示当前 Channel 已接入全部资源类型；文档/网盘/file 的获取方法、边界及实施状态见[资源 Context 决策](../journal/shared/2026-10-16-resource-context-access-decision.md)。
 
 ## Resume 与本轮上下文
+
+2026-10-19 用户明确：ChannelGateway作为业务Event发起方，在模型前固定调用API准备规则及有界历史，并构造本轮快照；这不是模型按需调用octo-cli的工具流程。Issue #32的群/话题历史固定补取最多最近15条，不依赖模型关键词或工具选择。该准备只在业务入口实现，不下沉到Host、Adapter或renderer，也不扩大为附件/文档通用预下载。
 
 **MUST**：发起方决定每轮模型上下文的内容、顺序和发送时机。selection、项目背景、任务状态、引用及 extra 均由业务方选择；即使页面存在选区或状态发生变化，框架也不要求发送。业务方可以首次提供必要背景、续聊无变化时传空、有变化时只发本轮需要的项，也可以显式重复。必要的 adapter 等执行配置仍按执行合同和 defaults/mandatory 规则校验，不进入 LLM 上下文块，不使业务项变成必填。
 

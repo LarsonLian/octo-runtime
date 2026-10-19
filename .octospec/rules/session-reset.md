@@ -3,7 +3,7 @@ type: Rule
 title: 会话归属与 reset
 description: 业务映射、Provider binding 与有界 IM reset 的职责。
 tags: ["session","reset"]
-timestamp: 2026-10-15T00:00:00Z
+timestamp: 2026-10-19T00:00:00Z
 implementation_baseline: df63c8f
 id: runtime-session-reset
 tier: repo
@@ -35,6 +35,8 @@ supersedes: []
 IM reset 不要求无历史对话。已实施的[历史策略](../tasks/channel-new-session-history/brief.md)为：下一条普通输入可补 reset 前的最近聊天，每新 session 仅自动尝试一次，最多 15 条/1500 字符；失败或空结果也消耗本次资格，当前任务空历史继续。正常续聊不自动重新拉取；重试复用冻结快照。一次性资格由 Channel 在有界会话状态中管理，Host/Adapter 不去重或补齐 Context，不增加持久 reset 屏障。2026-10-16 im-test 已验证 reset 后补旧历史且工作目录不变，详见[交付记录](../journal/shared/2026-10-16-channel-features-delivery.md)。
 
 ## 当前内置 IM 存储
+
+Issue #32的群/话题gap元数据附于同一有界binding，无旁路聊天库。观察与ACK只原子patch已有同session/generation条目，不续TTL、不改淘汰顺序；reset清除旧元数据，旧turn/ACK不能更新新代次。固定历史API在模型前完成，第一次交接只推进本地prepared事实，不宣称Provider已接受或Agent已读；API失败或正文被预算省略时保留待补边界。Provider显式fresh_fallback只使下一条新输入重新取最多15条，不重拉本轮历史或另起invoke；同代次卡片重试复用冻结快照，不重新采集。详见[缺口状态机](../tasks/channel-context-gap/design.md)。
 
 ### 调度状态与业务 binding 分开
 

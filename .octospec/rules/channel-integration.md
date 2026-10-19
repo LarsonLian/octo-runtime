@@ -3,7 +3,7 @@ type: Rule
 title: 渠道接入与业务投递
 description: Channel 显式调用本地 Host，自己管理上下文、会话与投递。
 tags: ["channel","delivery","session"]
-timestamp: 2026-10-15T00:00:00Z
+timestamp: 2026-10-19T00:00:00Z
 implementation_baseline: df63c8f
 id: runtime-channel
 tier: repo
@@ -79,6 +79,10 @@ IM 后台配置对应的 Agent 使用固定目录，不按任务选择或改变 
 以上为 IM 架构约束，替代此前“Context workspace 可覆盖 IM 默认目录”的规则表述；通用 Host 的配置解析能力不因此改变。IM 请求入口已在 resolver 前校验任务 workspace，指定不同目录时返回 IM_AGENT_WORKDIR_FIXED，不把固定目录作为可被任务替换的 defaults。
 
 新逻辑会话在首条普通输入准备时只自动尝试一次最近历史：最多 15 条、总计 1500 Unicode 码点，取当前触发之前同一 DM/群/话题的纯文本。先占用有界会话标记再异步读取，失败、空结果和准备失败均不恢复资格；正常续聊不重拉。reset 后允许补旧聊天，重试使用冻结输入，不新增本地历史持久库。
+
+群/话题续聊不把Provider session稳定视为历史完整。Channel在现有有界binding中记录位置及待补边界，未 @ 消息只观察，不创建session、不执行任务；位置观察不延长binding TTL。模型前固定输入准备直接使用现有TypeScript API层，不委托Agent调用octo-cli，不做关键词判断。准备时按冻结触发序号及当前已交接边界调用消息sync API：已知缺口limit=min(15,跨度)，未知基线最近最多15条，无缺口不查；冷启动和缺口共用本轮一次读取。10秒超时、1 MiB响应上限、禁用429自动重试，不翻页；代码过滤上下界、去重并再次截至15条，文本沿用1500 Unicode码点。正文作为`extra.im/history`在host.invoke前冻结，`history-gap`仅报告provided/partial/empty/unavailable/omitted，不再携带CLI命令。失败或预算省略不阻断当前任务，但保留待补边界；最终快照确有正文或API返回无可用文本时才清除该边界。交接不代表模型已阅读完整讨论，不拦截通用工具输出造已读水位。额外业务调查仍由Agent按用户任务使用octo-cli，不能与固定准备流程混同。
+
+该本地实现覆盖原准入、排队/取消、reset代次、重试与预算边界，不改变WeCom、Host或协议。默认store将元数据计入原1024/4MiB/24h边界，自定义store缺少可选原子patch能力时明确unknown。成功ACK及能关联原发送/卡片的自身RECV才可按原turn排除自身位置；未关联/已淘汰位置保守处理。真实服务端可见性、序号同域与Agent取材仍须按[实施记录](../tasks/channel-context-gap/implementation.md)验收，不能由fake测试推断已部署。
 
 出站普通回复不自动 @ 发起者。显式真人通知由模型理解需求、按需查询身份，在成功 final 普通正文中输出 `@[uid:displayName]`。Channel 用结构化 Markdown 解析排除代码和引用，再校验当前成员并转换为人类协议 `content + mention.uids/entities`，经原连接统一发送。失败目标退为普通 @名字，不阻断正文、不另发失败提示或补发。模型出站 Bot 与广播仍不开放；进度、工具、thinking 和失败终态不转换。Channel 对新 session 或无 Provider binding 的调用显式提交 mention 指引；历史的一次资格不受指引重提影响。
 

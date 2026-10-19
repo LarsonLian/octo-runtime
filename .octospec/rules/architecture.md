@@ -3,7 +3,7 @@ type: Rule
 title: Octo Runtime 基础架构
 description: 运行时设备、统一执行内核与 Extra 的责任边界及执行约束。
 tags: [architecture, runtime, adapter, extra, context, installation]
-timestamp: 2026-10-17T00:00:00Z
+timestamp: 2026-10-19T00:00:00Z
 id: runtime-architecture
 tier: repo
 priority: 100
@@ -35,7 +35,7 @@ Electron、Tauri 2 桌面程序严禁通过 CLI 接入，必须使用 SDK。宿�
 
 octo-cli 是 Octo 场景的重要产品能力。用户明确：对使用 Octo Runtime 的产品，特别是 ChannelGateway 的 IM Channel，宿主预置并正确配置 octo-cli 后，用户体验可以产生质的提升。Agent 可以在对话中按任务读取业务材料、调用业务 API、发送消息及交付文件，减少用户手工跨系统操作，使“对话”能够完成实际业务任务。该价值判断不表示本轮已测量体验提升，也不声称每个宿主或 Provider 已预置并验证全部业务能力。
 
-面向 Octo 业务的宿主在产品装配时，应将是否预置 octo-cli 作为重要产品决策，并明确工具可执行位置、业务身份及使用指引。是否提供、安装哪个版本和如何安装仍由 HostApp 决定；预置价值不授权 SDK、Channel、Host 或 Adapter 在接收消息或执行时隐式安装。业务指引由 Event 发起方通过 Context v3 表达，凭据沿独立执行环境及既有身份合同传递，不进入模型文本。具体业务动作由 Agent 调用 octo-cli 完成，不能因其重要而把业务 API 或专用流程搬进执行内核或 Channel。
+面向 Octo 业务的宿主在产品装配时，应将是否预置 octo-cli 作为重要产品决策，并明确工具可执行位置、业务身份及使用指引。是否提供、安装哪个版本和如何安装仍由 HostApp 决定；预置价值不授权 SDK、Channel、Host 或 Adapter 在接收消息或执行时隐式安装。业务指引由 Event 发起方通过 Context v3 表达，凭据沿独立执行环境及既有身份合同传递，不进入模型文本。模型在工具循环内的具体业务动作由 Agent 调用 octo-cli 完成，不能因其重要而把模型业务任务搬进执行内核或 Channel；Channel作为Event发起方按已确认合同固定准备规则、历史等输入，直接使用API层，不依赖CLI预置。
 
 业务团队维护 octo-cli 的业务 API 能力与工具合同；宿主团队负责产品装配和配置；Runtime 团队负责通用执行及身份传递合同。这样的组合既能让产品具备完整业务操作能力，也能使内核保持跨业务复用。具体示例与边界见[工具调用决策](../journal/shared/2026-10-16-agent-toolcall-channel-boundary.md#octo-cli-的维护归属与预置价值)。
 
@@ -122,9 +122,11 @@ F29 已确认采用设备执行内核 + Extra 插件 + 外部工具的分工：E
 
 ## 业务动作归 Agent tool call，Context 约束行为
 
+2026-10-19 用户澄清两类调用不得混淆：**模型在工具循环中执行的业务动作使用 octo-cli；模型调用前、由 ChannelGateway 作为 Event 发起方负责的固定输入准备，直接调用现有 TypeScript API 层。** 群/话题规则和有界聊天历史属于后者，不需要模型先决定是否执行，也不启动 CLI 子进程。Issue #32 的历史缺口在准备 Context 时固定调用消息同步 API，最多最近15条；Host、Adapter 和 renderer 仍不得预取业务材料。该边界不授权 Channel 代替 Agent 执行文件交付、跨会话发送或通用业务任务。
+
 2026-10-16 用户确认：消息发送、文件上传、附件交付和多文件处理属于 Agent 的工具调用能力。已有 octo-cli 或其他工具能够完成的业务动作，应计入业务能力覆盖，不要求 Channel 再硬编码 API 或业务流程。旧 Gateway 的自动 artifact 收集与投递是历史遗留，不是目标架构。
 
-本约束适用于所有类似的定制业务执行流程，不限于文件或消息。非执行基础设施合同所必需的业务步骤、顺序、条件、工具选择和收尾要求，必须由业务发起方通过 octo.context-envelope/v3 表达约束，交由 Agent 在正常工具循环中执行；严禁在 Channel、Host、Adapter 或其他中间层编写专用执行流程、分支或补偿代码代替 Agent。统一 Context 已能表达的约束，不新增同义流程协议、业务执行器或完成钩子。“必要”仅指已有协议校验、权限/审批、原生适配及执行生命周期等责任明确的基础设施合同，不能以模型不稳定、旧方案已有或开发方便作为例外依据。新增例外必须在对应计划中说明不可由 Context/工具表达的实际合同需求及归属；未明确之前不得落成业务执行代码。
+本约束适用于Agent执行过程中的定制业务流程，不限于文件或消息；不禁止业务Event发起方按已确认合同固定准备输入。非执行基础设施合同所必需的业务步骤、顺序、条件、工具选择和收尾要求，必须由业务发起方通过 octo.context-envelope/v3 表达约束，交由 Agent 在正常工具循环中执行；严禁在 Channel、Host、Adapter 或其他中间层编写专用执行流程、分支或补偿代码代替 Agent。统一 Context 已能表达的约束，不新增同义流程协议、业务执行器或完成钩子。“必要”仅指已有协议校验、权限/审批、原生适配及执行生命周期等责任明确的基础设施合同，不能以模型不稳定、旧方案已有或开发方便作为例外依据。新增例外必须在对应计划中说明不可由 Context/工具表达的实际合同需求及归属；未明确之前不得落成业务执行代码。
 
 需要“生成后自动上传并交付”时，由业务方在其选择的本轮 Context instructions 中表达目标和约束，Agent 在正常工具循环中调用工具并核对真实结果。**严禁 Channel、Host 或 Adapter 在执行结束后硬编码收集 artifact、扫描文件、上传、发送或代替 Agent 补做业务操作的流程**；不得将模型正文、工具输出或 artifact 事件当成执行这些副作用的指令。
 

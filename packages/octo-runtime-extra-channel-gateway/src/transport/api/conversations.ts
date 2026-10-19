@@ -89,6 +89,7 @@ export async function getChannelMessages(params: {
   startMessageSeq?: number;
   endMessageSeq?: number;
   pullMode?: 0 | 1;
+  retryOn429?: boolean;
   signal?: AbortSignal;
   log?: { info?: (msg: string) => void; error?: (msg: string) => void };
 }): Promise<
@@ -104,8 +105,15 @@ export async function getChannelMessages(params: {
     payload?: SyncMessagePayload;
   }>
 > {
+  return (await getChannelMessagePage(params)).messages;
+}
+
+export async function getChannelMessagePage(
+  params: Parameters<typeof getChannelMessages>[0]
+): Promise<{ messages: Awaited<ReturnType<typeof getChannelMessages>>; more?: boolean }> {
   const limit = params.limit ?? 20;
   const data = await postJson<{
+    more?: boolean | number;
     messages?: Array<{
       from_uid?: string;
       message_id?: string;
@@ -129,11 +137,13 @@ export async function getChannelMessages(params: {
       AbortSignal.timeout(DEFAULT_TIMEOUT_MS),
       ...(params.signal ? [params.signal] : [])
     ]),
-    { maxResponseBytes: 1 << 20, logRateLimit: false }
+    { maxResponseBytes: 1 << 20, logRateLimit: false, retryOn429: params.retryOn429 }
   );
   if (!Array.isArray(data?.messages)) throw new Error("IM_HISTORY_PROTOCOL_INVALID");
+  if (data.more !== undefined && ![true, false, 0, 1].includes(data.more))
+    throw new Error("IM_HISTORY_PROTOCOL_INVALID");
   const messages = data.messages;
-  return messages.map((m) => {
+  const decoded = messages.map((m) => {
     // payload is base64-encoded JSON string
     let payload: SyncMessagePayload = {};
     if (m.payload) {
@@ -160,6 +170,7 @@ export async function getChannelMessages(params: {
       timestamp: (m.timestamp ?? Math.floor(Date.now() / 1000)) * 1000
     };
   });
+  return { messages: decoded, ...(data.more !== undefined ? { more: Boolean(data.more) } : {}) };
 }
 
 /**
