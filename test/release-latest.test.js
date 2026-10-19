@@ -17,8 +17,7 @@ function fixture(initial = {}) {
   const state = {
     completeVersions: [...(initial.completeVersions ?? [])],
     npmLatest: initial.npmLatest ?? null,
-    githubLatest: initial.githubLatest ?? null,
-    ...("packagesLatest" in initial ? { packagesLatest: initial.packagesLatest } : {})
+    githubLatest: initial.githubLatest ?? null
   };
   const actions = [];
   return {
@@ -31,10 +30,6 @@ function fixture(initial = {}) {
       async setNpmLatest(version) {
         actions.push(["npm", version]);
         state.npmLatest = version;
-      },
-      async setPackagesLatest(version) {
-        actions.push(["github-packages", version]);
-        state.packagesLatest = version;
       },
       async setGitHubLatest(version) {
         actions.push(["github", version]);
@@ -262,13 +257,26 @@ test("命令边界 fixture 只把最高完整版本提升为 npm 与 GitHub late
   const runCommand = async (command, arguments_) => {
     calls.push([command, ...arguments_]);
     if (command === "npm" && arguments_[0] === "view" && arguments_[2] === "versions") {
-      return JSON.stringify(["0.0.0", "1.0.0", "1.2.0", "1.3.0"]);
+      return JSON.stringify(["0.0.0-stage", "1.0.0", "1.2.0", "1.3.0", "1.4.0-rc.1"]);
     }
     if (command === "npm" && arguments_[0] === "view" && arguments_[2] === "version") {
       return JSON.stringify(npmLatest);
     }
     if (command === "npm" && arguments_[0] === "dist-tag") {
       npmLatest = arguments_[2].split("@").at(-1);
+      return "";
+    }
+    if (command === "npm" && arguments_[2] === "dist.integrity") {
+      return JSON.stringify(`sha512-${createHash("sha512").update("fixture").digest("base64")}`);
+    }
+    if (command === "gh" && arguments_[1] === "download") {
+      await writeFile(
+        resolve(
+          arguments_[arguments_.indexOf("--dir") + 1],
+          arguments_[arguments_.indexOf("--pattern") + 1]
+        ),
+        "fixture"
+      );
       return "";
     }
     if (command === "gh" && arguments_[1] === "list") {
@@ -304,6 +312,12 @@ test("命令边界 fixture 只把最高完整版本提升为 npm 与 GitHub late
   assert.ok(calls.some((call) => call.join(" ").includes("dist-tag add")));
   assert.ok(calls.some((call) => call.join(" ").includes("release edit v1.2.0 --latest")));
   assert.ok(!calls.some((call) => call.join(" ").includes("release edit v1.3.0 --latest")));
+  assert.ok(
+    calls
+      .filter(([command]) => command === "npm")
+      .every((call) => call.includes("--registry=https://registry.npmjs.org"))
+  );
+  assert.ok(!calls.some((call) => call.join(" ").includes("1.4.0-rc.1")));
 });
 
 test("workflow 将不可变发布、Release 修复和共享 promotion 分离", async () => {
@@ -331,47 +345,38 @@ test("workflow 将不可变发布、Release 修复和共享 promotion 分离", a
   assert.doesNotMatch(releaseWorkflow, /release edit "\$TAG"[^\n]+--latest=false/);
 });
 
-test("three latest pointers converge and a higher GitHub Packages pointer prevents downgrade", async () => {
+test("新稳定版自动把 npm latest 推进到 1.0.2，RC 候选不能写入 latest", async () => {
   const current = fixture({
-    completeVersions: ["1.2.0"],
-    npmLatest: "1.0.0",
-    githubLatest: "1.1.0",
-    packagesLatest: null
+    completeVersions: ["1.0.1", "1.0.2"],
+    npmLatest: "1.0.1",
+    githubLatest: "1.0.1"
   });
-  const preview = await reconcileLatest(current.client, { dryRun: true });
-  assert.ok(preview.actions.some(([registry]) => registry === "github-packages"));
-  assert.deepEqual(current.actions, []);
-  assert.equal((await reconcileLatest(current.client)).target, "1.2.0");
-  assert.equal(current.state.packagesLatest, "1.2.0");
-  current.state.packagesLatest = "1.3.0";
+  assert.equal((await reconcileLatest(current.client)).target, "1.0.2");
+  assert.equal(current.state.npmLatest, "1.0.2");
   current.actions.length = 0;
-  await assert.rejects(reconcileLatest(current.client, { maxAttempts: 1 }), /拒绝.*回退/);
+  await assert.rejects(
+    reconcileLatest(current.client, { dryRun: true, candidate: "1.0.3-rc.1" }),
+    /稳定 SemVer/
+  );
   assert.deepEqual(current.actions, []);
 });
 
-test("dual-registry coordinator intersects versions and verifies archive integrity before promotion", async () => {
+test("单 registry 协调器只查询 npm，并在晋升前核对 Release 附件完整性", async () => {
   const calls = [];
-  let mismatch = false;
   let invalidIntegrity;
   let corruptRelease = false;
   const client = createCommandClient({
     packageName: "@mininglamp-oss/octo-runtime",
     repository: "Mininglamp-OSS/octo-runtime",
-    githubPackages: true,
     runCommand: async (command, arguments_) => {
       calls.push([command, ...arguments_]);
-      const packages = arguments_.includes("--registry=https://npm.pkg.github.com");
       if (command === "npm") {
         if (arguments_[0] === "dist-tag") return "";
-        if (arguments_[2] === "versions")
-          return JSON.stringify(packages ? ["1.1.0"] : ["1.1.0", "1.2.0"]);
+        if (arguments_[2] === "versions") return JSON.stringify(["1.1.0", "1.2.0"]);
         if (arguments_[2] === "version") return JSON.stringify("0.0.0-stage");
         if (arguments_[2] === "dist.integrity")
           return JSON.stringify(
-            invalidIntegrity ??
-              `sha512-${createHash("sha512")
-                .update(packages && mismatch ? "other" : "same")
-                .digest("base64")}`
+            invalidIntegrity ?? `sha512-${createHash("sha512").update("same").digest("base64")}`
           );
       }
       if (command === "gh" && arguments_[1] === "download") {
@@ -401,21 +406,19 @@ test("dual-registry coordinator intersects versions and verifies archive integri
     }
   });
   assert.deepEqual(await client.readState(), {
-    completeVersions: ["1.1.0"],
+    completeVersions: ["1.2.0"],
     npmLatest: null,
-    githubLatest: null,
-    packagesLatest: null
+    githubLatest: null
   });
-  await client.setPackagesLatest("1.1.0");
+  await client.setNpmLatest("1.2.0");
   assert.ok(
     calls.some(
-      (call) => call.includes("dist-tag") && call.includes("--registry=https://npm.pkg.github.com")
+      (call) => call.includes("dist-tag") && call.includes("--registry=https://registry.npmjs.org")
     )
   );
-  assert.ok(!calls.some((call) => call.includes("v1.2.0") && call.includes("view")));
-  mismatch = true;
-  await assert.rejects(client.readState(), /integrity mismatch/);
-  mismatch = false;
+  assert.ok(
+    !calls.some((call) => call.some((argument) => argument.includes("npm.pkg.github.com")))
+  );
   for (const invalid of ["", "sha1-same", "sha512-short"]) {
     invalidIntegrity = invalid;
     await assert.rejects(client.readState(), /Invalid registry integrity/);
@@ -423,6 +426,23 @@ test("dual-registry coordinator intersects versions and verifies archive integri
   invalidIntegrity = undefined;
   corruptRelease = true;
   await assert.rejects(client.readState(), /GitHub Release archive integrity mismatch/);
+});
+
+test("npm 返回空或无效 JSON 时明确报错且不写入 latest", async () => {
+  for (const field of ["versions", "version"]) {
+    for (const output of ["", " ", "invalid"]) {
+      const client = createCommandClient({
+        packageName: "@mininglamp-oss/octo-runtime",
+        repository: "Mininglamp-OSS/octo-runtime",
+        runCommand: async (command, arguments_) => {
+          assert.equal(command, "npm");
+          assert.equal(arguments_[0], "view");
+          return arguments_[2] === field ? output : JSON.stringify(["1.0.1"]);
+        }
+      });
+      await assert.rejects(reconcileLatest(client), /Invalid npm registry JSON response/);
+    }
+  }
 });
 
 test("Windows 发行验收通过 taskkill 回收全局 daemon shim 的进程树", async () => {

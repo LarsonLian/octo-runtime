@@ -1,0 +1,27 @@
+baseline: 1505ce132bb0ae98afc3229a6eac6a7507849883
+rules:
+  - runtime-architecture
+  - runtime-engineering
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/index.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .github/CI.md
+  - .github/workflows/npm-publish.yml
+  - .github/workflows/release-publish.yml
+  - scripts/check-release-registry.mjs
+  - scripts/resolve-release-build-time.mjs
+  - scripts/reconcile-release-latest.mjs
+  - test/release-registry.test.js
+  - test/release-build-time.test.js
+  - test/release-latest.test.js
+decisions:
+  - 使用最新 main 的独立 detached worktree，保留原工作区未提交记录。
+  - npm 官方仓库是唯一 registry；GitHub Release 仍是附件交付，不是 GitHub Packages。
+  - 稳定版自动晋升 latest，RC 不晋升，旧版补发不回退。
+  - 用户已确认手动删除本项目 GitHub npm package，不再执行清理。
+  - 用户后续授权创建分支、提交、推送、PR 和合并 main；仍不创建 tag 或触发新版本发布。

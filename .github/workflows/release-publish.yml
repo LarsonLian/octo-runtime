@@ -35,7 +35,6 @@ jobs:
     permissions:
       contents: read
       actions: read
-      packages: write
       id-token: write
 
   publish-release:
@@ -89,7 +88,6 @@ jobs:
       cancel-in-progress: false
     permissions:
       contents: write
-      packages: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v4
         with:
@@ -103,13 +101,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-          GH_PACKAGES_TOKEN: ${{ github.token }}
-          OCTO_RELEASE_GITHUB_PACKAGES: "true"
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run' }}
           VERSION: ${{ needs.publish-npm.outputs.version }}
         run: |
           set -euo pipefail
-          printf '\n%s\n' "//npm.pkg.github.com/:_authToken=\${GH_PACKAGES_TOKEN}" >> "$NPM_CONFIG_USERCONFIG"
           if [ "$DRY_RUN" = true ]; then
             node scripts/reconcile-release-latest.mjs --dry-run --candidate "$VERSION"
           else

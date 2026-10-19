@@ -1,15 +1,11 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { checkRegistryVersion } from "../scripts/check-release-registry.mjs";
 
 const integrity = `sha512-${createHash("sha512").update("archive").digest("base64")}`;
 const npmRegistry = "https://registry.npmjs.org";
-const packagesRegistry = "https://npm.pkg.github.com";
 const options = { version: "1.0.1", registry: npmRegistry, integrity };
 
 function registryError(code) {
@@ -18,23 +14,18 @@ function registryError(code) {
   });
 }
 
-test("both registries require matching immutable archive integrity and explicit registry selection", async () => {
-  for (const registry of [npmRegistry, packagesRegistry]) {
-    const result = await checkRegistryVersion(
-      { ...options, registry },
-      {
-        runCommand: async (command, arguments_) => {
-          assert.equal(command, "npm");
-          assert.ok(arguments_.includes(`--registry=${registry}`));
-          assert.ok(arguments_.includes("--prefer-online"));
-          assert.ok(arguments_.includes("--fetch-retries=0"));
-          return JSON.stringify(integrity);
-        }
-      }
-    );
-    assert.equal(result.exists, true);
-    assert.equal(result.integrity, integrity);
-  }
+test("npm 官方仓库校验不可变归档完整性并显式选择 registry", async () => {
+  const result = await checkRegistryVersion(options, {
+    runCommand: async (command, arguments_) => {
+      assert.equal(command, "npm");
+      assert.ok(arguments_.includes(`--registry=${npmRegistry}`));
+      assert.ok(arguments_.includes("--prefer-online"));
+      assert.ok(arguments_.includes("--fetch-retries=0"));
+      return JSON.stringify(integrity);
+    }
+  });
+  assert.equal(result.exists, true);
+  assert.equal(result.integrity, integrity);
   await assert.rejects(
     checkRegistryVersion(options, {
       runCommand: async () =>
@@ -109,9 +100,13 @@ test("invalid versions and registry destinations never reach npm", async () => {
   await assert.rejects(
     checkRegistryVersion({ ...options, registry: "https://example.invalid" }, dependencies)
   );
+  await assert.rejects(
+    checkRegistryVersion({ ...options, registry: "https://npm.pkg.github.com" }, dependencies),
+    /Unsupported registry/
+  );
 });
 
-test("tag workflow directly publishes one verified artifact to npm and actual GitHub Packages", async () => {
+test("tag workflow 只向 npm 官方仓库直接发布且不请求 GitHub Packages 权限", async () => {
   const workflow = await readFile(
     new URL("../.github/workflows/npm-publish.yml", import.meta.url),
     "utf8"
@@ -120,54 +115,18 @@ test("tag workflow directly publishes one verified artifact to npm and actual Gi
     new URL("../.github/workflows/release-publish.yml", import.meta.url),
     "utf8"
   );
-  assert.match(workflow, /fail-fast: false/);
-  assert.match(
-    workflow,
-    /registry: npm\s+url: https:\/\/registry\.npmjs\.org\s+provenance: "true"/
-  );
-  assert.match(
-    workflow,
-    /registry: github-packages\s+url: https:\/\/npm\.pkg\.github\.com\s+provenance: "false"/
-  );
-  assert.match(workflow, /packages: write/);
-  assert.match(workflow, /matrix\.registry.*inputs\.tag/);
+  assert.match(workflow, /REGISTRY: https:\/\/registry\.npmjs\.org/);
+  assert.match(workflow, /registry-url: https:\/\/registry\.npmjs\.org/);
+  assert.match(workflow, /group: octo-runtime-package-publish-\$\{\{ inputs\.tag \}\}/);
   assert.match(workflow, /ref: \$\{\{ github\.workflow_sha \}\}/);
   assert.match(workflow, /npm publish "\$ARCHIVE" --registry "\$REGISTRY"/);
   assert.doesNotMatch(workflow, /npm (?:stage|approve|reject)\b/);
-  assert.match(
-    workflow,
-    /matrix\.registry == 'github-packages' && github\.token \|\| secrets\.NPM_TOKEN/
-  );
-  assert.match(release, /OCTO_RELEASE_GITHUB_PACKAGES: "true"/);
-  assert.match(release, /\/\/npm\.pkg\.github\.com\/:_authToken=\\\$\{GH_PACKAGES_TOKEN\}/);
-  assert.match(release, /printf '\\n%s\\n'/);
-});
-
-test(
-  "promotion auth starts on a new line when setup-node config has no trailing newline",
-  { skip: process.platform === "win32" },
-  async (context) => {
-    const directory = await mkdtemp(join(tmpdir(), "octo-promotion-auth-"));
-    context.after(() => rm(directory, { recursive: true, force: true }));
-    const filename = join(directory, "npmrc");
-    await writeFile(filename, "registry=https://registry.npmjs.org/");
-    const release = await readFile(
-      new URL("../.github/workflows/release-publish.yml", import.meta.url),
-      "utf8"
+  assert.match(workflow, /NODE_AUTH_TOKEN: \$\{\{ secrets\.NPM_TOKEN \}\}/);
+  assert.match(workflow, /--ignore-scripts --provenance/);
+  for (const content of [workflow, release]) {
+    assert.doesNotMatch(
+      content,
+      /npm\.pkg\.github\.com|GH_PACKAGES_TOKEN|OCTO_RELEASE_GITHUB_PACKAGES|packages: (?:read|write)|matrix\.registry/
     );
-    const command = release.match(/^\s+printf[^\n]+NPM_CONFIG_USERCONFIG[^\n]+/m)?.[0].trim();
-    assert.ok(command);
-    execFileSync("sh", ["-c", command], {
-      env: {
-        ...process.env,
-        NPM_CONFIG_USERCONFIG: filename,
-        GH_PACKAGES_TOKEN: "fixture-only-must-not-expand"
-      }
-    });
-    const configuration = await readFile(filename, "utf8");
-    assert.deepEqual(configuration.trim().split("\n"), [
-      "registry=https://registry.npmjs.org/",
-      "//npm.pkg.github.com/:_authToken=${GH_PACKAGES_TOKEN}"
-    ]);
   }
-);
+});

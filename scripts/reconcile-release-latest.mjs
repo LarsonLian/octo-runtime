@@ -67,11 +67,7 @@ export async function reconcileLatest(
   let observed;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const before = includeCandidate(await client.readState(), candidate);
-    const latestFloor = selectLatestFloor(
-      before.npmLatest,
-      before.githubLatest,
-      before.packagesLatest
-    );
+    const latestFloor = selectLatestFloor(before.npmLatest, before.githubLatest);
     if (before.completeVersions.length === 0 && latestFloor !== null) {
       if (!dryRun && attempt < maxAttempts) {
         await retryDelay();
@@ -94,18 +90,12 @@ export async function reconcileLatest(
     }
     const actions = [
       ...(before.npmLatest === target ? [] : [["npm", target]]),
-      ...(before.githubLatest === target ? [] : [["github", target]]),
-      ...(before.packagesLatest === undefined || before.packagesLatest === target
-        ? []
-        : [["github-packages", target]])
+      ...(before.githubLatest === target ? [] : [["github", target]])
     ];
 
     if (dryRun) return { target, relation, attempts: attempt, actions };
 
     if (before.npmLatest !== target) await client.setNpmLatest(target);
-    if (before.packagesLatest !== undefined && before.packagesLatest !== target) {
-      await client.setPackagesLatest(target);
-    }
     if (before.githubLatest !== target) await client.setGitHubLatest(target);
 
     observed = includeCandidate(await client.readState(), candidate);
@@ -117,11 +107,7 @@ export async function reconcileLatest(
       throw new Error(`写入后没有完整 Release 资产：${JSON.stringify(observed)}`);
     }
     const expected = selectHighestCompleteVersion(observed.completeVersions);
-    if (
-      observed.npmLatest === expected &&
-      observed.githubLatest === expected &&
-      (observed.packagesLatest === undefined || observed.packagesLatest === expected)
-    ) {
+    if (observed.npmLatest === expected && observed.githubLatest === expected) {
       return { target: expected, relation, attempts: attempt };
     }
   }
@@ -137,19 +123,32 @@ async function run(command, arguments_, options) {
   return stdout.trim();
 }
 
-async function npmView(runCommand, packageName, field, registry) {
+async function npmView(runCommand, packageName, field) {
+  let output;
   try {
-    return await runCommand("npm", [
-      "view",
-      packageName,
-      field,
-      "--json",
-      ...(registry ? [`--registry=${registry}`, "--prefer-online", "--fetch-retries=0"] : [])
-    ]);
+    output = await runCommand(
+      "npm",
+      [
+        "view",
+        packageName,
+        field,
+        "--json",
+        "--registry=https://registry.npmjs.org",
+        "--prefer-online",
+        "--fetch-retries=0"
+      ],
+      { timeout: 30_000 }
+    );
   } catch (error) {
     if (registryErrorCode(error) === "E404") return null;
     throw error;
   }
+  try {
+    JSON.parse(output);
+  } catch {
+    throw new Error(`Invalid npm registry JSON response: ${packageName} ${field}`);
+  }
+  return output;
 }
 
 function stableLatest(output) {
@@ -159,13 +158,7 @@ function stableLatest(output) {
     : null;
 }
 
-export function createCommandClient({
-  packageName,
-  repository,
-  runCommand = run,
-  githubPackages = false
-}) {
-  const packagesRegistry = "https://npm.pkg.github.com";
+export function createCommandClient({ packageName, repository, runCommand = run }) {
   async function readReleaseIntegrity(version, archive) {
     const directory = await mkdtemp(join(tmpdir(), "octo-release-integrity-"));
     try {
@@ -203,16 +196,6 @@ export function createCommandClient({
       );
       const latestOutput = await npmView(runCommand, `${packageName}@latest`, "version");
       const npmLatest = stableLatest(latestOutput);
-      let packagesLatest;
-      let packagesVersions;
-      if (githubPackages) {
-        const output = await npmView(runCommand, packageName, "versions", packagesRegistry);
-        const parsed = output === null ? [] : JSON.parse(output);
-        packagesVersions = new Set(Array.isArray(parsed) ? parsed : [parsed]);
-        packagesLatest = stableLatest(
-          await npmView(runCommand, `${packageName}@latest`, "version", packagesRegistry)
-        );
-      }
       const releases = JSON.parse(
         await runCommand("gh", [
           "release",
@@ -239,7 +222,6 @@ export function createCommandClient({
       const completeVersions = [];
       for (const version of npmVersions.sort(compareStableVersions).reverse()) {
         if (!byVersion.has(version)) continue;
-        if (packagesVersions && !packagesVersions.has(version)) continue;
         const release = JSON.parse(
           await runCommand("gh", [
             "release",
@@ -253,30 +235,15 @@ export function createCommandClient({
         );
         const archive = `mininglamp-oss-octo-runtime-${version}.tgz`;
         if (release.assets.some((asset) => asset.name === archive)) {
-          if (githubPackages) {
-            const lookup = { runCommand, name: packageName };
-            const npmIntegrity = await readRegistryIntegrity(
-              version,
-              "https://registry.npmjs.org",
-              lookup
-            );
-            const packagesIntegrity = await readRegistryIntegrity(
-              version,
-              packagesRegistry,
-              lookup
-            );
-            if (
-              npmIntegrity === null ||
-              packagesIntegrity === null ||
-              npmIntegrity !== packagesIntegrity
-            ) {
-              throw new Error(`Registry archive integrity mismatch: ${packageName}@${version}`);
-            }
-            if ((await readReleaseIntegrity(version, archive)) !== npmIntegrity) {
-              throw new Error(
-                `GitHub Release archive integrity mismatch: ${packageName}@${version}`
-              );
-            }
+          const npmIntegrity = await readRegistryIntegrity(version, "https://registry.npmjs.org", {
+            runCommand,
+            name: packageName
+          });
+          if (npmIntegrity === null) {
+            throw new Error(`Missing npm archive integrity: ${packageName}@${version}`);
+          }
+          if ((await readReleaseIntegrity(version, archive)) !== npmIntegrity) {
+            throw new Error(`GitHub Release archive integrity mismatch: ${packageName}@${version}`);
           }
           completeVersions.push(version);
           break;
@@ -290,20 +257,16 @@ export function createCommandClient({
       return {
         completeVersions,
         npmLatest,
-        githubLatest,
-        ...(githubPackages ? { packagesLatest } : {})
+        githubLatest
       };
     },
     async setNpmLatest(version) {
-      await runCommand("npm", ["dist-tag", "add", `${packageName}@${version}`, "latest"]);
-    },
-    async setPackagesLatest(version) {
       await runCommand("npm", [
         "dist-tag",
         "add",
         `${packageName}@${version}`,
         "latest",
-        `--registry=${packagesRegistry}`
+        "--registry=https://registry.npmjs.org"
       ]);
     },
     async setGitHubLatest(version) {
@@ -321,13 +284,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const candidate = candidateIndex === -1 ? null : (process.argv[candidateIndex + 1] ?? null);
   if (dryRun && candidate === null) throw new Error("dry-run 缺少 --candidate VERSION");
   if (!dryRun && candidate !== null) throw new Error("--candidate 仅能与 --dry-run 一起使用");
-  const githubPackages = process.env.OCTO_RELEASE_GITHUB_PACKAGES === "true";
-  const result = await reconcileLatest(
-    createCommandClient({ packageName, repository, githubPackages }),
-    {
-      dryRun,
-      candidate
-    }
-  );
+  const result = await reconcileLatest(createCommandClient({ packageName, repository }), {
+    dryRun,
+    candidate
+  });
   console.log(JSON.stringify(result));
 }

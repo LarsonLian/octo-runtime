@@ -87,45 +87,42 @@ tag，例如自动运行在 npm 上传前被取消或失败时进行诊断；创
 把同一个 tag 用于事前演练。
 
 推送 tag 后，`Release Publish` 校验 tag 及其 `main` 祖先关系，在该提交上调用完整 CI 矩阵，
-把 `X.Y.Z` 写入生成包，通过两个独立 matrix job 直接执行 `npm publish`，把同一份已验证的
-tgz 分别上传到 npmjs (`registry.npmjs.org`) 和 GitHub Packages (`npm.pkg.github.com`)，
-再用同一归档创建或修复 GitHub Release。不使用 `npm stage`、审批或二次转正流程；GitHub
-Packages 是真正的 npm registry，与 Release 附件及 Actions artifact 都不是同一功能。
-失败后可通过手工 tag 输入选择 `recover` 重试。任一 registry 已存在的不可变版本会先核对
-SHA-512，一致则跳过而不是覆盖；恢复时从 npm 或 GitHub Packages 已发布归档复用构建时间，
-并核对源码 commit 和 clean 标记，避免另一端缺包时重建出不同归档。
+把 `X.Y.Z` 写入生成包，通过单一 publish job 直接执行 `npm publish`，把已验证的 tgz
+上传到唯一 registry：npm 官方仓库 `https://registry.npmjs.org`，再用同一归档创建或修复
+GitHub Release。不发布或查询 GitHub Packages；GitHub Release 附件和 Actions artifact
+仍保留，它们不是 npm registry。不使用 `npm stage`、审批或二次转正流程。
+失败后可通过手工 tag 输入选择 `recover` 重试。npm 已存在的不可变版本会先核对
+SHA-512，一致则跳过而不是覆盖；恢复时只从 npm 已发布归档复用构建时间，并核对源码
+commit 和 clean 标记，避免重建出不同归档。
 新版本先使用版本专属 `release-X.Y.Z` dist-tag 交付，GitHub Release 就绪后由包级
-promotion 协调器重新读取三端状态，把两个 registry 与 GitHub Release 的 latest 收敛到已
-完整交付的最高稳定版。完整候选必须存在于两个 registry，并下载对应 Release 附件核对三份
-归档的 SHA-512 相同，不能只依赖同名附件判断完整。
+promotion 协调器重新读取 npm 与 GitHub Release 状态，把两端 latest 自动收敛到已完整
+交付的最高稳定版。例如成功交付 `v1.0.2` 后，npm `latest` 自动指向 `1.0.2`。RC 等预发布
+不进入稳定版候选集，不调整 latest；当前 tag 发布入口只接受稳定版本。完整候选必须存在于
+npm，并下载对应 Release 附件核对两份归档的 SHA-512 相同，不能只依赖同名附件判断完整。
 因此恢复当前或旧版本、不同 tag 并发完成以及 promotion 等待项被取代都不会回退 latest。
-三端的现有 latest 指针同时作为单调下界；每个 tag 的 Release 资产保持独立交付，
+两端的现有稳定版 latest 指针同时作为单调下界；每个 tag 的 Release 资产保持独立交付，
 不进入可能替换 pending 运行的全局 concurrency group。资产替换期间短暂缺失时，promotion
 保持零写并有界重读；替换失败也不会把任一指针降到旧版本。
-`dry-run` 读取同一份三端状态，并把本次已验证版本作为只读候选执行相同决策；它只
+`dry-run` 读取同一份两端状态，并把本次已验证版本作为只读候选执行相同决策；它只
 输出拟执行的 promotion，不创建版本、dist-tag、Release 或资产。dry-run 使用独立的运行级
 并发组，不能替换等待中的正式 promotion。
 
-每个 registry 上传后最多等待 20 分钟，并校验可读版本的归档 SHA-512，而不只判断版本号
+npm 上传后最多等待 20 分钟，并校验可读版本的归档 SHA-512，而不只判断版本号
 是否存在。只有 E404 视为不存在；鉴权、网络和完整性错误直接失败。上传请求成功不等于
 版本已经公开可读，超时会明确提示检查 registry 处理状态或 staged-version 冲突，不会自动
 切换到 stage 或盲目重传。后续恢复仍先检查不可变版本。
 
 npm 发布需要具备 package publish 权限的 `NPM_TOKEN`，job 同时获得生成 provenance 所需的
-OIDC 权限。GitHub Packages 使用当前仓库 `GITHUB_TOKEN` 的 `packages: write` 权限，不需要
-另配 PAT，且不向该 registry 请求 npm provenance。首次创建的 GitHub package 默认可能是
-private；需要公开分发时，应在 package 设置中确认可见性及当前仓库的 Actions 访问权限。
-组织策略限制创建 package 时也需要先由管理员放行，workflow 不修改这些安全设置。
+OIDC 权限。workflow 不请求 GitHub Packages 的读写权限，也不配置其 token 或 registry。
 普通 PR 检查不读取发布 secret。所有内部 app 和 package 都是 private，永不独立发布；
 生产依赖随唯一的公开根包捆绑。不得在仓库根目录直接执行 `npm publish`，现有 prepack 门禁会
 拒绝该路径。
 
 ## GitHub Release
 
-Release Drafter 继续在版本之间准备说明。tag 触发的发布工作流仅在两个 registry 发布成功后创建正式
-Release，并上传同一个已验证 tgz。这里的前置条件是 npm 和 GitHub Packages 两个发布 job
-均成功。如果任一 registry 已发布而另一端或 Release 创建失败，选择 `recover` 重跑会跳过
-一致的不可变版本并补齐缺失交付；修复现有 Release 不主动清除 latest，最终状态由
+Release Drafter 继续在版本之间准备说明。tag 触发的发布工作流仅在 npm 发布成功后创建正式
+Release，并上传同一个已验证 tgz。如果 npm 已发布而 Release 创建失败，选择 `recover`
+重跑会跳过一致的不可变版本并补齐缺失交付；修复现有 Release 不主动清除 latest，最终状态由
 包级协调器统一复核。
 
 仓库使用 Apache-2.0，并保留第三方许可证通知。远端发布与 Release 创建仍需单独核验，参见

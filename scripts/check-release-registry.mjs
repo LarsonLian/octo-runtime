@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 
 const execute = promisify(execFile);
 const packageName = "@mininglamp-oss/octo-runtime";
-const registries = new Set(["https://registry.npmjs.org", "https://npm.pkg.github.com"]);
+const npmRegistry = "https://registry.npmjs.org";
 const sha512Integrity = /^sha512-[A-Za-z0-9+/]{86}==$/;
 
 async function run(command, arguments_, options) {
@@ -34,6 +34,7 @@ export async function readRegistryIntegrity(
   registry,
   { runCommand = run, timeout = 30_000, name = packageName } = {}
 ) {
+  if (registry !== npmRegistry) throw new Error(`Unsupported registry: ${registry}`);
   let output;
   try {
     output = await runCommand(
@@ -69,7 +70,7 @@ export async function checkRegistryVersion(
     now = Date.now
   } = {}
 ) {
-  if (!registries.has(registry)) throw new Error(`Unsupported registry: ${registry}`);
+  if (registry !== npmRegistry) throw new Error(`Unsupported registry: ${registry}`);
   if (!/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version) || version === "0.0.0") {
     throw new Error(`Invalid release version: ${version}`);
   }

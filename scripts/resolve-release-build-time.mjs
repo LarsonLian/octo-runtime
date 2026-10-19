@@ -5,41 +5,9 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { readReleaseBuildInfo } from "./read-release-build-info.mjs";
 
-export async function resolveReleaseBuildTime(
-  version,
-  commit,
-  request = fetch,
-  { githubPackagesToken } = {}
-) {
-  let registry = "https://registry.npmjs.org";
-  let options;
-  let response = await request(`${registry}/@mininglamp-oss%2focto-runtime/${version}`);
-  if (response.status === 404 && githubPackagesToken) {
-    registry = "https://npm.pkg.github.com";
-    options = { headers: { authorization: `Bearer ${githubPackagesToken}` } };
-    response = await request(`${registry}/@mininglamp-oss%2focto-runtime`, options);
-    if (response.ok) {
-      const packageMetadata = await response.json();
-      if (
-        !packageMetadata ||
-        packageMetadata.name !== "@mininglamp-oss/octo-runtime" ||
-        !packageMetadata.versions ||
-        typeof packageMetadata.versions !== "object" ||
-        Array.isArray(packageMetadata.versions)
-      ) {
-        throw new Error("Invalid GitHub Packages metadata");
-      }
-      if (Object.hasOwn(packageMetadata.versions, version)) {
-        const metadata = packageMetadata.versions[version];
-        if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-          throw new Error("Invalid GitHub Packages version metadata");
-        }
-        response = Response.json(metadata);
-      } else {
-        response = new Response(null, { status: 404 });
-      }
-    }
-  }
+export async function resolveReleaseBuildTime(version, commit, request = fetch) {
+  const registry = "https://registry.npmjs.org";
+  const response = await request(`${registry}/@mininglamp-oss%2focto-runtime/${version}`);
   if (response.status === 404) return new Date().toISOString();
   if (!response.ok) throw new Error(`Registry lookup failed: ${response.status}`);
   const metadata = await response.json();
@@ -50,7 +18,7 @@ export async function resolveReleaseBuildTime(
   if (archiveUrl.origin !== registry) {
     throw new Error("Unexpected release archive origin");
   }
-  const archiveResponse = await request(archiveUrl, options);
+  const archiveResponse = await request(archiveUrl);
   if (!archiveResponse.ok) throw new Error(`Archive download failed: ${archiveResponse.status}`);
   const archive = Buffer.from(await archiveResponse.arrayBuffer());
   const integrity = `sha512-${createHash("sha512").update(archive).digest("base64")}`;
@@ -80,8 +48,6 @@ export async function resolveReleaseBuildTime(
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  const buildTime = await resolveReleaseBuildTime(process.argv[2], process.argv[3], fetch, {
-    githubPackagesToken: process.env.GH_PACKAGES_TOKEN
-  });
+  const buildTime = await resolveReleaseBuildTime(process.argv[2], process.argv[3]);
   await appendFile(process.env.GITHUB_OUTPUT, `build_time=${buildTime}\n`);
 }

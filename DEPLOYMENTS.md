@@ -72,7 +72,7 @@ node scripts/pack-release.mjs --version 1.0.0
 node scripts/verify-release.mjs ./dist/release/mininglamp-oss-octo-runtime-1.0.0.tgz
 ```
 
-本地命令只用于验证，不用于正式上传。正式发布在最新 `main` 提交上创建并推送 `vX.Y.Z` annotated tag；GitHub Actions 校验 tag、重新构建并验证 commit 后，先交付不可变 npm 版本和对应 GitHub Release，再把两端 latest 收敛到已完整交付的最高稳定版。并发 tag 或历史版本恢复不会回退 `@latest`。不要修改源码清单版本，也不要直接 npm publish 或 pnpm publish workspace 根目录。
+本地命令只用于验证，不用于正式上传。正式发布在最新 `main` 提交上创建并推送 `vX.Y.Z` annotated tag；GitHub Actions 校验 tag、重新构建并验证 commit 后，先交付不可变 npm 版本和对应 GitHub Release，再把两端 latest 自动收敛到已完整交付的最高稳定版。唯一 npm registry 是 `https://registry.npmjs.org`，不发布到 GitHub Packages。并发 tag 或历史版本恢复不会回退 `@latest`，RC 等预发布不推进 `latest`。不要修改源码清单版本，也不要直接 npm publish 或 pnpm publish workspace 根目录。
 
 版本命令和根帮助中的 `build:<UTC ISO 8601>` 表示产物构建时间，不是提交、安装或上次升级时间；旧产物没有有效时间时显示 `build:unknown`。打包及安装不重写 `apps/cli/dist/build-info.json`。
 
