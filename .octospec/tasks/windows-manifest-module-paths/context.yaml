@@ -1,0 +1,21 @@
+brief: .octospec/tasks/windows-manifest-module-paths/brief.md
+injected:
+  - { id: runtime-architecture, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-protocol-design, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-adapter-metadata, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-context-extensions, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-context-input, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-environment, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-invoke-input, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-local-execution, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-mcp, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-output-protocol, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-reasoning, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-stateless, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: runtime-engineering, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+  - { id: commit, source: repo, reason: "Host 路径匹配；保留既有合同并验证 loader" }
+files_expected:
+  - packages/octo-runtime-adapter-host/src/runner.ts
+  - packages/octo-runtime-adapter-host/src/module-specifier.ts
+  - test/adapter-host-manifest.test.js
+updated_at: 2026-10-19T12:26:18.150Z

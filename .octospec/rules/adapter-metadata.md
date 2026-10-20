@@ -73,6 +73,10 @@ Host 按执行合同校验来源、输出模式和实际交互 responder；审�
 
 ## 实现与验证入口
 
+### Manifest 模块路径
+
+manifest.module 的本机绝对路径（Windows 包含盘符与 UNC）和以点开头的相对路径，由 Host loader 转换为 file URL；相对路径以 manifest 所在目录为基准，不能以宿主 cwd 为基准。包 specifier 与已有 file URL 保留原解析语义。平台差异封装在内部，不要求 SDK 调用方预转换 URL、选择 OS 或改变现有启动接口。
+
 ### CLI 帮助与开发者高级入口
 
 普通 CLI `--help` 说明默认使用内置 Adapter、无需 Adapter 配置，不展示高级 `--manifest` 参数。隐藏只影响帮助渲染，不能删除参数解析、优先级或显式清单执行支持。现有显式 manifest 是完整加载集合，不是自动追加；第三方结构式模块可由其加载，但 `/adapter` 公开 SDK 和 extra_adapters.json 自动追加仍须分别实施验收。

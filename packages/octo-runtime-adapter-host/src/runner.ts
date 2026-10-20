@@ -4,8 +4,8 @@
 // on stdio (the daemon-to-host transport). Kept separate from the daemon so
 // provider processes are isolated behind a process boundary.
 import { readFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { resolve } from "node:path";
+import { resolveAdapterModuleSpecifier } from "./module-specifier.js";
 import { serveAdapterHost, type HostedAdapter } from "./index.js";
 
 type JsonRecord = Record<string, unknown>;
@@ -33,10 +33,7 @@ const manifest = parseManifest(rawManifest);
 const adapters: HostedAdapter[] = [];
 
 for (const entry of manifest.adapters) {
-  const specifier =
-    entry.module.startsWith(".") || entry.module.startsWith("/")
-      ? pathToFileURL(resolve(dirname(manifestPath), entry.module)).href
-      : entry.module;
+  const specifier = resolveAdapterModuleSpecifier(entry.module, manifestPath);
   const loaded: unknown = await import(specifier);
   const moduleExports = asRecord(loaded, `adapter module ${entry.module}`);
   const exported = moduleExports[entry.exportName];
