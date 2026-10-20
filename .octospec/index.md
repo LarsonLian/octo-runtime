@@ -50,6 +50,7 @@
 ## 历史与取舍
 
 - [Windows manifest 模块路径修复（Issue #37）](journal/shared/2026-10-19-windows-manifest-module-paths.md)：专门回归 14 通过；Windows 全仓剩余失败及新暴露的关闭问题单独记录，跨平台验证按 PR 检查结果更新。
+- [历史 Gitleaks 告警处置（Issue #22）](tasks/gitleaks-history-triage/brief.md)：45 条误报已核验并添加精确历史例外，19 条新增 canary 被拦截；完整历史与 PR 模式验证通过，见[验证记录](journal/shared/2026-10-19-gitleaks-history-triage.md)。
 
 - [群/话题续聊上下文缺口（Issue #32）](tasks/channel-context-gap/brief.md)：服务端位置、有界binding、模型前固定API准备最近最多15条；不委托模型CLI补历史，包含逐文件改动、29项验收及91/100可执行性评分；部署合同及真实Provider联验待验。
 

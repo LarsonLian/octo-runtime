@@ -1,5 +1,10 @@
 # 工程知识变更记录
 
+## 2026-10-19
+
+- [历史 Gitleaks 告警处置（Issue #22）](tasks/gitleaks-history-triage/brief.md)：45 条误报已核验并添加精确历史例外，19 条新增 canary 被拦截；完整历史与 PR 模式验证通过，见[验证记录](journal/shared/2026-10-19-gitleaks-history-triage.md)。
+
+
 ## 2026-10-18
 
 - 用户确认推荐参数后实施 Provider 输出容量修复：中央默认策略为原始消息 16 MiB、HostFrame 20 MiB、Adapter/RPC 队列 32 MiB / 4096、单 Run 重放 32 MiB / 4096、全局重放 128 MiB，硬上限为默认值 2 倍；覆盖仅来自受信 Adapter execution 配置。容量失败改为精确、不可重试的公开分类；Channel 256 KiB 经核对只统计公开消息文本，本次不改。专项 62 项通过 61、条件跳过 1；全量 WebUI 35/35、Node 1149 通过/9 跳过，构建、lint、命名、格式和 diff 检查通过。真实 Provider、并发内存和三平台 CI 尚未验收，详见[本地交付记录](journal/shared/2026-10-18-provider-stream-limits.md)；实现已形成 topic branch 提交。

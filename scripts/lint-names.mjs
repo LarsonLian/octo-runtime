@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -20,6 +21,16 @@ function containsLegacy(value, name) {
     ? value.includes(name)
     : value.toLowerCase().includes(name.toLowerCase());
 }
+// Issue #22 的原始路径属于不可改写的历史证据。仅允许已核验的完整内容快照；
+// 任意内容变更都须重新审核，不能把文件或目录整体排除于命名检查之外。
+// 统一 CRLF/LF 后校验，以兼容 Windows checkout；此例外不改变 Gitleaks 扫描规则。
+const historicalEvidence = new Map([
+  [".gitleaksignore", "9261fbfaaa21f314aad7641eb9f3779adbc7649dc627e591699d12766814d736"],
+  [
+    ".octospec/tasks/gitleaks-history-triage/findings.md",
+    "df331c61f2eaea9e18a36ae2150ff053f56bd555c11e57df0c2653e809ed7d70"
+  ]
+]);
 const excluded = [".git", "node_modules", "dist", "out", "release", ".worktree", ".workbuddy"];
 const args = [
   "--files",
@@ -40,6 +51,10 @@ for (const file of files) {
   const bytes = readFileSync(resolve(root, file));
   if (bytes.includes(0)) continue;
   const text = bytes.toString("utf8");
+  const evidenceHash = historicalEvidence.get(file.replaceAll("\\", "/"));
+  const verifiedEvidence =
+    evidenceHash !== undefined &&
+    createHash("sha256").update(text.replaceAll("\r\n", "\n")).digest("hex") === evidenceHash;
   for (const [index, line] of text.split(/\r?\n/).entries()) {
     const names = legacy.filter((name) => containsLegacy(line, name));
     if (!names.length) continue;
@@ -51,6 +66,8 @@ for (const file of files) {
       line.split(legacy[0]).length === 2;
     if (requiredHistory)
       exceptions.push({ ...entry, reason: "Explicitly required architecture-review history" });
+    else if (verifiedEvidence)
+      exceptions.push({ ...entry, reason: "Reviewed Issue #22 historical evidence snapshot" });
     else findings.push(entry);
   }
 }

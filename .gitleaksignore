@@ -1,0 +1,138 @@
+# Issue #22：仅忽略已逐条核验的历史误报，保留完整内置规则。
+# 台账：.octospec/tasks/gitleaks-history-triage/findings.md
+# 必须包含原始 commit:file:rule:line；禁止去掉 SHA 或扩大排除范围。
+
+# F01 FP-S：已核验非秘密历史样例。
+13f02516ede14f51a2424c10f64921fb1be1f86a:test/task-archive-runtime.test.js:generic-api-key:100
+
+# F02 FP-S：已核验非秘密历史样例。
+13f02516ede14f51a2424c10f64921fb1be1f86a:test/task-archive-runtime.test.js:generic-api-key:101
+
+# F03 FP-S：已核验非秘密历史样例。
+13f02516ede14f51a2424c10f64921fb1be1f86a:test/task-materials.test.js:generic-api-key:122
+
+# F04 FP-S：已核验非秘密历史样例。
+13f02516ede14f51a2424c10f64921fb1be1f86a:test/task-materials.test.js:generic-api-key:124
+
+# F05 FP-S：已核验非秘密历史样例。
+13f02516ede14f51a2424c10f64921fb1be1f86a:test/task-materials.test.js:generic-api-key:254
+
+# F06 FP-S：已核验非秘密历史样例。
+13f02516ede14f51a2424c10f64921fb1be1f86a:test/task-materials.test.js:generic-api-key:255
+
+# F07 FP-S：已核验非秘密历史样例。
+1e607474697679bf38e55c184310f06dd18ca461:test/task-archive-runtime.test.js:generic-api-key:101
+
+# F08 FP-S：已核验非秘密历史样例。
+1e607474697679bf38e55c184310f06dd18ca461:test/task-materials.test.js:generic-api-key:124
+
+# F09 FP-S：已核验非秘密历史样例。
+1e607474697679bf38e55c184310f06dd18ca461:test/task-materials.test.js:generic-api-key:255
+
+# F10 FP-S：已核验非秘密历史样例。
+2c9f2a32fbabc6e2a8dd5b9f67428db012c49016:test/task-archive-runtime.test.js:generic-api-key:101
+
+# F11 FP-S：已核验非秘密历史样例。
+2c9f2a32fbabc6e2a8dd5b9f67428db012c49016:test/task-materials.test.js:generic-api-key:277
+
+# F12 FP-S：已核验非秘密历史样例。
+4bebb2ed3f1e1a3eb9fade054988f7fc2eedc85b:test/task-materials.test.js:generic-api-key:60
+
+# F13 FP-S：已核验非秘密历史样例。
+4bebb2ed3f1e1a3eb9fade054988f7fc2eedc85b:test/task-materials.test.js:generic-api-key:132
+
+# F14 FP-S：已核验非秘密历史样例。
+617e401c3c5bb5dd025b18319bac875ee3cc6fc7:test/task-archive-runtime.test.js:generic-api-key:99
+
+# F15 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:306
+
+# F16 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:323
+
+# F17 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:341
+
+# F18 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:346
+
+# F19 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:362
+
+# F20 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:365
+
+# F21 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:390
+
+# F22 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:409
+
+# F23 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:434
+
+# F24 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:452
+
+# F25 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:479
+
+# F26 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:501
+
+# F27 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:523
+
+# F28 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:553
+
+# F29 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:574
+
+# F30 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:601
+
+# F31 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-configuration-fixtures.json:generic-api-key:620
+
+# F32 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-fixtures.json:generic-api-key:2
+
+# F33 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-fixtures.json:generic-api-key:3
+
+# F34 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-fixtures.json:generic-api-key:4
+
+# F35 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-fixtures.json:generic-api-key:5
+
+# F36 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-fixtures.json:generic-api-key:513
+
+# F37 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-fixtures.json:generic-api-key:516
+
+# F38 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-fixtures.json:generic-api-key:538
+
+# F39 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-fixtures.json:generic-api-key:543
+
+# F40 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-fixtures.json:generic-api-key:585
+
+# F41 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-fixtures.json:generic-api-key:612
+
+# F42 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:packages/octo-harness-protocol/schema/context-fixtures.json:generic-api-key:637
+
+# F43 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:test/context-configuration-protocol.test.js:generic-api-key:63
+
+# F44 FP-R：已核验非秘密历史样例。
+86c8128c010b637fcc41a515d2b518e8dd3b3c63:test/context-preparation.test.js:generic-api-key:13
+
+# F45 FP-D：已核验非秘密历史样例。
+ea1486fe153b63484a60e5f68df94596499ec8b6:packages/octo-runtime-extra-sse-demo/README.md:curl-auth-header:32

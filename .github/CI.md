@@ -52,6 +52,59 @@ Additional workflows provide common-history validation, secret scanning, depende
 review, weekly CodeQL, workflow sanity, PR title checks, labels and release drafting.
 Project/Sprint automation is not configured in this repository.
 
+## Secret Scan：历史告警与精确例外
+
+共享工作流在 PR 中扫描 `BASE_SHA..HEAD_SHA`，在 main push 中扫描完整 Git 历史。
+本次 Gitleaks 为 `8.30.1`，`@v1` 解析为 `8feb64b77fcd794571ba9a959f7f745bc7a0650c`；
+后续排查应重新记录实际版本。PR 通过不能证明完整历史通过，删除当前文件也不会移除历史版本。
+
+从待扫描仓库根目录运行，保持与工作流一致的命令和工作目录。先确认 `gitleaks version`，
+记录完整 SHA、refs、是否浅克隆；不同 ref 集合的扫描计数不能直接比较。
+本地复现还应检查 Gitleaks 配置环境变量是否改变了内置规则，CI 未配置这些变量。
+
+```sh
+# main push：完整历史
+gitleaks git --redact --verbose .
+
+# PR：将两个占位符换成实际完整 SHA，确保提交对象可达
+gitleaks git --log-opts="BASE_SHA..HEAD_SHA" --redact --verbose .
+```
+
+根目录 `.gitleaksignore` 仅保存核验过的 `commit:file:rule:line` 指纹，由当前工作目录加载；
+从父目录指定另一个仓库路径不等同于先进入该仓库根目录。本仓没有新增 `.gitleaks.toml`，
+继续使用完整内置规则。Issue #22 的逐条依据见[历史告警台账](../.octospec/tasks/gitleaks-history-triage/findings.md)。
+
+新增告警先分为真实凭据、确认误报和待确认。真实凭据先私下撤销/轮换并核查影响；
+待确认及未处置真实凭据继续阻塞，Issue 保持开放，不能为通过检查而提前添加例外。
+确认非秘密内容后记录原提交、文件、行号、规则和依据，再添加对应完整指纹。
+历史指纹和核验台账中的原始路径不可随包名迁移改写。命名检查只接受这两份已核验文件的
+固定 SHA256 内容快照（统一 CRLF/LF）；内容变化仍须重新审核并更新命名检查中的摘要，
+同时运行命名回归和扫描验收，不能按文件或目录放宽排除。
+禁止忽略整个测试/文档目录、所有 key 字段、整个提交或关闭检测规则。
+确需定制 TOML 时保留内置规则（`[extend]` / `useDefault = true`）并重新验证。
+
+获取 JSON 证据可附加 `--report-format json --report-path <仓库外报告路径>`，始终保留 `--redact`。
+共享材料只摘录必要元数据，不发布候选值或完整内部日志。非零退出须区分告警、配置错误、
+缺失 Git 对象和扫描器故障，不能强制转换为成功。缺失显式 `--config` 路径和无效 TOML 必须失败；
+没有可选 TOML 本身是使用内置规则的合法情况。
+
+例外变更应在保留原始 SHA 的隔离历史仓库验收：先证明旧指纹实际排除，再新增非功能性 canary 提交，
+验证同文件、原行号及邻近行的新密钥样式仍被完整历史和 PR 扫描拦截。
+重新创建或 cherry-pick 原始历史会改变 SHA，不能证明原指纹生效。
+
+专项验收脚本使用 Python 3 标准库、Git 和已校验的 Gitleaks 8.30.1；`--scratch` 指定尚不存在的新目录。
+`--reuse-evidence` 复用原完整历史与 19 条 canary，不重复分类；省略该参数才重新生成历史验证仓库。
+脚本只在隔离仓库创建合成测试提交和脱敏证据，不提交/推送源仓库，也不调用 canary 对应服务：
+
+```sh
+python3 .octospec/tasks/gitleaks-history-triage/verify.py --gitleaks /absolute/path/to/gitleaks --reuse-evidence /previous/verification-directory --scratch /new/verification-directory
+```
+
+Windows 使用实际 Python 和 `gitleaks.exe` 路径运行同一脚本。脚本固定 Issue #22 的两条基线与 45 个指纹；
+后续新增历史处置要更新独立验收依据，不能把台账自动当作新告警的放行名单。
+
+完整结果见[本地交付记录](../.octospec/journal/shared/2026-10-19-gitleaks-history-triage.md)。
+
 ## Main Protection and First-PR Bootstrap
 
 `main` requires a PR, one approval, resolved review conversations, and `CI Gate` from

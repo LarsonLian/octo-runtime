@@ -1,0 +1,42 @@
+status: historical-false-positives-verified
+issue: Mininglamp-OSS/octo-runtime#22
+baseline: ab3ded527db4599f50bbab4c2045b4b025086f3d
+failed_baseline: 62d10ac46e7c2c3505b42c362229f7b91f328e5b
+branch: fix/gitleaks-history-triage
+gitleaks_version: 8.30.1
+workflow_revision: 8feb64b77fcd794571ba9a959f7f745bc7a0650c
+rules: [runtime-architecture, runtime-engineering, commit]
+sources:
+  - AGENTS.md
+  - CONTRIBUTING.md
+  - .github/PULL_REQUEST_TEMPLATE.md
+  - .octospec/index.md
+  - .octospec/manifest.yaml
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/collaboration.md
+  - .github/workflows/secret-scan.yml
+  - .github/CI.md
+  - scripts/lint-names.mjs
+  - test/name-lint.test.js
+  - https://github.com/Mininglamp-OSS/octo-runtime/issues/22
+  - https://github.com/gitleaks/gitleaks/blob/v8.30.1/README.md
+global_cache_available: false
+decisions:
+  exact_historical_fingerprints: true
+  unresolved_findings_block_completion: true
+  preserve_original_history_for_canaries: true
+  preserve_caller_v1: true
+  runtime_pr_authorized: true
+validation:
+  historical_fingerprints: 45
+  verified_false_positives: 45
+  unresolved_classifications: 0
+  canary_findings: 19
+  hosted_ci_run: true
+  hosted_ci_head: 20f39e27b62ed31998efd7d95f12f428f61778e5
+  hosted_ci_secret_scan: passed
+  hosted_ci_overall: failed-naming-check
+  name_lint_passed: true
+  name_lint_regressions: 7
