@@ -133,6 +133,7 @@ try {
   assert.deepEqual(Object.keys(metadata.exports).sort(), [
     "./executor-core",
     "./extra",
+    "./extras/channel-gateway",
     "./extras/channel-gateway/config-schema.json",
     "./extras/channel-wecom/config-schema.json",
     "./extras/webui/config-schema.json",

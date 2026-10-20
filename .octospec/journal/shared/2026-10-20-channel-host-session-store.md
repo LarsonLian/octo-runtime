@@ -53,3 +53,18 @@ Manager 拥有工厂句柄，初始化异常回收，旧 Runtime 收尾后才释
 - OKF 仍仅同一组 14 个 HEAD 已有跨仓失效引用，无新增格式、索引或链接错误。
 
 本机 fake Provider/网络边界及未验真实 IM、Windows、第三方 Buddy 的限制保持；未提交、推送或发布。
+
+
+# 发行验证器 P1 补修
+
+后续独立评审指出：新增 `/extras/channel-gateway` 后，`scripts/verify-release.mjs` 的精确 exports 清单未同步，导致必需的离线发行门禁失败。此前单独包外导入/类型探针不能替代仓库完整发行验证器；这是前两轮收尾的实际漏验，撤回“本地打包探针等同发行门禁通过”的任何推断。
+
+已在保留精确清单断言的前提下补入 `./extras/channel-gateway`，没有放宽或跳过其他校验。使用干净 `5fc65ebb288db8edca6b44e415ddbdc105ca8937` 重新构建的同一归档，先以旧验证器复现 exports 的 deepStrictEqual 失败，再运行修正后的仓库原版脚本：
+
+```sh
+node scripts/verify-release.mjs dist/release/mininglamp-oss-octo-runtime-0.0.0.tgz --expected-commit 5fc65ebb288db8edca6b44e415ddbdc105ca8937 --require-clean
+```
+
+完整离线验证通过：空缓存全局安装、CLI/daemon 启动、12 Adapter 就绪、公开类型、ExecutorCore、第三方 Extra 与三个内置 Extra 加载、卸载保留 Home。归档 dirty=false，未改写构建来源或降低 require-clean 条件，未开启真实模型联调。
+
+改动仅为验证器公开导出清单及本验证记录，不修改存储或执行逻辑。按用户此前授权，将补修追加至 PR #65 分支并同步 fork main；不合并受评审保护的上游 PR，不发布。

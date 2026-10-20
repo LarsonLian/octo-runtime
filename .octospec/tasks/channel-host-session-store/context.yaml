@@ -36,6 +36,7 @@ validation:
   lint: passed
   names: passed
   package_probe: runtime entry and public types passed outside repository
+  distribution_verifier: 原 exports 清单漏项已补，5fc65eb 干净归档完整离线验证通过
   okf: 14 pre-existing cross-repository missing links; no new findings
   external_im_provider: not performed
-  commit_push_publish: not performed
+  commit_push_publish: 已提交推送至 fork 和 PR 65；未发布
