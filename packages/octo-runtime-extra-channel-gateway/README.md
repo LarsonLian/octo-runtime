@@ -12,11 +12,17 @@
 
 入口为 `extra(context, jsonConfig)(dependencies)`：外层同步返回函数，内层异步启动。CLI 以 `{}` 初始化，使用各 Bot 显式配置的 context；下面的新配置示例均包含“我是明略科技的Octo助理”。省略 context 不会自动填充。instructions.entries 只接受 `{ text }`，旧 source 字段会被拒绝。
 
-同进程宿主可经公开 `ExtraPlugins.load(module, jsonConfig, { loadContexts })` 注入业务函数：`loadContexts(botConfig, { signal })` 返回 ContextItem 数组或 Promise。每个已接纳轮次调用一次，同 namespace/name 动态整项替换静态项并保留位置，新项按动态顺序追加；重试复用本轮快照。函数不进入 JSON，插件内部 manager 不向宿主暴露。本轮未改 SDK HostApp 的函数装配，既有 runtime.loadExtra 仍只接收 JSON。
+同进程宿主可经公开 `ExtraPlugins.load(module, jsonConfig, { loadContexts })` 注入业务函数：`loadContexts(botConfig, { signal })` 返回 ContextItem 数组或 Promise。每个已接纳轮次调用一次，同 namespace/name 动态整项替换静态项并保留位置，新项按动态顺序追加；重试复用本轮快照。函数不进入 JSON，插件内部 manager 不向宿主暴露。SDK 宿主通过 `runtime.loadExtra(module, jsonConfig, dependencies)` 在主进程装配函数，执行仍复用独立 AdapterHost。
 
 典型场景是宿主编辑 Agent 提示词后，后续 IM 任务重新读取新值，而无需重载 Gateway 或重建连接。初始化固定的是函数引用，不是以后读取的数据。静态 `config.bots[i].context` 每轮作为基线；动态同 key 整项替换，instructions.entries 也不拼接，需保留的固定人设由宿主显式带上。动态空数组保留静态项，不沿用上一轮动态值。完整场景和覆盖例子见[Octospec 专题](../../.octospec/guides/channel-dynamic-contexts.md)，宿主函数、装配及 SDK 后续初始化见[SDK 指南第 7 节](../../SDK_CHANNEL_GATEWAY_GUIDE.md#7-逐轮加载-agent-系统提示词与业务-context)。逐轮取得新系统指令与 Provider 已有会话应用不同，不自动 reset，详见该节的会话边界。
 
 插件级 JSON 配置 `context_loading` 支持 `timeout_ms`（默认 5000，1..30000）和 `max_in_flight`（默认 8，1..32）。超时、异常或容量已满时本轮不调用模型；未结束的 IO 继续占名额，没有等待回调的队列或历史结果缓存。业务函数必须响应 signal；`/stop` 及卸载会取消加载。任意外部同步代码和自行建立的缓存不受框架内存预算约束。完整合同见[配置指南](../../.octospec/guides/extra-configuration.md)。
+
+## 宿主会话存储
+
+GatewayDependencies 在通用 loadContexts 之外提供可选 `createSessionStore(config: JsonObject): ImSessionStore`。每个启用且配置有效的 Bot 获得一个工厂句柄，Gateway 在 Runtime 收尾后释放；直接注入 `sessions` 仍是借用，不关闭。工厂及同步存储方法失败不回退 Memory；`close` 可返回 Promise，失败或超过 5 秒阻止替换。未提供工厂保持原有有界内存行为。
+
+单一发行包通过 `/extras/channel-gateway` 导出函数式模块及类型，`/extra` 同样导出 GatewayDependencies、ImSessionStore、ImSessionBinding 和 ImSessionOccurrence；宿主无需导入内部路径。SQLite、账号/组织/助理 scope、事务和数据库生命周期归宿主。完整装配、方法语义和 draining/closed 约定见 [SDK 指南第 8 节](../../SDK_CHANNEL_GATEWAY_GUIDE.md#8-宿主会话存储与重载恢复)。
 
 ## CLI 配置多个 Bot
 

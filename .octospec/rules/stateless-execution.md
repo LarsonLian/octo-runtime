@@ -3,7 +3,7 @@ type: Rule
 title: 纯执行与有界状态
 description: 不持久化业务历史，只保留有界执行窗口和运行配置。
 tags: ["storage","stream","stateless"]
-timestamp: 2026-10-19T00:00:00Z
+timestamp: 2026-10-20T00:00:00Z
 implementation_baseline: df63c8f
 id: runtime-stateless
 tier: repo
@@ -51,9 +51,11 @@ ACP 的每个 session 更新队列、ZCode 的每次客户端事件队列复用 
 
 ## 插件状态
 
-Octo 和 WeCom 各自使用有界内存会话映射，具体容量及 reset 见 [会话合同](session-reset.md)。这些业务映射不属于通用 Host 的持久历史。映射失效后创建新会话，不能声称已恢复旧 Provider 会话。
+默认 Octo 和 WeCom 各自使用有界内存会话映射，具体容量及 reset 见 [会话合同](session-reset.md)。这些业务映射不属于通用 Host 的持久历史。映射失效后创建新会话，不能声称已恢复旧 Provider 会话。
 
 2026-10-15 用户对 Channel Gateway 再次确认：不新增 Context、聊天正文、输入图片、业务 Provider binding 或投递账本的本地持久化，不在 Adapter 建业务状态库；在途与连接状态保持有界内存。需要新会话背景时由 Channel 调用 API 获取当前频道此前 15 条并显式提交 extra Context；此策略于 2026-10-16 实施，一次资格保存在现有有界 binding 中。Provider 原生存储、现有身份和配置不因本决策删除或重置。依据、代价与验收见[不持久化决策](../tasks/channel-no-context-persistence/brief.md)及[历史 Context 专项](../tasks/channel-new-session-history/brief.md)。
+
+2026-10-20 Issue 57 的显式宿主工厂是可选接入扩展：Gateway 消费宿主返回的 ImSessionStore，由宿主决定是否以及如何持久化；Runtime/CLI 默认仍不创建数据库。工厂只在宿主 Node 进程，不能进入 Core/AdapterHost 或把宿主存储变成执行层 durable ACK。完整生命周期及方法合同见 [会话规则](session-reset.md#gateway-宿主存储工厂)。此授权不恢复 Runtime 自建 Context/聊天库，也不将持久化推广到 WeCom 或未配置工厂的调用方。
 
 ## 保留的文件
 

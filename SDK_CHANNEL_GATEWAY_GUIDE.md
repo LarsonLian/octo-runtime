@@ -612,3 +612,79 @@ await runtime.stop("quit");
 同一Provider session不表示模型看过未 @ 它的讨论。Gateway只观察授权群/话题的位置，不因普通讨论执行任务或新增本地聊天库；再次被 @ 时，模型前固定输入准备直接调用现有TypeScript API层的`getChannelMessagePage`，将正文放入`extra.im/history`，将加载状态放入`extra.im/history-gap`。不委托模型调用CLI，不分类“总结”等关键词，独立问题也遵循相同的有缺口才补取策略。Host和Adapter仍只消费本轮快照。
 
 未知基线与冷启动共用最近最多15条的上限，已知缺口为min(15,跨度)；本轮冷/续聊合并为最多一次sync API、10秒、1 MiB响应，禁用429自动重试和分页，代码再按冻结范围过滤、去重并截至15条/1500 Unicode码点。较早记录、非文本或截断使材料不全时明确标注；失败不换身份或频道、不自动启动CLI补救，不阻断当前任务。材料被最终预算移除时改为omitted，不声称已提供；失败或省略保留待补边界。reset、重启及淘汰不恢复旧游标，同代次重试不重新采集；自定义session store未实现可选原子metadata patch时只能按unknown处理。模型额外业务工具调用仍使用宿主提供的octo-cli，与此流程无关。当前本地实现及尚未完成的线上验收见[实施记录](.octospec/tasks/channel-context-gap/implementation.md)。
+
+## 8. 宿主会话存储与重载恢复
+
+Gateway 的函数式入口支持可选 `GatewayDependencies.createSessionStore`。它解决 SDK 宿主已拥有 SQLite 等存储、但 Extra 实际仍使用默认 Memory 的装配缺口。未提供工厂时继续使用原有有界内存存储；自带 CLI 的 JSON 装配不读取函数，也不会自动开启持久化。WeCom 不使用此 Gateway 专属接口。
+
+### 8.1 公开接口与装配
+
+单一 npm 发行包提供 `@mininglamp-oss/octo-runtime/extras/channel-gateway` 函数式模块入口；依赖类型可从该入口或 `/extra` 取得。源码 workspace/submodule 接入仍可从 `@mininglamp-oss/octo-runtime-extra-channel-gateway` 根入口导入相同模块与类型。宿主固定包含本次改动的发行版本后再验收；文档不代表该版本已发布。
+
+```ts
+import * as gatewayModule from "@mininglamp-oss/octo-runtime/extras/channel-gateway";
+import type {
+  GatewayDependencies,
+  ImSessionStore,
+  JsonObject
+} from "@mininglamp-oss/octo-runtime/extra";
+
+// 这是宿主现有存储服务的适配接口，不是 Runtime 提供的 SQLite 驱动。
+// 实现负责按已授权账号、组织、助理、Bot 和 API 环境分区，并返回独立句柄。
+interface HostSessionStorage {
+  openBotHandle(config: JsonObject): ImSessionStore;
+}
+
+declare const hostSessions: HostSessionStorage;
+// runtime 已按第 4 节创建并 startAccount；jsonConfig 是完整 Gateway config。
+// agentContexts 为第 7 节宿主自己的逐轮 Context 读取对象。
+const dependencies: GatewayDependencies = {
+  loadContexts: agentContexts.loadContexts,
+  createSessionStore(botConfig) {
+    // 参数是一个已校验 Bot 的独立 JSON 副本，保留宿主自有 scope 扩展字段。
+    // 必须与宿主当前账号和已保存的 Bot→助理关系核对；不要只用裸 bot_id 分库。
+    // 不记录完整配置，因为其中可能包含 bf_token；不从消息正文/路由选择存储 scope。
+    return hostSessions.openBotHandle(botConfig);
+  }
+};
+
+await runtime.loadExtra(gatewayModule, jsonConfig, dependencies);
+const status = await runtime.extraStatus("channel-gateway");
+// 宿主检查 status.bots/errors；Extra loaded 仅表示初始化完成，不代表所有 Bot 可用。
+
+// 重载：旧实例收尾和句柄释放成功后，才保存并提交最新完整配置。
+await runtime.unloadExtra("channel-gateway");
+await runtime.loadExtra(gatewayModule, jsonConfig, dependencies);
+
+// 应用退出：先停止 Runtime，确认清理结果后，再关闭宿主共享数据库。
+// 切账号同样先收尾旧账号；新账号启动后重新提供其配置和函数，不复用旧闭包。
+await runtime.stop("quit");
+```
+
+工厂在每个启用且配置有效的 Bot 初始化时调用一次；`enabled: false` 和无效配置不创建宿主句柄。参数不是整个 `bots` 数组，也没有入站消息字段。Gateway 复制工厂参数，工厂修改副本不影响连接配置；未知 scope 字段只保留，不由框架解释或授权。同一 Bot 的所有群、私聊、话题仍经现有不透明 key 区分，宿主不得拆解 key 推导身份或省略自己的账号/组织/助理分区。
+
+工厂是同步函数，返回 `ImSessionStore`，不返回 Promise。误传 Promise/thenable 会被明确拒绝；其拒绝不会作为未处理 Promise 逃逸，迟到返回的句柄也会尝试回收，回收失败或未结束仍按清理失败处理。接口读写均同步，不能直接返回异步数据库方法的 Promise；`async` 包装不会消除同步 SQLite 阻塞。句柄释放单独允许异步。工厂及数据库只保留在宿主 Node 进程，不写入 JSON、启动参数或独立 AdapterHost IPC。
+
+### 8.2 存储实现合同
+
+| 方法 | 宿主必须实现的语义 |
+| --- | --- |
+| `read(key)` / `save(key, binding)` | 返回独立快照并完整保存 binding：逻辑 id、generation、Provider session、最近 Run/Event、首轮准备标记及可选 gap；不要只保存 Provider thread |
+| `reset(key, controlId)` | 同一控制消息幂等；新 reset 增 generation 并清除旧 session/Provider/gap；对同一 key 原子完成，不影响其他 key |
+| `occurrence(key, id)` / `remember(key, id, value)` | 按聊天和消息身份隔离，保存约定的去重及重试快照；宿主制定有界保留策略，不能无限归档所有正文/Context |
+| `patchGap?(key, identity, update)` | 可选；原子检查 sessionId/generation 并 patch 最新 gap，身份不符返回 false。缺省时 Gateway 按既有 unknown 策略处理，不能假报已追平 |
+| `close?(): void \| Promise<void>` | 只释放本句柄及其监听器/租约，不能关闭整个 Client 数据库；异常向上传播，不伪装释放成功 |
+
+`ImSessionBinding`、`ImSessionOccurrence` 可从公开入口取得。数据过期、容量、事务和 schema 归宿主；Runtime 不增加 SQLite 依赖或迁移旧数据。Provider binding 存在只表示可尝试恢复；Provider 拒绝恢复或显式 fresh_fallback 仍按原合同处理，不保证 thread 永不改变。固定 Agent cwd、reset 后的历史准备及模型执行策略保持原合同。
+
+### 8.3 所有权、失败和关闭顺序
+
+工厂返回的新句柄归 Gateway 的 Manager 管理；每个 Bot 必须返回独立句柄，不能让两个 Bot 共享同一个可关闭句柄。Manager 只在旧实例清理成功后创建替代句柄。底层高级 API 直接注入 `sessions` 仍是借用，Runtime 不关闭它，不能同时配置 `sessions` 与 `createSessionStore`。
+
+卸载、退出和账号切换的顺序为：停止接纳 → 取消连接与执行 → 等待队列及原调用收尾 → 释放句柄。SDK 在停止接纳后按原 receipt 校验调用归属并请求取消，保留原 IPC 事件流至真实终态或清理期限，不因 owner abort 立即断开。普通调用方显式取消仍沿原立即取消语义。停止信号触发不等于句柄立即失效：宿主若有租约状态机，应先进入 draining，允许已接纳调用的有界收尾写入；Gateway 在此期间只保存同 session/generation 的真实 Provider session 更新，不继续展示、交互或发送最终回复。reset 后的旧任务不能覆盖新 binding。
+
+清理最多等待 5 秒，与 Extra loader 的既有共享宽限协调，不按资源逐项延长。超时后 Gateway 拒绝通过旧包装句柄的迟到访问，并报告清理失败；超时不等于宿主句柄已释放。宿主仍须在自己的最终期限撤销外部租约，处理未完成的 IO/句柄，再决定数据库关闭策略。同步阻塞整个事件循环的宿主代码无法由 JS 定时器强制终止。
+
+工厂抛错或返回无效接口时，受影响 Bot 通过 `extraStatus("channel-gateway")` 的 `errors`/`config_error` 报告错误，有效 Bot 仍按原合同初始化；**不会回退到 Memory**。运行中的存储异常沿 `IM_SESSION_STORE_FAILED` 等既有脱敏诊断报告，不泄露数据库原始异常。draining 阶段的存储写入/读取失败即使已被业务诊断捕获，也会使清理失败，不能用句柄 close 成功掩盖绑定未保存。初始化尚未退出时，owner abort 同样立即启动 Manager 的清理和撤权期限。句柄清理失败/超时上报 `EXTRA_DISPOSE_FAILED`，保留失败实例阻止同名 reload；宿主必须显示失败并处理资源，不能忽略错误继续创建新实例。
+
+本地验证入口为 [宿主存储专项](test/im-host-session-store.test.js)：真实 Extra + 临时 SQLite 关闭重开、会话续接、去重/reset、scope 隔离、句柄所有权、在途收尾、失败/超时及 SDK 生命周期。网络 Transport 与模型使用 fake；真实 IM 与 Provider 恢复需要宿主固定版本后单独联验。

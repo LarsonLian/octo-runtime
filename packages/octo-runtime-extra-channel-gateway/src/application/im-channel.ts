@@ -903,10 +903,13 @@ export class ImRuntime {
       presentation?.update(snapshot());
       session.activeInvocationId = request.invocationId;
       for await (const event of task.events()) {
-        if (this.#closed || this.#signal.aborted) break;
+        // 取消接纳/投递与撤销存储租约是两步。关闭时继续等待原调用收尾，
+        // 只保存同代次的真实 Provider binding，不再展示、交互或投递。
         if (event.type === "session.update" && session.id === request.sessionId) {
           session.providerSession = event.payload.providerSession;
           this.#saveBinding(key, session);
+        }
+        if (event.type === "session.update" && session.id === request.sessionId) {
           if (event.payload.providerSession?.resumeOutcome === "fresh_fallback") {
             try {
               this.#sessionStore.patchGap?.(
@@ -922,6 +925,13 @@ export class ImRuntime {
               this.#diagnostic("IM_HISTORY_POSITION_UNAVAILABLE");
             }
           }
+        }
+        if (this.#closed || this.#signal.aborted) {
+          // 只记录真实终态供日志和 gap 收尾使用，不投影进度/交互，不把正常取消
+          // 误报为无终态断流，也不为收尾再次发送取消请求。
+          if (["run.completed", "run.failed", "run.cancelled"].includes(event.type))
+            projector.accept(event);
+          continue;
         }
         // 只有执行策略与事件策略均为 full_access 的审批才是自动处理的审计记录。
         // 问题/elicitation 仍须展示并交回原交互入口，不能一并过滤。
@@ -1004,9 +1014,10 @@ export class ImRuntime {
         controls.failed = projector.snapshot().terminal === "failed";
         presentation?.update(snapshot());
       }
-      if (!projector.snapshot().terminal) throw new Error("IM_RUN_WITHOUT_TERMINAL");
+      if (!projector.snapshot().terminal && !this.#closed && !this.#signal.aborted)
+        throw new Error("IM_RUN_WITHOUT_TERMINAL");
     } catch {
-      if (!projector.snapshot().terminal) {
+      if (!projector.snapshot().terminal && !this.#closed && !this.#signal.aborted) {
         // 流断开无法证明执行失败；尽力取消并提示核查，不自动重跑潜在的业务副作用。
         await this.dependencies.host
           .cancel(request.invocationId, "IM execution stream failed")
@@ -1058,7 +1069,7 @@ export class ImRuntime {
       for (const [id, entry] of this.#interactions)
         if (entry.invocationId === request.invocationId) this.#interactions.delete(id);
       try {
-        await presentation?.finish();
+        if (!this.#closed && !this.#signal.aborted) await presentation?.finish();
       } catch {
         this.#diagnostic("IM_PRESENTATION_FAILED", request.runId);
       }
@@ -1077,6 +1088,8 @@ export class ImRuntime {
   }
   #saveBinding(key: string, session: ImSession): void {
     const binding = this.#sessionStore.read(key);
+    // 宿主 reset 或另一旧任务的迟到回调不能把已换代的持久 binding 写回旧值。
+    if (!binding || binding.id !== session.id || binding.generation !== session.generation) return;
     this.#sessionStore.save(key, {
       id: session.id,
       generation: session.generation,

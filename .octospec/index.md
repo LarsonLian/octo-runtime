@@ -49,6 +49,8 @@
 
 ## 当前任务
 
+- [Issue 57：Gateway 宿主会话存储工厂](tasks/channel-host-session-store/brief.md)：公开 GatewayDependencies、逐 Bot 工厂与句柄生命周期，默认 Memory 和直接 sessions 借用保持；本地实现、1342 项 Node/35 项 UI 与包外入口/类型检查通过；真实 IM/Provider 待验，未提交、推送或发布，见[验证记录](journal/shared/2026-10-20-channel-host-session-store.md)。
+
 - [Issue 46：ExecutorCore 抽取](tasks/issue-46-executor-core/brief.md)：分支 `refactor/46-executor-core`，基线 `main@7fb81e9`；[实施记录](tasks/issue-46-executor-core/implementation.md)记录唯一 Core、原 worker、生命周期和公开入口。M0–M3 本机通过，M4 本机 tgz 验证通过；Node 1264 通过/10 跳过、UI 35 通过。Windows 原生和 M5 新 Kernel/真实宿主联验待完成；[计划](tasks/issue-46-executor-core/plan.md)、[原评审](tasks/issue-46-executor-core/assessment.md)与[验收](tasks/issue-46-executor-core/acceptance.md)保留依据。
 
 ## 历史与取舍

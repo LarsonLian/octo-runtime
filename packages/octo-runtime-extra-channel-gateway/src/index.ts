@@ -7,7 +7,11 @@ export { octoCliEnvironment } from "./execution/tool-environment.js";
 export { default, name } from "./extra.js";
 export { ImChannelManager } from "./lifecycle/manager.js";
 export { MemoryImSessionStore } from "./application/session-store.js";
-export type { ImSessionStore, ImSessionBinding } from "./application/session-store.js";
+export type {
+  ImSessionStore,
+  ImSessionBinding,
+  ImSessionOccurrence
+} from "./application/session-store.js";
 export {
   validateImConfig,
   validateImBots,

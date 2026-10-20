@@ -30,7 +30,7 @@ export interface ImSessionStore {
     identity: Pick<ImGapTurnToken, "sessionId" | "generation">,
     update: (current: ImGapMetadata | undefined) => ImGapMetadata
   ): boolean;
-  close?(): void;
+  close?(): void | Promise<void>;
 }
 
 /** Bounded process-local mappings; eviction never restores an older session. */

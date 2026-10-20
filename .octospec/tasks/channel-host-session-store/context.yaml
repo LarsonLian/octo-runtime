@@ -1,0 +1,41 @@
+status: implemented-review-fixed-locally-verified
+baseline: 6fb8ca5
+rules:
+  - runtime-architecture
+  - runtime-protocol-design
+  - runtime-channel
+  - runtime-extras
+  - runtime-session-reset
+  - runtime-stateless
+  - runtime-engineering
+  - runtime-local-execution
+  - runtime-lifecycle
+  - commit
+sources:
+  - AGENTS.md
+  - .octospec/rules/_index.yaml
+  - .octospec/rules/architecture.md
+  - .octospec/rules/protocol-design.md
+  - .octospec/rules/channel-integration.md
+  - .octospec/rules/extras.md
+  - .octospec/rules/session-reset.md
+  - .octospec/rules/stateless-execution.md
+  - .octospec/rules/engineering.md
+  - .octospec/rules/local-execution.md
+  - .octospec/rules/runtime-lifecycle.md
+  - .octospec/rules/collaboration.md
+review_sources:
+  - packages/octo-runtime-daemon/src/runtime/local-extras.ts
+  - packages/octo-runtime-daemon/src/runtime/run-stream.ts
+  - test/sdk-host-extras.test.js
+  - test/im-host-store-invalid-factory.test.js
+validation:
+  node: 1342 passed, 10 conditional skips, 0 failed
+  webui: 35 passed
+  typecheck: passed
+  lint: passed
+  names: passed
+  package_probe: runtime entry and public types passed outside repository
+  okf: 14 pre-existing cross-repository missing links; no new findings
+  external_im_provider: not performed
+  commit_push_publish: not performed

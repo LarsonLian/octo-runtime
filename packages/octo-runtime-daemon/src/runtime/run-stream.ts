@@ -108,7 +108,8 @@ export async function* subscribeDaemonRun(
 export async function* invokeDaemonRun(
   socketPath: string,
   input: InvokeInput,
-  environment: InvokeEnvironment = {}
+  environment: InvokeEnvironment = {},
+  lifecycle?: { onReceipt(receipt: HostRunReceipt): void; cancellationHandled(): boolean }
 ): AsyncGenerator<HostFrame> {
   const request = identifyInvokeInput(input);
   const { signal, executionEnvOverrides } = environment;
@@ -121,7 +122,7 @@ export async function* invokeDaemonRun(
     attempts = 0;
   let cancellation: Promise<void> | undefined;
   const cancel = (): void => {
-    if (cancellation) return;
+    if (cancellation || lifecycle?.cancellationHandled()) return;
     // ACK 在途时先核对真实身份，不能取消恰好使用同一 runId 的另一调用。
     // 未接纳的请求由服务端接纳期 signal 取消，不重复 invoke 或无限重试。
     cancellation = (async () => {
@@ -179,6 +180,7 @@ export async function* invokeDaemonRun(
               throw new Error("STREAM_EXPIRED");
             streamId = metadata.stream_id;
             receipt = metadata;
+            lifecycle?.onReceipt(metadata);
             continue;
           }
           const params = frame.params as {

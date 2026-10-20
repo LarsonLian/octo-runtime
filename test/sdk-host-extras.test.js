@@ -1,4 +1,11 @@
 import test from "node:test";
+import { createServer } from "node:net";
+import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
+import * as gateway from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
+import { GatewayTransport } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/channel.js";
+import { LocalExtras } from "../packages/octo-runtime-daemon/dist/runtime/local-extras.js";
+import { identifyInvokeInput } from "@mininglamp-oss/octo-runtime-protocol";
 import assert from "node:assert/strict";
 import { mkdtemp, rm, writeFile, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
@@ -337,7 +344,7 @@ test(
         }
       })()
     );
-    const stopped = tasks.map((task) => assert.rejects(task, /abort/i));
+    const stopped = [tasks[0], assert.rejects(tasks[1], /abort/i)];
     await Promise.all(started.map((value) => value.promise));
     await runtime.unloadExtra("one");
     await stopped[0];
@@ -514,3 +521,239 @@ test(
     );
   }
 );
+
+// 使用真实 LocalExtras → JSON-RPC socket，避免 fake invoke 忽略 signal 而掩盖提前断流。
+for (const mode of [
+  "drain",
+  "ack-only",
+  "ack-lost",
+  "gateway",
+  "gateway-stream-failed",
+  "early-break",
+  "identity-conflict",
+  "stream-conflict",
+  "cancel-failed",
+  "timeout"
+]) {
+  test(
+    `SDK Extra disposal keeps its IPC stream for tail bindings: ${mode}`,
+    { timeout: 15000 },
+    async (t) => {
+      const root = await mkdtemp(join(tmpdir(), "sdk-extra-drain-"));
+      const socketPath =
+        process.platform === "win32"
+          ? "\\\\.\\pipe\\octo-extra-drain-" + randomUUID()
+          : join(root, "daemon.sock");
+      const connections = new Set();
+      const started = deferred();
+      const tailRead = deferred();
+      let request,
+        streamSocket,
+        cancels = 0;
+      const receipt = () => ({
+        run_id: request.runId,
+        invocation_id: request.invocationId,
+        stream_id: "draining-stream",
+        agent_session_id: request.sessionId,
+        session_generation: request.sessionGeneration ?? 0,
+        protocol_mode: "canonical",
+        protocol: "test.canonical"
+      });
+      const write = (socket, value) => socket.write(JSON.stringify(value) + "\n");
+      let sequence = 0;
+      const emit = (event) =>
+        write(streamSocket, {
+          jsonrpc: "2.0",
+          method: "agent_run.event",
+          params: {
+            run_id: request.runId,
+            stream_id: "draining-stream",
+            seq: ++sequence,
+            event: { ...receipt(), seq: sequence, ...event }
+          }
+        });
+      const tail = () => {
+        emit({
+          kind: "canonical",
+          event: {
+            protocolVersion: 2,
+            type: "session.update",
+            payload: { providerSession: { sessionId: "after-cancel" } }
+          }
+        });
+        emit({
+          kind: "canonical",
+          event: { protocolVersion: 2, type: "run.cancelled", payload: {} }
+        });
+        emit({ kind: "control", control: { type: "state", state: "cancelled" } });
+      };
+      const server = createServer((socket) => {
+        connections.add(socket);
+        socket.on("close", () => connections.delete(socket));
+        socket.setEncoding("utf8");
+        let pending = "";
+        socket.on("data", (chunk) => {
+          pending += chunk;
+          const newline = pending.indexOf("\n");
+          if (newline < 0) return;
+          const rpc = JSON.parse(pending.slice(0, newline));
+          pending = pending.slice(newline + 1);
+          if (rpc.method === "agent_run.invoke") {
+            request = identifyInvokeInput(rpc.params.input);
+            streamSocket = socket;
+            if (mode === "ack-lost") {
+              started.resolve();
+              return;
+            }
+            write(socket, { jsonrpc: "2.0", id: rpc.id, result: receipt() });
+            if (["ack-only", "gateway", "gateway-stream-failed"].includes(mode)) started.resolve();
+            else
+              emit({
+                kind: "canonical",
+                event: { protocolVersion: 2, type: "run.started", payload: {} }
+              });
+          } else if (rpc.method === "agent_run.get") {
+            write(socket, {
+              jsonrpc: "2.0",
+              id: rpc.id,
+              result: {
+                ...receipt(),
+                oldest_seq: 1,
+                latest_seq: sequence,
+                ...(mode === "identity-conflict" ? { invocation_id: "different-owner" } : {}),
+                ...(mode === "stream-conflict" ? { stream_id: "different-stream" } : {})
+              }
+            });
+            if (["identity-conflict", "stream-conflict"].includes(mode)) tail();
+          } else if (rpc.method === "agent_run.cancel") {
+            cancels++;
+            if (mode === "gateway-stream-failed")
+              write(streamSocket, {
+                jsonrpc: "2.0",
+                method: "agent_run.stream_error",
+                params: { run_id: request.runId, stream_id: "draining-stream", code: "STREAM_GAP" }
+              });
+            else if (!["timeout", "ack-lost"].includes(mode)) tail();
+            write(socket, {
+              jsonrpc: "2.0",
+              id: rpc.id,
+              ...(mode === "cancel-failed"
+                ? { error: { message: "cancel rejected" } }
+                : { result: { cancelled: true } })
+            });
+          } else assert.fail(`unexpected RPC ${rpc.method}`);
+        });
+      });
+      await new Promise((resolve) => server.listen(socketPath, resolve));
+      const local = new LocalExtras(socketPath, () => true);
+      t.after(async () => {
+        await local.close().catch(() => undefined);
+        for (const socket of connections) socket.destroy();
+        await new Promise((resolve) => server.close(resolve));
+        await rm(root, { recursive: true, force: true });
+      });
+      let consumed,
+        signal,
+        binding,
+        storeClosed = 0;
+      if (mode.startsWith("gateway")) {
+        let callbacks;
+        t.mock.method(GatewayTransport.prototype, "start", async function () {
+          callbacks = this.callbacks;
+        });
+        t.mock.method(GatewayTransport.prototype, "close", async () => {});
+        await local.load(
+          gateway,
+          {
+            bots: [
+              {
+                bot_id: "bot",
+                api_url: "https://example.com/api",
+                adapter: { adapter_type: "test", workdir: process.cwd() }
+              }
+            ]
+          },
+          {
+            createSessionStore() {
+              const store = new gateway.MemoryImSessionStore();
+              const save = store.save.bind(store),
+                close = store.close.bind(store);
+              store.save = (key, value) => {
+                binding = structuredClone(value);
+                save(key, value);
+              };
+              store.close = () => {
+                if (mode === "gateway")
+                  assert.equal(binding.providerSession.sessionId, "after-cancel");
+                storeClosed++;
+                close();
+              };
+              return store;
+            }
+          }
+        );
+        callbacks.onMessage({
+          messageId: "tail",
+          senderId: "sender",
+          conversationId: "chat",
+          conversationKind: "direct",
+          text: "hello",
+          buildContext: async () => ({ schema: "octo.context-envelope/v3", items: [] }),
+          reply: async () => {
+            assert.fail("no final delivery after shutdown");
+          }
+        });
+      } else
+        await local.load(
+          {
+            name: "draining",
+            default: (ctx) => () => {
+              signal = ctx.signal;
+              const consuming = (async () => {
+                for await (const event of ctx.adapterHost.invoke(input("drain"), {
+                  signal: ctx.signal
+                })) {
+                  if (event.type === "run.started") started.resolve();
+                  if (event.type === "session.update") {
+                    assert.equal(ctx.signal.aborted, true);
+                    assert.equal(event.payload.providerSession.sessionId, "after-cancel");
+                    tailRead.resolve();
+                    if (mode === "early-break") break;
+                  }
+                }
+              })();
+              consumed = ["timeout", "ack-lost"].includes(mode)
+                ? assert.rejects(consuming, /EXTRA_DISPOSE_FAILED|abort/i)
+                : consuming;
+              ctx.onDispose(() => consumed);
+            }
+          },
+          {},
+          {}
+        );
+      await started.promise;
+      const closing = local.plugins.unload(mode.startsWith("gateway") ? gateway.name : "draining");
+      if (!mode.startsWith("gateway")) assert.equal(signal.aborted, true);
+      if (["drain", "ack-only", "gateway"].includes(mode)) await closing;
+      else {
+        await assert.rejects(closing, /EXTRA_DISPOSE_FAILED/);
+        await assert.rejects(
+          local.load(
+            {
+              name: mode.startsWith("gateway") ? gateway.name : "draining",
+              default: () => () => {}
+            },
+            {},
+            {}
+          ),
+          /EXTRA_ALREADY_LOADED|EXTRA_DISPOSE_FAILED/
+        );
+      }
+      await consumed;
+      if (!["timeout", "ack-lost"].includes(mode) && !mode.startsWith("gateway"))
+        await tailRead.promise;
+      if (mode.startsWith("gateway")) assert.equal(storeClosed, 1);
+      assert.equal(cancels, ["identity-conflict", "stream-conflict"].includes(mode) ? 0 : 1);
+    }
+  );
+}

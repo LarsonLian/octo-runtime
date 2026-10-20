@@ -3,7 +3,7 @@ type: Rule
 title: Extra 加载与业务边界
 description: 插件归属、执行端口、停止清理与显式装配。
 tags: ["extra","lifecycle","installation"]
-timestamp: 2026-10-15T00:00:00Z
+timestamp: 2026-10-20T00:00:00Z
 implementation_baseline: df63c8f
 id: runtime-extras
 tier: repo
@@ -199,7 +199,7 @@ Octo 与 WeCom 已接入 Extra signal；WebSocket close 等待实际关闭，Oct
 
 CLI `extraset` 只保存并返回 `reload_required`，执行 `daemon restart` 后读取最新配置。持久停用通过 `extraset` 保存 `enabled: false` 后重启。CLI 不提供 extra status/load/unload；SDK 与内部 IPC 保留显式生命周期管理。框架不会因状态变化自行重载。
 
-SDK 在显式加载尚未完成时，卸载、退出和切换账号／租户可先发出停止请求，不排在该加载完成之后才通知停止。停止请求绑定原账号的进程；已排队的旧账号卸载不能作用于新账号。被取消的加载返回 EXTRA_LOAD_CANCELLED，不记为最新启用声明。最终配置与账号状态仍通过生命周期队列更新。SDK 退出时即使收到 EXTRA_DISPOSE_FAILED 也继续回收进程，进程退出后向宿主报告该失败；进程已停止不等于插件清理正常完成。
+SDK 在显式加载尚未完成时，卸载、退出和切换账号／租户可先发出停止请求，不排在该加载完成之后才通知停止。停止请求绑定原账号的进程；已排队的旧账号卸载不能作用于新账号。被取消的加载返回 EXTRA_LOAD_CANCELLED，不记为最新启用声明。最终配置与账号状态仍通过生命周期队列更新。SDK 主进程装配的 Extra 在 owner abort 后立即禁止新调用；已经接纳的原调用按 receipt 的 run/invocation/session/generation/protocol 校验后请求取消，在既有 5 秒共享宽限内保留原 IPC 源供终态和 binding 收尾。超时强制断开且报告失败，不能把 cancel ACK 当执行完成或跨实例取消。普通显式调用取消保持原行为，不新增公共信号协议。SDK 退出时即使收到 EXTRA_DISPOSE_FAILED 也继续回收进程，进程退出后向宿主报告该失败；进程已停止不等于插件清理正常完成。
 
 SDK 保留成功应用的最新 JSON descriptor 供同账号重启恢复；load/unload 更新该实例内的启用状态。logout/account-switch 清除动态声明并恢复构造时的初始声明，宿主应在新账号登录后恢复自己的配置。函数装配实例在 stop、账号切换或 runner 退出时中止并清理，恢复后由宿主重新提交，SDK 不隐式重放旧闭包。主进程清理失败会阻止替换及新代次装配，不能通过新建容器绕过；停止 runner 仍继续尝试。宿主长期存储仍由宿主负责。
 
