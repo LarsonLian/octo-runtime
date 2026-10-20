@@ -16,7 +16,7 @@ timestamp: 2026-10-16T00:00:00Z
 
 用户所说 contexts 的 instructions 在这里使用 item 的 `guidance` 字段表达，namespace=extra.im、name=mention-instructions。item.payload 放当前频道与查询数据；不新增 Context 顶层 instructions/context.extra，也不冒用 octo.control/instructions。普通业务指引不是高权限系统指令，不代替发送权限校验。
 
-[Host renderer](../../../packages/octo-runtime-adapter-host/src/model-input.ts) 已支持 extra.*，会渲染 `指引: guidance` 和 `数据: payload`。不需要为 mention 注册业务处理器或修改通用 renderer。
+[Host renderer](../../../packages/octo-runtime-executor-core/src/model-input.ts) 已支持 extra.*，会渲染 `指引: guidance` 和 `数据: payload`。不需要为 mention 注册业务处理器或修改通用 renderer。
 
 ## 给模型的指引正文
 

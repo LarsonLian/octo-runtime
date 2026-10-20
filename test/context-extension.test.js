@@ -6,7 +6,7 @@ import {
   mergeContext,
   resolveContextConfiguration
 } from "../packages/octo-runtime-protocol/dist/index.js";
-import { renderModelContexts } from "../packages/octo-runtime-adapter-host/dist/model-input.js";
+import { renderModelContexts } from "../packages/octo-runtime-executor-core/dist/model-input.js";
 
 const empty = () => ({ schema: "octo.context-envelope/v3", items: [] });
 const external = () => ({

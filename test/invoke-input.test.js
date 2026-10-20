@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { InvokeInput, invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
-import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
+import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-executor-core";
 import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { invokeRequest } from "./runtime-fixture.js";
 

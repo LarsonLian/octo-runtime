@@ -5,7 +5,7 @@ import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile, stat } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { prepareInvokeInput as preparePlayboard } from "@mininglamp-oss/octo-runtime-core";
+import { prepareInvokeInput as preparePlayboard } from "@mininglamp-oss/octo-runtime-executor-core";
 import { startTemporaryDaemon } from "../apps/cli/dist/temporary-daemon.js";
 import { startDaemonServer } from "@mininglamp-oss/octo-runtime-daemon";
 import { callDaemon } from "@mininglamp-oss/octo-runtime-daemon/runtime/runtime-contract";

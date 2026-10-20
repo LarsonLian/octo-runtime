@@ -30,6 +30,36 @@ import { InvokeInput, isTerminal } from "@mininglamp-oss/octo-runtime/protocol";
 Provider 程序由宿主或用户另行选择安装，安装此包不会自动下载 Provider。
 升级程序保留已有 Runtime Home、身份与配置；已运行的进程需要重启才能使用新版本。
 
+## Direct executor API
+
+Prioritize stability: recommend SDK access over IPC to an independent Executor
+Kernel for production hosts, especially Electron. The new Kernel's IPC and
+supervision implementation belongs to issue #47; the existing isolated worker
+and NDJSON path remain available during the transition. Direct embedding is an
+explicit, simpler SDK integration option with a shared host process failure domain.
+
+Import `AgentExecutor` and `HostedAdapter` from
+`@mininglamp-oss/octo-runtime/executor-core`. The host explicitly registers its
+adapters and owns the instance lifecycle. `invoke` supports native/canonical
+output, `invokeFrames` exposes source frames, and `cancel`, `respondInteraction`
+and `respondNative` act on the original invocation. No Kernel, IPC endpoint,
+cloud identity, Extra or implicit provider installation is required.
+
+Input is snapshotted at invocation creation; admission happens on the first
+iterator `next()`. Catch errors around consumption. A visible running receipt
+already owns cancellation, even before the Provider starts. Close abandoned
+iterators with `return()` or cancel their invocation.
+
+Always inspect `await executor.shutdown()`: `cleanup: "incomplete"` retains
+ownership. A subsequent shutdown can observe pending cleanup completing; failed
+or unverified iterator cleanup stays incomplete and is not retried via another
+`return()`. A rejected `next()` cannot prove finalizer success either. Closed admission
+does not prove that resources exited or authorize releasing a host Home lock.
+Direct execution shares the host process: process exit, OOM and synchronous
+blocking cannot be isolated. Default worker execution over stdio NDJSON remains
+available and uses the same Core implementation. Interrupted Runs are never
+automatically replayed.
+
 ## 许可证
 
 本项目采用 Apache License 2.0，完整条款见随包分发的 `LICENSE` 文件。Copyright 2026 Mininglamp Technology。

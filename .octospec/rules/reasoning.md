@@ -10,7 +10,7 @@ tier: repo
 priority: 90
 load_bearing: true
 inject_when:
-  paths: ["packages/octo-runtime-adapter-*/**","test/*reasoning*"]
+  paths: ["packages/octo-runtime-adapter-*/**", "packages/octo-runtime-executor-core/**","test/*reasoning*"]
   touches: ["reasoning","adapter"]
 source: self
 supersedes: []

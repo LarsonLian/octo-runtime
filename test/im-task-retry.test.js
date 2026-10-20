@@ -4,8 +4,8 @@ import { ImTask } from "../packages/octo-runtime-extra-channel-gateway/dist/exec
 import { createImInvocation } from "../packages/octo-runtime-extra-channel-gateway/dist/execution/dispatcher.js";
 import { validateImConfig } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import { assertInvokeInput, failurePayload } from "@mininglamp-oss/octo-runtime-protocol";
-import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
-import { InvocationWatchdog } from "../packages/octo-runtime-adapter-host/dist/watchdog.js";
+import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-executor-core";
+import { InvocationWatchdog } from "../packages/octo-runtime-executor-core/dist/watchdog.js";
 
 const config = {
   bot_id: "retry-fixture",

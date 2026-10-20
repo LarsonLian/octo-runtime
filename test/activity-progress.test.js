@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { InvocationExperience } from "../packages/octo-runtime-adapter-host/dist/experience.js";
+import { InvocationExperience } from "../packages/octo-runtime-executor-core/dist/experience.js";
 const event = (type, payload) => ({ protocolVersion: 2, type, payload });
 
 test("session, usage and empty answer placeholders do not end starting", () => {

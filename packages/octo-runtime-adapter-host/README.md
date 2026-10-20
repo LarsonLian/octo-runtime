@@ -1,29 +1,37 @@
 # @mininglamp-oss/octo-runtime-adapter-host
 
+> #46 migration: execution now lives exclusively in
+> `@mininglamp-oss/octo-runtime-executor-core` as `AgentExecutor`. This package
+> retains the transitional worker, NDJSON RPC, launcher and bounded source
+> window. Its `AdapterHost` export aliases that same class. Explicit direct
+> consumers use `@mininglamp-oss/octo-runtime/executor-core`; see
+> [Core API and failure domain](../octo-runtime-executor-core/README.md).
+> The new ExecutorKernel package and supervision are tracked by #47.
+
 > 全局 Context 约束：本轮模型上下文由业务方选择，selection 等业务项可不发送，可传空或显式重复。必要执行配置独立校验且不注入 LLM。底层只转发并渲染本轮数据，不按 sessionId 缓存、补齐、合并、去重或省略；reset／新 Provider 会话／resume 失败后由业务方重新提供必要背景。见 [分类矩阵](../../.octospec/rules/context-input.md) 与 [IPD-SE](../../.octospec/rules/context-input.md)。Host 仅按白名单 pattern 保序拼接，不做业务检查或编译。
 
-Octo Runtime 的适配器宿主（Adapter Host）：统一管理各 provider 适配器的注册与调用，并在调用边界上保证消息生命周期完整、事件合法、且每次运行只产生一个终态事件。
+Octo Runtime 的适配器宿主（Adapter Host）：提供独立 worker、NDJSON RPC 和启动入口，委托 `octo-runtime-executor-core` 的 `AgentExecutor` 管理各 provider 适配器的注册、调用、消息生命周期和终态。
 
 ## 定位与职责
 
-不同的 Agent provider（Codex、Claude Code、CodeBuddy、OpenCode 等）在事件格式、生命周期语义和取消方式上存在显著差异：部分只输出增量文本而不标记消息的开始与结束；部分在异常退出时不产生任何收尾事件；取消机制也各不相同。若由领域核心（`octo-runtime-core`）直接对接这些差异，核心逻辑会被大量 provider 分支污染，且每接入一个新 provider 都需改动核心。
+不同的 Agent provider（Codex、Claude Code、CodeBuddy、OpenCode 等）在事件格式、生命周期语义和取消方式上存在显著差异：部分只输出增量文本而不标记消息的开始与结束；部分在异常退出时不产生任何收尾事件；取消机制也各不相同。Provider 差异由各 Adapter 处理，`octo-runtime-executor-core` 的 `AgentExecutor` 负责统一执行合同；本包负责将调用和输出跨 worker 进程边界传递。
 
-适配器宿主将这些差异收敛在单一边界上，提供模式声明、接纳、调用、取消与对应模式的交互响应。默认 native 交付真实原生载荷及独立 Host 控制帧；显式 canonical 提供统一事件视图。两个模式共用执行与资源清理，并以唯一 Host 控制终态收尾。
+worker 内的 `AgentExecutor` 提供模式声明、接纳、调用、取消与对应模式的交互响应，与显式内嵌调用使用同一实现。默认 native 交付真实原生载荷及独立 Host 控制帧；显式 canonical 提供统一事件视图。两个模式共用执行与资源清理，并以唯一 Host 控制终态收尾。
 
-宿主本身不涉及排队、调度、持久化或业务建模，这些职责属于 daemon 与 core。
+worker 传输层和执行核心不负责业务排队、调度、持久化或业务建模，这些职责由调用方及相应业务模块承担。
 
 ## 工作原理
 
-调用方传入统一的 `InvokeInput` 并显式选择 canonical。只有 Host 解析执行配置并生成内部 Adapter 请求。以下流程说明 canonical 消费；native 保留 Provider 消息，不执行 Canonical 转换。
+调用方传入统一的 `InvokeInput` 并显式选择 canonical。worker 中的 `AgentExecutor` 解析执行配置并生成内部 Adapter 请求。以下流程说明 canonical 消费；图中 Host 是 worker 内的 `AgentExecutor`（旧导出名 `AdapterHost`），native 保留 Provider 消息，不执行 Canonical 转换。
 
 ```mermaid
 sequenceDiagram
-    participant Core
+    participant Caller
     participant Host as AdapterHost
     participant Adapter
     participant CLI as Provider CLI
 
-    Core->>Host: invoke(InvokeInput, environment)
+    Caller->>Host: invoke(InvokeInput, environment)
     Host->>Host: 校验请求并创建 AbortController
     Host->>Adapter: invoke(request, signal)
     Adapter->>CLI: 启动子进程 / 发起请求
@@ -32,12 +40,12 @@ sequenceDiagram
         CLI-->>Adapter: 原生输出（可能仅含增量）
         Adapter-->>Host: CanonicalEvent
         Host->>Host: 补全缺失的 message.create<br/>并分配稳定的 messageId
-        Host-->>Core: 规整后的事件
+        Host-->>Caller: 规整后的事件
     end
 
     CLI-->>Adapter: 结束 / 异常退出 / 被取消
     Host->>Host: 关闭仍处于打开状态的消息<br/>并归一为单一 run 终态
-    Host-->>Core: run.completed / run.failed / run.cancelled
+    Host-->>Caller: run.completed / run.failed / run.cancelled
 ```
 
 规整过程遵循三条约束：
@@ -140,7 +148,7 @@ CLI manifest 可在受信的 Adapter 执行配置中覆盖这些值；每项硬�
 模型阶段的 canonical 事件静默时限默认是 **300 秒**（`modelIdleTimeoutMs: 300_000`）。
 调用方可通过 `InvokeRequest.runtimeLimits.modelIdleTimeoutMs` 显式覆盖。
 显式值优先，未覆盖字段使用各自默认值；字段和执行行为见
-[watchdog.ts](src/watchdog.ts)。
+[watchdog.ts](../octo-runtime-executor-core/src/watchdog.ts)。
 
 - **独立进程并非安全沙箱**：同一宿主内的多个适配器仍共享同一 Node.js 进程与宿主账号。强隔离需依赖容器、独立系统用户或“一适配器一进程”。
 - **同类型适配器不可重复注册**：`register` 对重复的 `metadata.type` 直接抛错。
@@ -154,6 +162,6 @@ CLI manifest 可在受信的 Adapter 执行配置中覆盖这些值；每项硬�
 
 ## 模块责任边界
 
-- 负责：通过 AdapterHostRpc 统一 invoke、cancel、probe 和交互响应，管理适配器与事件生命周期。
+- 负责：独立 worker 与 AdapterHostRpc 传输，委托 AgentExecutor 执行 invoke、cancel、probe 和交互响应。
 - 不负责：Worker 注册、IM 消息、群聊和业务调度。
 - 协作边界：见 [根架构与包边界](../../README.md#模块责任边界)。所有执行来源共用 adapter-host IPC；模块按职责提供协议、执行或宿主能力。

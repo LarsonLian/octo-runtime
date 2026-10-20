@@ -10,7 +10,7 @@ tier: repo
 priority: 90
 load_bearing: true
 inject_when:
-  paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-*/**","test/context-mcp*"]
+  paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-*/**", "packages/octo-runtime-executor-core/**","test/context-mcp*"]
   touches: ["mcp","context"]
 source: self
 supersedes: []

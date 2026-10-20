@@ -7,7 +7,7 @@ import {
   contextHash,
   assertContextEnvelope
 } from "../packages/octo-runtime-protocol/dist/index.js";
-import { renderModelContexts } from "../packages/octo-runtime-adapter-host/dist/model-input.js";
+import { renderModelContexts } from "../packages/octo-runtime-executor-core/dist/model-input.js";
 import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js";
 import { invokeRequest } from "./runtime-fixture.js";
 
@@ -170,8 +170,9 @@ test("Host freezes contexts and injects once for both modes and image input", as
     const snapshot = structuredClone(request.context);
     const stream = preparedFrames(host, "fixture", request, { protocolMode: mode });
     request.context.items[0].guidance = "changed-after-acceptance";
-    assert.throws(
-      () => preparedFrames(host, "fixture", request, { protocolMode: mode }),
+    await stream.next();
+    await assert.rejects(
+      preparedFrames(host, "fixture", request, { protocolMode: mode }).next(),
       /EXECUTION_IDENTITY_CONFLICT/
     );
     request.context = snapshot;
@@ -182,8 +183,8 @@ test("Host freezes contexts and injects once for both modes and image input", as
       ...request.modelInputParts
     ]);
     assert.equal(received.prompt, request.prompt);
-    assert.throws(
-      () => preparedFrames(host, "fixture", request, { protocolMode: mode }),
+    await assert.rejects(
+      preparedFrames(host, "fixture", request, { protocolMode: mode }).next(),
       /Invocation already executed/
     );
   }

@@ -10,7 +10,7 @@ tier: repo
 priority: 90
 load_bearing: true
 inject_when:
-  paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**","packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-sdk/**","test/native-*","test/host-*"]
+  paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**", "packages/octo-runtime-executor-core/**","packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-sdk/**","test/native-*","test/host-*"]
   touches: ["protocol","native","canonical","stream"]
 source: self
 supersedes: []
@@ -29,7 +29,7 @@ supersedes: []
 | 合同                        | 内容与运行时入口                                                                                                               |
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
 | `HostInvokeOptions`         | TypeScript 选择器；`resolveHostInvokeOptions` 仅在省略 `protocolMode` 时解析为 native，返回独立且冻结的结果                    |
-| `HostInvokeWireOptions`     | 序列化字段为 `protocol_mode`；`serializeHostInvokeOptions` 总是发出明确模式，`resolveHostInvokeWireOptions` 校验接纳边界的输入 |
+| `InvokeInput.protocol_mode` | 公共输入中的模式选择；省略为 native。RPC 转发同一 InvokeInput，不恢复已删除的 HostInvokeWireOptions 或模式序列化 API。 |
 | `AdapterProtocolSupport`    | 声明 `protocol`、`modes`、`nativeMethods`；`assertProtocolSupport` 拒绝不支持的模式或错误协议标识                              |
 | `HostRunReceipt`            | 接纳身份：Run、invocation、stream、AgentSession、会话代次、有效模式与原生协议；不表达 Provider 完成                            |
 | `HostFrame`                 | `NativeHostFrame / CanonicalHostFrame / ControlHostFrame` 判别联合；`assertHostFrame` 校验分类，禁止混装载荷                   |
@@ -126,6 +126,6 @@ native 日志只记录元数据、数量、字节和转换次数，不记录原�
 
 ## 核对入口
 
-[模式与帧校验](../../packages/octo-runtime-protocol/src/run-protocol.ts)、[统一输入解析](../../packages/octo-runtime-core/src/invoke-input.ts)、[Host 接纳](../../packages/octo-runtime-adapter-host/src/index.ts)、[源窗口](../../packages/octo-runtime-adapter-host/src/host-run-service.ts)、[native-host.test.js](../../test/native-host.test.js)。
+[模式与帧校验](../../packages/octo-runtime-protocol/src/run-protocol.ts)、[统一输入解析](../../packages/octo-runtime-executor-core/src/invoke-input.ts)、[Core 接纳](../../packages/octo-runtime-executor-core/src/index.ts)、[源窗口](../../packages/octo-runtime-adapter-host/src/host-run-service.ts)、[native-host.test.js](../../test/native-host.test.js)。
 
 同一接纳身份不得改变模式、改请求或重复执行。已识别身份、权限、代次、游标和交互范围继续严格校验；未知可选 Provider 字段保留不意味着可以绕过这些边界。

@@ -4,12 +4,12 @@ import {
   contextHash,
   resolveContextConfiguration
 } from "../packages/octo-runtime-protocol/dist/index.js";
-import { resolveLocalContext } from "../packages/octo-runtime-core/dist/context.js";
+import { resolveLocalContext } from "../packages/octo-runtime-executor-core/dist/context.js";
 import {
   assertFrozenContextPlan,
   contextControlInstructions
 } from "../packages/octo-runtime-protocol/dist/index.js";
-import { renderModelContexts } from "../packages/octo-runtime-adapter-host/dist/model-input.js";
+import { renderModelContexts } from "../packages/octo-runtime-executor-core/dist/model-input.js";
 import {
   createJsonCliAdapter,
   invocationEnvironment

@@ -10,7 +10,7 @@ tier: repo
 priority: 95
 load_bearing: true
 inject_when:
-  paths: ["packages/octo-runtime-protocol/**", "packages/octo-runtime-core/**", "packages/octo-runtime-adapter-*/**", "packages/octo-runtime-daemon/**", "packages/octo-runtime-extra-*/**", "apps/**"]
+  paths: ["packages/octo-runtime-protocol/**", "packages/octo-runtime-executor-core/**", "packages/octo-runtime-adapter-*/**", "packages/octo-runtime-daemon/**", "packages/octo-runtime-extra-*/**", "apps/**"]
   touches: [protocol, invocation, interaction, adapter, architecture]
 source: self
 supersedes: []
@@ -39,7 +39,7 @@ flowchart LR
 | --- | --- |
 | HostApp / 业务调用方 | Runtime 安装方案、调用身份、业务会话、当轮输入、当轮 Context、用户交互界面和业务历史 |
 | Extra | 外部系统认证、授权、请求转换、业务路由、交互与结果投递 |
-| Core | 公共输入校验、本轮执行配置解析及内部请求准备 |
+| ExecutorCore | 公共输入校验、本轮配置解析、固定渲染、执行、身份、交互、取消与清理 |
 | daemon / HostRunService | 内核生命周期、本地 RPC、接纳身份映射、源帧的有界窗口与订阅 |
 | AdapterHost | 执行接纳、输出模式、活动 invocation 路由、模型 Context 固定渲染、取消及终态收口 |
 | Provider Adapter / Driver | 原生传输、Provider 会话操作、事件转换、pending 原生请求与回答写回 |
@@ -181,9 +181,9 @@ native 保留原生结构不代表开放任意 Provider RPC。初始化、启动
 | 核对对象 | 源码 / 测试 |
 | --- | --- |
 | 数据结构与语义校验 | [Schema](../../packages/octo-runtime-protocol/schema/protocol.schema.json)、[Protocol](../../packages/octo-runtime-protocol/src/index.ts)、[Host 帧校验](../../packages/octo-runtime-protocol/src/run-protocol.ts) |
-| 公共请求准备 | [Core InvokeInput](../../packages/octo-runtime-core/src/invoke-input.ts) |
+| 公共请求准备 | [Core InvokeInput](../../packages/octo-runtime-executor-core/src/invoke-input.ts) |
 | SDK、daemon 和两层 RPC | [SDK](../../packages/octo-runtime-daemon/src/runtime/daemon-runtime.ts)、[流客户端](../../packages/octo-runtime-daemon/src/runtime/run-stream.ts)、[daemon](../../packages/octo-runtime-daemon/src/server.ts)、[Host RPC](../../packages/octo-runtime-adapter-host/src/rpc.ts) |
-| 接纳、路由与源窗口 | [AdapterHost](../../packages/octo-runtime-adapter-host/src/index.ts)、[HostRunService](../../packages/octo-runtime-adapter-host/src/host-run-service.ts) |
+| 接纳与执行 / 传输窗口 | [AgentExecutor](../../packages/octo-runtime-executor-core/src/index.ts)、[HostRunService](../../packages/octo-runtime-adapter-host/src/host-run-service.ts) |
 | 原生请求保存与写回 | [NativeInteractionBridge](../../packages/octo-runtime-adapter-sdk/src/native.ts)、[ACP 审批桥](../../packages/octo-runtime-adapter-sdk/src/approval.ts)、[Codex 交互映射](../../packages/octo-runtime-adapter-codex/src/app-server.ts) |
 | 合同回归参考 | [native-host](../../test/native-host.test.js)、[host-run-service](../../test/host-run-service.test.js)、[ACP approval](../../test/acp-approval.test.js)、[MCP protocol](../../test/mcp-protocol.test.js) |
 

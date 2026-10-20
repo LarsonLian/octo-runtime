@@ -11,7 +11,7 @@ import { callDaemon } from "../packages/octo-runtime-daemon/dist/runtime/runtime
 import { canonicalEvents } from "../packages/octo-runtime-protocol/dist/index.js";
 import { fileURLToPath } from "node:url";
 import { randomBytes } from "node:crypto";
-import { prepareInvokeInput } from "../packages/octo-runtime-core/dist/index.js";
+import { prepareInvokeInput } from "../packages/octo-runtime-executor-core/dist/index.js";
 import { ImRuntime } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import { verifyBotIdentity } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/auth.js";
 import { WukongConnection } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/wukong.js";

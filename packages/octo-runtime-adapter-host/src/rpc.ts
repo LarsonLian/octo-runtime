@@ -27,7 +27,10 @@ import {
   type NativeInteractionResponse,
   type InteractionResponse
 } from "@mininglamp-oss/octo-runtime-protocol";
-import type { AdapterHost, HostedAdapterMetadata } from "./index.js";
+import type {
+  AgentExecutor,
+  HostedAdapterMetadata
+} from "@mininglamp-oss/octo-runtime-executor-core";
 
 type JsonRecord = Record<string, unknown>;
 type RpcId = string | number | null;
@@ -171,7 +174,7 @@ function writer(
 export class AdapterHostRpcServer {
   readonly #log: RuntimeLog;
   readonly #controllers = new Map<string, AbortController>();
-  readonly #host: AdapterHost;
+  readonly #host: AgentExecutor;
   readonly #send: (value: RpcMessage) => void;
   readonly #trace: RpcTrace | undefined;
   readonly #output: Writable;
@@ -183,7 +186,7 @@ export class AdapterHostRpcServer {
     trace,
     log
   }: {
-    host: AdapterHost;
+    host: AgentExecutor;
     output: Writable;
     trace?: RpcTrace;
     log?: RuntimeLog;
@@ -424,7 +427,16 @@ export class AdapterHostRpcServer {
     this.#closed = true;
     for (const controller of this.#controllers.values()) controller.abort(error);
     this.#controllers.clear();
-    void this.#host.shutdown(error.message).catch(() => undefined);
+    void this.#host
+      .shutdown(error.message)
+      .then((result) => {
+        if (result.cleanup === "incomplete")
+          this.#log("error", "rpc.cleanup_incomplete", {
+            code: "EXECUTOR_CLEANUP_INCOMPLETE",
+            unresolved_count: result.unresolvedInvocationIds.length
+          });
+      })
+      .catch(() => undefined);
   }
   #waitForDrain(): Promise<void> {
     return new Promise((resolve, reject) => {

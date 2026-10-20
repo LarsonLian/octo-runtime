@@ -14,7 +14,7 @@
     }
   },
   "dependencies": {
-    "@mininglamp-oss/octo-runtime-core": "workspace:*",
+    "@mininglamp-oss/octo-runtime-executor-core": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-antigravity": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-claude-code": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-codebuddy": "workspace:*",

@@ -131,6 +131,7 @@ try {
     join(installed, "node_modules/@mininglamp-oss/octo-runtime-adapter-host/dist/runner.js")
   );
   assert.deepEqual(Object.keys(metadata.exports).sort(), [
+    "./executor-core",
     "./extra",
     "./extras/channel-gateway/config-schema.json",
     "./extras/channel-wecom/config-schema.json",
@@ -196,12 +197,14 @@ try {
   const consumer = process.platform === "win32" ? directory : join(directory, "lib");
   await writeFile(join(consumer, "package.json"), '{"type":"module"}\n');
   await cp(join(root, "test-support/public-extra/plugin.mts"), join(consumer, "plugin.mts"));
+  await cp(join(root, "test-support/public-extra/executor.mts"), join(consumer, "executor.mts"));
   // 业务库只从离线发行包解析；TypeScript 与 Node 类型是开发工具依赖。
   await execute(
     process.execPath,
     [
       join(root, "node_modules/typescript/bin/tsc"),
       "plugin.mts",
+      "executor.mts",
       "--module",
       "NodeNext",
       "--target",
@@ -228,7 +231,8 @@ try {
       if (e.InvokeInput !== p.InvokeInput) throw Error("public exports mismatch");
       for (const name of ["executionFeatures", "adapterApprovalModes"])
         if (Object.hasOwn(p, name)) throw Error("removed protocol export: " + name);
-      await import("./compiled/plugin.mjs");`
+      await import("./compiled/plugin.mjs");
+      await (await import("./compiled/executor.mjs")).verifyExecutorCore();`
     ],
     { cwd: consumer }
   );
@@ -339,6 +343,7 @@ try {
       "ERR_PACKAGE_PATH_NOT_EXPORTED"
     ],
     ["@mininglamp-oss/octo-runtime-core", "ERR_MODULE_NOT_FOUND"],
+    ["@mininglamp-oss/octo-runtime-executor-core", "ERR_MODULE_NOT_FOUND"],
     ["@mininglamp-oss/octo-runtime-daemon", "ERR_MODULE_NOT_FOUND"]
   ]) {
     const result = await execute(
@@ -442,6 +447,7 @@ try {
       dirty: build.dirty,
       privateImportsBlocked: true,
       publicTypesChecked: true,
+      publicExecutorCoreChecked: true,
       externalExtraLoaded: true,
       allThreeBuiltinExtrasLoaded: true,
       liveAgentRun: live ? pluginResult.terminal : "not-run",

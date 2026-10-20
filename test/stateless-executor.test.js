@@ -35,10 +35,13 @@ test("Runtime source and built packages do not load a SQL driver or expose a dom
       );
     }
   }
-  const core = await import("@mininglamp-oss/octo-runtime-core");
+  const core = await import("@mininglamp-oss/octo-runtime-executor-core");
   assert.deepEqual(Object.keys(core).sort(), [
+    "AgentExecutor",
+    "DEFAULT_RUNTIME_LIMITS",
     "localRuntimeLimits",
     "prepareInvokeInput",
+    "prepareRunContext",
     "resolveLocalContext"
   ]);
 });

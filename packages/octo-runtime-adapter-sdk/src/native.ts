@@ -122,12 +122,19 @@ export class NativeInteractionBridge {
   >();
   #closed = false;
   #closeTransport?: () => Promise<void>;
+  #transportClosed?: Promise<void>;
   readonly #seen = new Set<string | number>();
   constructor(limits?: Readonly<StreamLimitPolicy>) {
     this.queue = new DriverQueue<AdapterOutput>({ limits, boundary: "adapter.native_queue" });
   }
   bindTransport(close: () => Promise<void>): void {
     this.#closeTransport = close;
+  }
+  #closeTransportOnce(): Promise<void> {
+    this.#transportClosed ??= Promise.resolve().then(() => this.#closeTransport?.());
+    // 后台关闭也保留同一次失败，stream 收尾负责向调用方报告。
+    void this.#transportClosed.catch(() => undefined);
+    return this.#transportClosed;
   }
   request(
     requestId: string | number,
@@ -152,7 +159,7 @@ export class NativeInteractionBridge {
         control: { type: "interaction", requestId, status: "expired" }
       });
       this.queue.close(protocolError("INTERACTION_NOT_ACTIVE", "Native interaction expired"));
-      void this.#closeTransport?.();
+      void this.#closeTransportOnce();
     }, 600_000);
     timer.unref();
     this.#pending.set(requestId, { write, validate, timer, expiresAt, responding: false });
@@ -164,7 +171,7 @@ export class NativeInteractionBridge {
     if (automatic)
       void this.respond({ requestId, payload: automatic }).catch((error: unknown) => {
         this.queue.close(error instanceof Error ? error : new Error(String(error)));
-        void this.#closeTransport?.();
+        void this.#closeTransportOnce();
       });
   }
   async respond(response: NativeInteractionResponse): Promise<void> {
@@ -178,7 +185,13 @@ export class NativeInteractionBridge {
     } catch (error) {
       this.close();
       this.queue.close(error instanceof Error ? error : new Error(String(error)));
-      await this.#closeTransport?.();
+      try {
+        await this.#closeTransportOnce();
+      } catch (cleanupError) {
+        throw new AggregateError([error, cleanupError], "Native response and cleanup failed", {
+          cause: cleanupError
+        });
+      }
       throw error;
     }
     if (!this.#pending.has(response.requestId)) throw protocolError("INTERACTION_NOT_ACTIVE");
@@ -221,9 +234,12 @@ export class NativeInteractionBridge {
       yield* this.queue;
     } finally {
       this.close();
-      await this.#closeTransport?.();
-      await iterator.return?.();
-      await producer;
+      // 独立清理均须执行，不能因传输关闭失败跳过源 iterator 的资源释放。
+      await Promise.all([
+        this.#closeTransportOnce(),
+        Promise.resolve().then(() => iterator.return?.()),
+        producer
+      ]);
     }
   }
 }

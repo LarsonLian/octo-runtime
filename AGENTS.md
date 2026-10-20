@@ -2,7 +2,7 @@
 
 本项目是内部 TypeScript monorepo。沟通和文档直接使用中文。
 
-先读 [OKF 知识目录](.octospec/index.md) 与 [基础架构](.octospec/rules/architecture.md)。Runtime 是本地运行时设备，AdapterHost 是统一执行内核；外部接入由 Extra 负责。本地存在和执行不以登录、云端登记或 IM 建联为前提。
+先读 [OKF 知识目录](.octospec/index.md) 与 [基础架构](.octospec/rules/architecture.md)。Runtime 是本地运行时设备，AgentExecutor 是统一执行内核，原 AdapterHost 是过渡别名；外部接入由 Extra 负责。本地存在和执行不以登录、云端登记或 IM 建联为前提。
 
 ## 目录与命令
 

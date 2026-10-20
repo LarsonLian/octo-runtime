@@ -67,7 +67,7 @@ instructions.source 沿用已有单一新结构计划。用户进一步确认本
 ## 核对入口与验证边界
 
 - [Schema](../../../packages/octo-runtime-protocol/schema/protocol.schema.json)、[校验与合并](../../../packages/octo-runtime-protocol/src/context.ts)、[配置分层](../../../packages/octo-runtime-protocol/src/context-configuration.ts)、[catalog](../../../packages/octo-runtime-protocol/src/context-catalog.ts)。
-- [导出和旧校验器](../../../packages/octo-runtime-protocol/src/index.ts)、[指令拼接](../../../packages/octo-runtime-protocol/src/model-context.ts)、[Host renderer](../../../packages/octo-runtime-adapter-host/src/model-input.ts)。
-- [输入准备](../../../packages/octo-runtime-core/src/invoke-input.ts)、[执行解析](../../../packages/octo-runtime-core/src/context.ts)、[watchdog](../../../packages/octo-runtime-adapter-host/src/watchdog.ts)。
+- [导出和旧校验器](../../../packages/octo-runtime-protocol/src/index.ts)、[指令拼接](../../../packages/octo-runtime-protocol/src/model-context.ts)、[Host renderer](../../../packages/octo-runtime-executor-core/src/model-input.ts)。
+- [输入准备](../../../packages/octo-runtime-executor-core/src/invoke-input.ts)、[执行解析](../../../packages/octo-runtime-executor-core/src/context.ts)、[watchdog](../../../packages/octo-runtime-executor-core/src/watchdog.ts)。
 
 本轮完成源码搜索、Schema 引用核对和文档评估，无线上请求、模型调用或产品测试。Worker 当前仓内搜索未见上述 source 等字段的活动 Go 实现，不据此声称服务端或部署已审查通过。没有读取实际 Runtime 配置或凭据。后续实施按线上测试环境及协议同步构建/重启要求验收。

@@ -1,10 +1,11 @@
 {
-  "name": "@mininglamp-oss/octo-runtime-core",
+  "name": "@mininglamp-oss/octo-runtime-executor-core",
   "version": "0.0.0",
   "private": true,
   "type": "module",
   "exports": "./dist/index.js",
   "dependencies": {
+    "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
     "@mininglamp-oss/octo-runtime-protocol": "workspace:*"
   },
   "types": "./dist/index.d.ts",

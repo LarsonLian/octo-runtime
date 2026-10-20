@@ -30,7 +30,7 @@ timestamp: 2026-10-16T00:00:00Z
 | 协议与配置层 | source 必填且参与配置层判断，指令用双换行拼接 | 目标为 text-only、单换行；已有独立计划 |
 | 两个 Channel 的 dispatcher | 将完整 Context 传给 resolveLocalContext，后者拒绝控制指令 | 含 instructions 的请求可能在 Provider 启动前失败，复用已有修复任务 |
 
-源码：[Gateway Context](../../../packages/octo-runtime-extra-channel-gateway/src/transport/contexts.ts)、[WeCom Context](../../../packages/octo-runtime-extra-channel-wecom/src/transport/channel.ts)、[Gateway dispatcher](../../../packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts)、[WeCom dispatcher](../../../packages/octo-runtime-extra-channel-wecom/src/execution/dispatcher.ts)、[执行 resolver](../../../packages/octo-runtime-core/src/context.ts)。
+源码：[Gateway Context](../../../packages/octo-runtime-extra-channel-gateway/src/transport/contexts.ts)、[WeCom Context](../../../packages/octo-runtime-extra-channel-wecom/src/transport/channel.ts)、[Gateway dispatcher](../../../packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts)、[WeCom dispatcher](../../../packages/octo-runtime-extra-channel-wecom/src/execution/dispatcher.ts)、[执行 resolver](../../../packages/octo-runtime-executor-core/src/context.ts)。
 
 “IM invoke 时没有配置入口”指消息触发流程没有宿主交互式填写人设的步骤。通用 InvokeInput 实际支持 contexts 和 controlInstructions，不能写成 invoke 协议没有指令能力。IM 的稳定入口是宿主提供 Bot config，Channel 将其组装为本轮调用输入。
 

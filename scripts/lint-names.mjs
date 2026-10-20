@@ -36,7 +36,7 @@ const args = [
   "--files",
   "--hidden",
   "-0",
-  ...excluded.flatMap((name) => ["-g", `!**/${name}/**`]),
+  ...excluded.flatMap((name) => ["-g", `!**/${name}/**`, "-g", `!**/${name}`]),
   "-g",
   "!**/secret.md"
 ];

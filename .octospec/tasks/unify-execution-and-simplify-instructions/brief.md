@@ -35,7 +35,7 @@ tags: [invoke, context, protocol, channel, adapter]
 
 - [Octo dispatcher](../../../packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts)、[Octo task](../../../packages/octo-runtime-extra-channel-gateway/src/execution/task.ts)。
 - [WeCom dispatcher](../../../packages/octo-runtime-extra-channel-wecom/src/execution/dispatcher.ts)。
-- [公开输入准备](../../../packages/octo-runtime-core/src/invoke-input.ts)、[执行 Context 解析](../../../packages/octo-runtime-core/src/context.ts)、[AdapterHost](../../../packages/octo-runtime-adapter-host/src/index.ts)。
+- [公开输入准备](../../../packages/octo-runtime-executor-core/src/invoke-input.ts)、[执行 Context 解析](../../../packages/octo-runtime-executor-core/src/context.ts)、[AdapterHost](../../../packages/octo-runtime-adapter-host/src/index.ts)。
 - [指令校验](../../../packages/octo-runtime-protocol/src/context.ts)、[指令拼接](../../../packages/octo-runtime-protocol/src/model-context.ts)、[配置分层](../../../packages/octo-runtime-protocol/src/context-configuration.ts)。
 
 ## 关键合同

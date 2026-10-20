@@ -10,7 +10,7 @@ tier: repo
 priority: 90
 load_bearing: true
 inject_when:
-  paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**","test/context-extension*"]
+  paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**", "packages/octo-runtime-executor-core/**","test/context-extension*"]
   touches: ["context","extension"]
 source: self
 supersedes: []
@@ -36,7 +36,7 @@ Context 使用 `octo.context-envelope/v3` 的 `schema + items`，Run 使用 `sch
 }
 ```
 
-Host 的 [renderModelContexts](../../packages/octo-runtime-adapter-host/src/model-input.ts) 按 namespace/name 白名单匹配，保留 item 顺序，完整输出 guidance 与 payload。不要求注册业务处理器，不进行字段投影、材料预取或摘要。普通扩展指引不具有控制指令权限。
+Host 的 [renderModelContexts](../../packages/octo-runtime-executor-core/src/model-input.ts) 按 namespace/name 白名单匹配，保留 item 顺序，完整输出 guidance 与 payload。不要求注册业务处理器，不进行字段投影、材料预取或摘要。普通扩展指引不具有控制指令权限。
 
 其他结构合法的未知可选类型参与信封数量、字节预算和快照 hash，并在中转时保留；Host 不将它们渲染到模型输入。忽略消费不表示已经应用某项执行能力。已识别类型仍按自身合同校验；身份、权限及必要执行配置不能作为未知扩展忽略。
 

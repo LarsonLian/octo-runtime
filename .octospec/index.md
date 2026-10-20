@@ -47,6 +47,10 @@
 
 根目录按场景分为 [CLI 使用指南](../CLI_USAGE_GUIDE.md)、[SDK 完整原生接入指南](../SDK_NATIVE_INTEGRATION_FULL_GUIDE.md) 和 [SDK Channel Gateway 指南](../SDK_CHANNEL_GATEWAY_GUIDE.md)；[INTEGRATION.md](../INTEGRATION.md)仅作选型导航，[DEPLOYMENTS.md](../DEPLOYMENTS.md)说明发行部署。包 README 保留包级用法。
 
+## 当前任务
+
+- [Issue 46：ExecutorCore 抽取](tasks/issue-46-executor-core/brief.md)：分支 `refactor/46-executor-core`，基线 `main@7fb81e9`；[实施记录](tasks/issue-46-executor-core/implementation.md)记录唯一 Core、原 worker、生命周期和公开入口。M0–M3 本机通过，M4 本机 tgz 验证通过；Node 1264 通过/10 跳过、UI 35 通过。Windows 原生和 M5 新 Kernel/真实宿主联验待完成；[计划](tasks/issue-46-executor-core/plan.md)、[原评审](tasks/issue-46-executor-core/assessment.md)与[验收](tasks/issue-46-executor-core/acceptance.md)保留依据。
+
 ## 历史与取舍
 
 - [Windows manifest 模块路径修复（Issue #37）](journal/shared/2026-10-19-windows-manifest-module-paths.md)：专门回归 14 通过；Windows 全仓剩余失败及新暴露的关闭问题单独记录，跨平台验证按 PR 检查结果更新。

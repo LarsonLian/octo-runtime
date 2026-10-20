@@ -4,7 +4,7 @@ import {
   assertFrozenContextPlan,
   contextControlInstructions
 } from "../packages/octo-runtime-protocol/dist/index.js";
-import { renderModelContexts } from "../packages/octo-runtime-adapter-host/dist/model-input.js";
+import { renderModelContexts } from "../packages/octo-runtime-executor-core/dist/model-input.js";
 
 const context = {
   schema: "octo.context-envelope/v3",

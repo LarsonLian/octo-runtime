@@ -30,7 +30,7 @@ apps/
 
 packages/
   octo-runtime-protocol/             canonical protocol
-  octo-runtime-core/                 local execution context resolution
+  octo-runtime-executor-core/                 local execution context resolution
   octo-runtime-daemon/               local SDK, lifecycle, IPC and optional modules
   octo-runtime-extra-channel-gateway/ optional Octo IM integration
   octo-runtime-extra-channel-wecom/   optional WeCom integration

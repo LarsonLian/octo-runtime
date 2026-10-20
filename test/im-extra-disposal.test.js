@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { ExtraPlugins } from "../packages/octo-runtime-daemon/dist/index.js";
 import { waitFor } from "./runtime-fixture.js";
-import { prepareInvokeInput } from "../packages/octo-runtime-core/dist/invoke-input.js";
+import { prepareInvokeInput } from "../packages/octo-runtime-executor-core/dist/invoke-input.js";
 
 for (const kind of ["gateway", "wecom"]) {
   const base = `../packages/octo-runtime-extra-channel-${kind}/dist/`;

@@ -6,13 +6,13 @@ import {
   assertFrozenContextPlan,
   resolveContextConfiguration
 } from "../packages/octo-runtime-protocol/dist/index.js";
-import { renderModelContexts } from "../packages/octo-runtime-adapter-host/dist/model-input.js";
+import { renderModelContexts } from "../packages/octo-runtime-executor-core/dist/model-input.js";
 import {
   invocationMcpServers,
   expandMcpValue,
   defineAdapter
 } from "../packages/octo-runtime-adapter-sdk/dist/index.js";
-import { resolveLocalContext } from "../packages/octo-runtime-core/dist/context.js";
+import { resolveLocalContext } from "../packages/octo-runtime-executor-core/dist/context.js";
 import { buildCodexCommand } from "../packages/octo-runtime-adapter-codex/dist/index.js";
 import { buildClaudeCommand } from "../packages/octo-runtime-adapter-claude-code/dist/index.js";
 import { buildOpenCodeCommand } from "../packages/octo-runtime-adapter-opencode/dist/index.js";

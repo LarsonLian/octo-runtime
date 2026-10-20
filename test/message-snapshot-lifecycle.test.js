@@ -2,7 +2,7 @@ import { preparedFrames } from "./runtime-fixture.js";
 import { preparedTestInvoke } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { InvocationExperience } from "../packages/octo-runtime-adapter-host/dist/experience.js";
+import { InvocationExperience } from "../packages/octo-runtime-executor-core/dist/experience.js";
 import { AdapterHost } from "../packages/octo-runtime-adapter-host/dist/index.js";
 
 const metadata = {

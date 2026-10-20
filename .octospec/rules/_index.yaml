@@ -3,13 +3,13 @@ rules:
     priority: 95
     load_bearing: true
     inject_when:
-      paths: ["packages/octo-runtime-protocol/**", "packages/octo-runtime-core/**", "packages/octo-runtime-adapter-*/**", "packages/octo-runtime-daemon/**", "packages/octo-runtime-extra-*/**", "apps/**"]
+      paths: ["packages/octo-runtime-protocol/**", "packages/octo-runtime-executor-core/**", "packages/octo-runtime-adapter-*/**", "packages/octo-runtime-daemon/**", "packages/octo-runtime-extra-*/**", "apps/**"]
       touches: [protocol, invocation, interaction, adapter, architecture]
   - id: runtime-adapter-metadata
     priority: 90
     load_bearing: true
     inject_when:
-      paths: ["packages/octo-runtime-adapter-*/**","packages/octo-runtime-core/**","config/**"]
+      paths: ["packages/octo-runtime-adapter-*/**","packages/octo-runtime-executor-core/**","config/**"]
       touches: ["adapter","agent-source"]
   - id: runtime-architecture
     priority: 100
@@ -33,13 +33,13 @@ rules:
     priority: 90
     load_bearing: true
     inject_when:
-      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**","test/context-extension*"]
+      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**", "packages/octo-runtime-executor-core/**","test/context-extension*"]
       touches: ["context","extension"]
   - id: runtime-context-input
     priority: 90
     load_bearing: true
     inject_when:
-      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-core/**","packages/octo-runtime-adapter-*/**","packages/octo-runtime-extra-*/**","test/model-context*"]
+      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-executor-core/**","packages/octo-runtime-adapter-*/**","packages/octo-runtime-extra-*/**","test/model-context*"]
       touches: ["context","model-input","workspace"]
   - id: runtime-engineering
     priority: 80
@@ -51,7 +51,7 @@ rules:
     priority: 90
     load_bearing: true
     inject_when:
-      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-*/**","test/*envs*"]
+      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-*/**", "packages/octo-runtime-executor-core/**","test/*envs*"]
       touches: ["envs","context"]
   - id: runtime-extras
     priority: 90
@@ -63,31 +63,31 @@ rules:
     priority: 90
     load_bearing: true
     inject_when:
-      paths: ["apps/cli/**","packages/octo-runtime-core/**","packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**","packages/octo-runtime-daemon/**","packages/octo-runtime-extra-*/**"]
+      paths: ["apps/cli/**","packages/octo-runtime-executor-core/**","packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**","packages/octo-runtime-daemon/**","packages/octo-runtime-extra-*/**"]
       touches: ["invoke","protocol","multimodal"]
   - id: runtime-local-execution
     priority: 90
     load_bearing: true
     inject_when:
-      paths: ["packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-host/**","apps/**","test/host-run*","test/embedded-invoke*"]
+      paths: ["packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-host/**", "packages/octo-runtime-executor-core/**","apps/**","test/host-run*","test/embedded-invoke*"]
       touches: ["ipc","invoke","stream"]
   - id: runtime-mcp
     priority: 90
     load_bearing: true
     inject_when:
-      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-*/**","test/context-mcp*"]
+      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-*/**", "packages/octo-runtime-executor-core/**","test/context-mcp*"]
       touches: ["mcp","context"]
   - id: runtime-openclaw
     priority: 90
     load_bearing: true
     inject_when:
-      paths: ["packages/octo-runtime-adapter-openclaw/**","packages/octo-runtime-core/src/invoke-input.ts","apps/cli/**","test/openclaw-*"]
+      paths: ["packages/octo-runtime-adapter-openclaw/**","packages/octo-runtime-executor-core/src/invoke-input.ts","apps/cli/**","test/openclaw-*"]
       touches: ["openclaw","adapter","workspace"]
   - id: runtime-output-protocol
     priority: 90
     load_bearing: true
     inject_when:
-      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**","packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-sdk/**","test/native-*","test/host-*"]
+      paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-adapter-host/**", "packages/octo-runtime-executor-core/**","packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-sdk/**","test/native-*","test/host-*"]
       touches: ["protocol","native","canonical","stream"]
   - id: runtime-protocol-schema
     priority: 90
@@ -99,7 +99,7 @@ rules:
     priority: 90
     load_bearing: true
     inject_when:
-      paths: ["packages/octo-runtime-adapter-*/**","test/*reasoning*"]
+      paths: ["packages/octo-runtime-adapter-*/**", "packages/octo-runtime-executor-core/**","test/*reasoning*"]
       touches: ["reasoning","adapter"]
   - id: runtime-lifecycle
     priority: 90
@@ -117,5 +117,5 @@ rules:
     priority: 90
     load_bearing: true
     inject_when:
-      paths: ["packages/octo-runtime-core/**","packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-host/**","packages/octo-runtime-extra-channel-*/**","test/stateless-*"]
+      paths: ["packages/octo-runtime-executor-core/**","packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-host/**","packages/octo-runtime-extra-channel-*/**","test/stateless-*"]
       touches: ["storage","stream","stateless"]

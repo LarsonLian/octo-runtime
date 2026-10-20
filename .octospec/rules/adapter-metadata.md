@@ -10,7 +10,7 @@ tier: repo
 priority: 90
 load_bearing: true
 inject_when:
-  paths: ["packages/octo-runtime-adapter-*/**","packages/octo-runtime-core/**","config/**"]
+  paths: ["packages/octo-runtime-adapter-*/**","packages/octo-runtime-executor-core/**","config/**"]
   touches: ["adapter","agent-source"]
 source: self
 supersedes: []
@@ -84,7 +84,7 @@ manifest.module 的本机绝对路径（Windows 包含盘符与 UNC）和以点�
 开发者用法、公开 import、完整 Extra/Adapter 示例及 SDK/CLI 兼容边界见[飞书开发指南](https://my.feishu.cn/docx/IW30d2KL6o137ExHKHRc2yrJngh)。公开合同属于增量导出，不能据此声称使用旧物理清单路径的宿主无需迁移。
 
 - [Adapter SDK](../../packages/octo-runtime-adapter-sdk/src/index.ts)、[Adapter Host](../../packages/octo-runtime-adapter-host/src/index.ts)。
-- [Protocol Schema](../../packages/octo-runtime-protocol/schema/protocol.schema.json)及[本地执行配置解析](../../packages/octo-runtime-core/src/context.ts)。
+- [Protocol Schema](../../packages/octo-runtime-protocol/schema/protocol.schema.json)及[本地执行配置解析](../../packages/octo-runtime-executor-core/src/context.ts)。
 - [context-mcp.test.js](../../test/context-mcp.test.js)、[native-host.test.js](../../test/native-host.test.js)。
 
 真实 Provider 与线上测试环境的验收范围以对应验证记录为准，支持声明和 fixture 测试不等于真实调用成功。

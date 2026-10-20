@@ -1,7 +1,7 @@
 // 企业微信回归：验证鉴权/心跳、连接替换、消息映射及思考帧到最终回复的 ACK 顺序。
 // 客户端是否显示原生气泡仍以真实平台验收记录为准。
 import test from "node:test";
-import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
+import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-executor-core";
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import { setTimeout as delay, setImmediate as settle } from "node:timers/promises";

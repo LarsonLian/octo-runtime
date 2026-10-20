@@ -10,7 +10,7 @@ tier: repo
 priority: 90
 load_bearing: true
 inject_when:
-  paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-core/**","packages/octo-runtime-adapter-*/**","packages/octo-runtime-extra-*/**","test/model-context*"]
+  paths: ["packages/octo-runtime-protocol/**","packages/octo-runtime-executor-core/**","packages/octo-runtime-adapter-*/**","packages/octo-runtime-extra-*/**","test/model-context*"]
   touches: ["context","model-input","workspace"]
 source: self
 supersedes: []
@@ -18,7 +18,7 @@ supersedes: []
 
 # Context v3 的 LLM 注入约束
 
-本表定义哪些 Context 数据发送给模型，以及发送到哪个通道。Event 发起方构造数据，Host 使用 [model-input.ts](../../packages/octo-runtime-adapter-host/src/model-input.ts) 中的 `renderModelContexts` 渲染；通用执行接入层不追加业务指引或读取引用正文，业务发起方可构造所属材料与获取指引。执行合同仍为 Run 7 / `octo.context-envelope/v3`。
+本表定义哪些 Context 数据发送给模型，以及发送到哪个通道。Event 发起方构造数据，Host 使用 [model-input.ts](../../packages/octo-runtime-executor-core/src/model-input.ts) 中的 `renderModelContexts` 渲染；通用执行接入层不追加业务指引或读取引用正文，业务发起方可构造所属材料与获取指引。执行合同仍为 Run 7 / `octo.context-envelope/v3`。
 
 | 内部类型                        | 发送给 LLM | 通道与消费规则                                                                |
 | ------------------------------- | ---------- | ----------------------------------------------------------------------------- |
@@ -83,7 +83,7 @@ renderer 只匹配 namespace/name 的白名单 pattern，保序输出全部数�
 
 `prompt` 是展示描述，`modelInput` 和 `modelInputParts` 是实际输入，不能用展示摘要覆盖原始图片或恢复材料。可信 `controlInstructions` 使用独立通道，其 Provider 会话策略不适用于普通业务 Context。
 
-工作目录由已解析的执行配置与 [execution-preparation.ts](../../packages/octo-runtime-adapter-host/src/execution-preparation.ts) 准备。固定目录按合同检查，随机目录按执行配置创建；cwd 不是权限或操作系统隔离边界。OpenClaw 的 `workspace: false` 跳过目录准备，保留 Provider 原生工作区，Context 快照仍保持原值。
+工作目录由已解析的执行配置与 [execution-preparation.ts](../../packages/octo-runtime-executor-core/src/execution-preparation.ts) 准备。固定目录按合同检查，随机目录按执行配置创建；cwd 不是权限或操作系统隔离边界。OpenClaw 的 `workspace: false` 跳过目录准备，保留 Provider 原生工作区，Context 快照仍保持原值。
 
 本段描述通用执行能力，不代表 IM 产品需要每会话目录。IM Agent 固定 workdir 的策略由 Channel 选择；新 session 或 reset 不改变目录。通用调用方仍可按自身业务显式选择合法目录，Host 不按 sessionId 推导路径。两层职责见[IM Agent 与 invoke 边界](../guides/im-agent-invocation-boundary.md)。
 
@@ -91,6 +91,6 @@ renderer 只匹配 namespace/name 的白名单 pattern，保序输出全部数�
 
 ## 当前核对入口
 
-- [renderer](../../packages/octo-runtime-adapter-host/src/model-input.ts)：只按白名单选择 item，数组保序，payload 对象键排序后输出 JSON，不投影或丢字段。
-- [统一输入解析](../../packages/octo-runtime-core/src/invoke-input.ts)：只解析执行配置，不推断历史背景。
+- [renderer](../../packages/octo-runtime-executor-core/src/model-input.ts)：只按白名单选择 item，数组保序，payload 对象键排序后输出 JSON，不投影或丢字段。
+- [统一输入解析](../../packages/octo-runtime-executor-core/src/invoke-input.ts)：只解析执行配置，不推断历史背景。
 - [model-context.test.js](../../test/model-context.test.js)：空、本轮变化及跨 Event 重复等输入行为。

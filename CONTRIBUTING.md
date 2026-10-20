@@ -31,25 +31,32 @@ Use `pnpm test` to build and run the same suites in one command.
 
 ## Project Structure and Responsibilities
 
-| Location                                      | Responsibility                                                      |
-| --------------------------------------------- | ------------------------------------------------------------------- |
-| `apps/cli`                                    | The bundled `octo-runtime` host, configuration and service commands |
-| `apps/daemon`                                 | Daemon entry points and process composition                         |
-| `packages/octo-runtime-daemon`                | SDK, local IPC and shared process lifecycle                         |
-| `packages/octo-runtime-adapter-host`          | Shared execution kernel and standalone runner                       |
-| `packages/octo-runtime-adapter-*`             | Provider-specific protocol translation                              |
-| `packages/octo-runtime-protocol`              | Execution contracts, schemas and generated types                    |
-| `packages/octo-runtime-extra-channel-gateway` | Octo IM admission, sessions and replies                             |
-| `public`                                      | Published Extra and protocol entry points                           |
-| `test`, `test-support`                        | Cross-package tests, fixtures and fake Providers                    |
-| `.octospec`                                   | Current rules, task plans and verification records                  |
+| Location                                      | Responsibility                                                       |
+| --------------------------------------------- | -------------------------------------------------------------------- |
+| `apps/cli`                                    | The bundled `octo-runtime` host, configuration and service commands  |
+| `apps/daemon`                                 | Daemon entry points and process composition                          |
+| `packages/octo-runtime-daemon`                | SDK, local IPC and shared process lifecycle                          |
+| `packages/octo-runtime-executor-core`         | Single AgentExecutor implementation and explicit in-process API      |
+| `packages/octo-runtime-adapter-host`          | Transitional isolated worker, NDJSON transport and standalone runner |
+| `packages/octo-runtime-adapter-*`             | Provider-specific protocol translation                               |
+| `packages/octo-runtime-protocol`              | Execution contracts, schemas and generated types                     |
+| `packages/octo-runtime-extra-channel-gateway` | Octo IM admission, sessions and replies                              |
+| `public`                                      | Published Extra and protocol entry points                            |
+| `test`, `test-support`                        | Cross-package tests, fixtures and fake Providers                     |
+| `.octospec`                                   | Current rules, task plans and verification records                   |
 
 SDK integration is the primary application entry point. The bundled Runtime CLI
 is one SDK host; it is distinct from the `octo-cli` business API tool.
 Host applications own configuration sources, credential storage and installation
 decisions. Extras own their business integrations and load/unload as whole plugins.
-All entry points reuse the independent AdapterHost process. Keep business workflows
-out of the kernel and Provider differences inside adapters.
+Prioritize stability: recommend SDK access over IPC to an independent Executor
+Kernel, especially for Electron and other long-running hosts. The new Kernel,
+IPC and supervision implementation belongs to issue #47; the existing isolated
+worker and NDJSON path remain in place during this transition. Explicit in-process
+Core embedding is allowed as a simpler SDK integration option. Its host owns the
+lifecycle and shares the execution process failure domain. Both paths reuse the
+same AgentExecutor implementation. Keep business workflows out of the kernel and
+Provider differences inside adapters.
 
 ## Code Style and Formatting
 

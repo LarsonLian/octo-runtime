@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { setImmediate as settle } from "node:timers/promises";
-import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
+import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-executor-core";
 
 const context = { schema: "octo.context-envelope/v3", items: [] };
 const channels = [

@@ -27,7 +27,7 @@
   "dependencies": {
     "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
-    "@mininglamp-oss/octo-runtime-core": "workspace:*",
+    "@mininglamp-oss/octo-runtime-executor-core": "workspace:*",
     "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
     "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
     "mdast-util-from-markdown": "^2.1.0",

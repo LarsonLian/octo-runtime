@@ -38,7 +38,7 @@
     "@mininglamp-oss/octo-runtime-adapter-qoderclicn": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-zcode-gui": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-antigravity": "workspace:*",
-    "@mininglamp-oss/octo-runtime-core": "workspace:*",
+    "@mininglamp-oss/octo-runtime-executor-core": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-sdk": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
     "@mininglamp-oss/octo-runtime-protocol": "workspace:*",

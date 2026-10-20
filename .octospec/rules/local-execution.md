@@ -10,13 +10,34 @@ tier: repo
 priority: 90
 load_bearing: true
 inject_when:
-  paths: ["packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-host/**","apps/**","test/host-run*","test/embedded-invoke*"]
+  paths: ["packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-host/**", "packages/octo-runtime-executor-core/**","apps/**","test/host-run*","test/embedded-invoke*"]
   touches: ["ipc","invoke","stream"]
 source: self
 supersedes: []
 ---
 
 # 本地执行与传输
+
+推荐接入方式为 SDK 经 IPC 调用独立 Executor Kernel，以进程隔离和监督提高稳定性；
+Electron 等长期运行的宿主优先采用此方式。新 Kernel 属于 #47，当前使用保留的独立
+worker 路径。直接嵌入 Core 是允许显式选择的 SDK 简易方案，由宿主管理生命周期并承担
+同进程故障影响；不得因开放 direct 入口而将默认隔离链路改为进程内执行。
+
+显式 direct 入口为 `@mininglamp-oss/octo-runtime/executor-core` 的 AgentExecutor，同一执行类
+也由默认独立 worker 实例化。direct 不创建 IPC，不具备订阅回放和进程隔离；HostApp 管理
+实例生命周期。首个 running 帧可见前已建立取消所有权；未消费 iterator 不接纳、不占容量。
+失败的 generator finalizer 不能靠再次 return 重试；next 拒绝、return 未确认 done 或提前
+关闭却无 return 时保留未确认清理所有权，shutdown 持续报告 incomplete。尚在等待的清理
+可以稍后完成，由下一次 shutdown 观察。取消已确认清理的调用可按 TTL 淘汰；旧 iterator
+迟到结束不得修改复用同一 invocationId 的新调用。具体限制见 [Core](../../packages/octo-runtime-executor-core/README.md)。
+shutdown 同步关闭新接纳，返回不可变的清理快照；incomplete 保留所有权，后续仅继续观察未决清理。
+候选终态、取消或首次清理三者最早时刻建立单调时钟截止时间；终态 drain、return、catch/finally
+共用一次 cancelGraceMs，暂停后恢复消费不能重开预算。后台清理 Promise 必须观察拒绝；
+单项关闭失败不能跳过其他独立资源释放，也不能为等待永不结束的兄弟项无限推迟已知失败。
+具体合同见 [Core API](../../packages/octo-runtime-executor-core/README.md)。
+
+下方 daemon/stdio 形状描述当前仍保留的隔离链路，不限制 direct 使用。新 ExecutorKernel
+的命令、端点和监督改造属于 #47，不能用现有 worker 回归代替其最终联合验收。
 
 公共入口为 `invoke(input, environment)`，其中 input 是 [InvokeInput](invoke-input.md)。本地 environment 支持取消 signal，以及渠道工具所需的独立 executionEnvOverrides；详见 [环境合同](environment.md)。SDK、RPC 和 CLI playboard 转发原输入，只有 Host 解析执行配置。内部 `invokeFrames(input, environment)` 返回同一执行的完整源帧，不再接受 adapterType/request/options 三参数，不另行准备执行。
 

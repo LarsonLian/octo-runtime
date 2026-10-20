@@ -24,7 +24,7 @@
 | [octo-runtime-adapter-qoderclicn](octo-runtime-adapter-qoderclicn/README.md)   | provider 协议适配，由 adapter-host 调用                                                                                                                              |
 | [octo-runtime-adapter-sdk](octo-runtime-adapter-sdk/README.md)                 | 提供适配器共用的进程、流解析和事件辅助工具                                                                                                                           |
 | [octo-runtime-adapter-zcode-gui](octo-runtime-adapter-zcode-gui/README.md)     | provider 协议适配，由 adapter-host 调用                                                                                                                              |
-| [octo-runtime-core](octo-runtime-core/README.md)                               | 解析并校验本轮执行配置，不保存业务 Agent、Session 或 Run                                                                                                                |
+| [octo-runtime-executor-core](octo-runtime-executor-core/README.md) | AgentExecutor：唯一执行实现、输入准备、取消、交互及清理；不含 IPC、回放或业务历史 |
 | [octo-runtime-cross-service](octo-runtime-cross-service/README.md)             | 管理 launchd/systemd/Windows 用户服务的生命周期                                                                                                                      |
 | [octo-runtime-daemon](octo-runtime-daemon/README.md) | Node/Electron 本地生命周期、账户隔离与 IPC；管理共享 Host，按宿主声明加载可选 Extra。生产依赖不包含 worker-access 或 channel-gateway。 |
 | [octo-runtime-extra-channel-gateway](octo-runtime-extra-channel-gateway/README.md)                   | 读取本地 bf_token、连接 IM 专用 WS、管理私聊会话与 /reset，经共享 AdapterHostRpc 执行后回发最终文本。                                                                |

@@ -63,7 +63,7 @@ Extra 在发起调用时读取当前业务配置并冻结本轮输入，不要�
 
 同一 IM Agent 执行不同任务、在 DM/群/话题间切换，以及 `/reset` 后，仍使用其配置的固定目录。任务级 workdir、workspace Context 均不构成目录切换依据。宿主显式修改 Agent 配置是另一种操作，不能用任务参数或 reset 隐式代替。已有文件和 Provider 原生历史不因本决策被清理。
 
-当前实现依据：[IM 请求与目录选择](../../packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts)、[IM 会话与 reset](../../packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts)、[Host 执行准备](../../packages/octo-runtime-adapter-host/src/execution-preparation.ts)、[通用输入合同](../rules/invoke-input.md)。具体固定目录取舍见[原专项决策记录](../tasks/channel-fixed-workdir-decision/brief.md)。
+当前实现依据：[IM 请求与目录选择](../../packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts)、[IM 会话与 reset](../../packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts)、[Host 执行准备](../../packages/octo-runtime-executor-core/src/execution-preparation.ts)、[通用输入合同](../rules/invoke-input.md)。具体固定目录取舍见[原专项决策记录](../tasks/channel-fixed-workdir-decision/brief.md)。
 
 ## 后续设计与评审要求
 

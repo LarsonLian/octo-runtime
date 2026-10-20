@@ -130,6 +130,8 @@ jobs:
         run: pnpm install --frozen-lockfile
       - name: Build release package
         run: pnpm build
+      - name: Verify Core lifecycle and isolated worker on Windows
+        run: node --test test/executor-core.test.js test/executor-cleanup-budget.test.js test/native-cleanup.test.js test/zcode-cleanup.test.js
       - name: Pack single distribution
         id: pack
         shell: bash

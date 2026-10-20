@@ -28,6 +28,8 @@ Octo Runtime 是 provider-neutral 的本地 Agent Runtime。本地接入使用 `
 
 SDK 接入不表示所有执行都在宿主进程内完成；daemon、Host 和 Provider 仍可能使用独立子进程，部分 Adapter 仍依赖 Provider CLI。Runtime 及运行依赖的安装方案由 HostApp 决定。云端设备的 CLI 使用和客户应用的 SDK 接入分别维护，选型入口见 [INTEGRATION.md](INTEGRATION.md)。
 
+**接入优先级：以稳定性为优先，推荐通过 SDK 经 IPC 调用独立 Executor Kernel，尤其是 Electron 等长期运行的宿主。** 新 Executor Kernel 及其 IPC、监督能力由 #47 后续实施；当前保留原独立 worker 和 NDJSON 路径。公开 `@mininglamp-oss/octo-runtime/executor-core` 允许宿主显式选择进程内嵌入，作为 SDK 简易接入方案；该方式由宿主管理生命周期，与宿主共享进程故障域，不具备独立执行进程的故障隔离。开放直接调用入口不改变隔离执行的推荐优先级。
+
 ## 设计原则与实施状态
 
 ### 配置来源由宿主决定：SDK 的灵活性
@@ -96,8 +98,8 @@ Host IPC 承载 invoke、取消、审批／问答答复和执行事件。daemon 
 | [Daemon 包](packages/octo-runtime-daemon/README.md) | 本地生命周期 SDK、IPC 与共享 Host；按宿主配置动态装配可选连接模块 | 决定宿主启用哪些模块、依赖 worker-access、处理业务 Context、另建 Host 执行器 |
 | [WeCom Channel](packages/octo-runtime-extra-channel-wecom/README.md) | 企业微信连接、原生 stream 回复和独立生命周期 | Octo IM 协议、跨平台 connector 分发 |
 | [IM 接入](packages/octo-runtime-extra-channel-gateway/README.md) | bf_token 注册、IM WS、私聊会话、/session、/reset、最终文本回发 | 直接调用 provider、独立 Daemon、聊天 SQLite 的隐式引入 |
-| [Adapter Host](packages/octo-runtime-adapter-host/README.md) | 统一 IPC、invocation 生命周期、调用和取消、标准事件 | 消息来源、群聊规则、Worker 注册 |
-| [Core](packages/octo-runtime-core/README.md) | 执行配置解析与校验 | IM/Loop 业务模型、WS 接入 |
+| [Adapter Host](packages/octo-runtime-adapter-host/README.md) | 过渡期独立 worker、NDJSON RPC 与源窗口，委托同一 Core | 第二套执行实现、消息来源、群聊规则、Worker 注册 |
+| [Executor Core](packages/octo-runtime-executor-core/README.md) | AgentExecutor、输入准备、执行与交互、取消和清理；支持显式 direct | IPC、监督、回放、IM/Loop 业务模型 |
 | [Protocol](packages/octo-runtime-protocol/README.md) | InvokeRequest、CanonicalEvent、Context 和校验合同 | 网络连接、进程和业务存储 |
 | [Cross Service](packages/octo-runtime-cross-service/README.md) | OS 用户级服务管理 | Run 调度、连接协议 |
 | [Adapters / SDK / ACP](packages/README.md) | provider 协议转换、进程与 transport 工具 | Worker/IM 连接和业务决策 |
@@ -114,13 +116,12 @@ Codex 保留原生既有 MCP，由 Provider 自行加载；本轮仅覆盖新增
 apps/
   cli/                             现有运维 CLI
   daemon/                          启动与配置入口
-  adapter-host/                    Host 进程入口
 packages/
   octo-runtime-daemon/              本地生命周期 SDK、IPC、可选模块装配
   octo-runtime-extra-channel-gateway/  Octo IM 专用连接、会话与结果回发
   octo-runtime-extra-channel-wecom/    企业微信专用连接、会话与 stream 回复
-  octo-runtime-adapter-host/        共享执行 Host + NDJSON RPC
-  octo-runtime-core/                执行配置解析
+  octo-runtime-adapter-host/        过渡 worker + NDJSON RPC / 源窗口
+  octo-runtime-executor-core/       唯一 AgentExecutor 与执行配置解析
   octo-runtime-protocol/            统一执行和 Context 合同
   octo-runtime-adapter-*/           provider adapters 与共享 SDK
   octo-runtime-acp-client/          ACP transport

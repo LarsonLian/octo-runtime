@@ -72,7 +72,7 @@ pnpm --filter @mininglamp-oss/octo-runtime-daemon... run build
 | 包 | 如何安装与声明 |
 | --- | --- |
 | 上述 4 项 | 宿主直接使用，列入宿主 `dependencies`，值为 `workspace:*` |
-| `octo-runtime-protocol`、`octo-runtime-core`、`octo-runtime-adapter-sdk` | 全部纳入宿主 workspace，按包内声明自动链接和构建；宿主直接 import 时再添加 `workspace:*` 直接依赖 |
+| `octo-runtime-protocol`、`octo-runtime-executor-core`、`octo-runtime-adapter-sdk` | 全部纳入宿主 workspace，按包内声明自动链接和构建；宿主直接 import 时再添加 `workspace:*` 直接依赖 |
 | 其他 Adapter 及第三方库 | 按现有包依赖传递安装；只注册 Codex/OpenClaw 不会裁剪这部分依赖 |
 | `octo-runtime-extra-channel-gateway` | 基础示例已排除；需要 Octo IM 时移除对应排除项、添加宿主直接依赖并构建，按 [Channel Gateway 指南](SDK_CHANNEL_GATEWAY_GUIDE.md)操作 |
 

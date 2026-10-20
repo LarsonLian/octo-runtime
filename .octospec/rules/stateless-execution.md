@@ -10,7 +10,7 @@ tier: repo
 priority: 90
 load_bearing: true
 inject_when:
-  paths: ["packages/octo-runtime-core/**","packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-host/**","packages/octo-runtime-extra-channel-*/**","test/stateless-*"]
+  paths: ["packages/octo-runtime-executor-core/**","packages/octo-runtime-daemon/**","packages/octo-runtime-adapter-host/**","packages/octo-runtime-extra-channel-*/**","test/stateless-*"]
   touches: ["storage","stream","stateless"]
 source: self
 supersedes: []
@@ -20,7 +20,7 @@ supersedes: []
 
 Runtime 接收已准备的请求、校验执行配置、调用 Provider、传递事件、处理交互和取消。业务 Agent 定义、Session/Run 历史、Provider binding 和重启后的业务恢复由调用方保存与决定。
 
-当前 Core 导出本轮配置解析及 InvokeInput 准备函数，不导出领域 store、SQLite 或业务调度引擎。不得以无限增长的 Map 或 Run JSON 归档替代已删除的数据库。
+当前 ExecutorCore 导出 AgentExecutor、本轮配置解析、InvokeInput 和显式工作区准备工具，不导出领域 store、SQLite 或业务调度引擎。Core 最多保留 1024 个 invocation 的身份元数据，非活动记录按 120 秒惰性淘汰；未消费 iterator 不占容量，暂停的活动调用及清理未完成资源不得被淘汰。源帧回放仍归传输层窗口，不移入 Core。不得以无限增长的 Map 或 Run JSON 归档替代已删除的数据库。
 
 ## 源流窗口
 
@@ -71,6 +71,6 @@ F31 已确认并实施：按 UTC 小时命名，每序列保留最近 3 个实�
 
 ## 核对入口
 
-[Core 导出](../../packages/octo-runtime-core/src/index.ts)、[HostRunService](../../packages/octo-runtime-adapter-host/src/host-run-service.ts)、[进程清理清单](../../packages/octo-runtime-daemon/src/invocation-manifest.ts)、[无数据库回归](../../test/stateless-executor.test.js)。
+[Core 导出](../../packages/octo-runtime-executor-core/src/index.ts)、[HostRunService](../../packages/octo-runtime-adapter-host/src/host-run-service.ts)、[进程清理清单](../../packages/octo-runtime-daemon/src/invocation-manifest.ts)、[无数据库回归](../../test/stateless-executor.test.js)。
 
 SQLite 移除时的测试数量与真实执行仅保留为 [历史验证摘要](../journal/shared/provider-validation-history.md)，不作为当前工作树的新验收。

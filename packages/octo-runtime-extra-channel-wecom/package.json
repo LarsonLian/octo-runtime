@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
-    "@mininglamp-oss/octo-runtime-core": "workspace:*",
+    "@mininglamp-oss/octo-runtime-executor-core": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
     "ws": "^8.22.0",
     "@mininglamp-oss/octo-runtime-protocol": "workspace:*"

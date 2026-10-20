@@ -50,15 +50,15 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-zcode-gui':
         specifier: workspace:*
         version: link:packages/octo-runtime-adapter-zcode-gui
-      '@mininglamp-oss/octo-runtime-core':
-        specifier: workspace:*
-        version: link:packages/octo-runtime-core
       '@mininglamp-oss/octo-runtime-cross-service':
         specifier: workspace:*
         version: link:packages/octo-runtime-cross-service
       '@mininglamp-oss/octo-runtime-daemon':
         specifier: workspace:*
         version: link:packages/octo-runtime-daemon
+      '@mininglamp-oss/octo-runtime-executor-core':
+        specifier: workspace:*
+        version: link:packages/octo-runtime-executor-core
       '@mininglamp-oss/octo-runtime-extra-channel-gateway':
         specifier: workspace:*
         version: link:packages/octo-runtime-extra-channel-gateway
@@ -108,9 +108,6 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-openclaw':
         specifier: workspace:*
         version: link:../../packages/octo-runtime-adapter-openclaw
-      '@mininglamp-oss/octo-runtime-core':
-        specifier: workspace:*
-        version: link:../../packages/octo-runtime-core
       '@mininglamp-oss/octo-runtime-cross-service':
         specifier: workspace:*
         version: link:../../packages/octo-runtime-cross-service
@@ -120,6 +117,9 @@ importers:
       '@mininglamp-oss/octo-runtime-daemon-app':
         specifier: workspace:*
         version: link:../daemon
+      '@mininglamp-oss/octo-runtime-executor-core':
+        specifier: workspace:*
+        version: link:../../packages/octo-runtime-executor-core
       '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
         version: link:../../packages/octo-runtime-protocol
@@ -255,9 +255,9 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-zcode-gui':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-zcode-gui
-      '@mininglamp-oss/octo-runtime-core':
+      '@mininglamp-oss/octo-runtime-executor-core':
         specifier: workspace:*
-        version: link:../octo-runtime-core
+        version: link:../octo-runtime-executor-core
       '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
         version: link:../octo-runtime-protocol
@@ -329,12 +329,6 @@ importers:
         specifier: workspace:*
         version: link:../octo-runtime-protocol
 
-  packages/octo-runtime-core:
-    dependencies:
-      '@mininglamp-oss/octo-runtime-protocol':
-        specifier: workspace:*
-        version: link:../octo-runtime-protocol
-
   packages/octo-runtime-cross-service: {}
 
   packages/octo-runtime-daemon:
@@ -381,9 +375,9 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-zcode-gui':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-zcode-gui
-      '@mininglamp-oss/octo-runtime-core':
+      '@mininglamp-oss/octo-runtime-executor-core':
         specifier: workspace:*
-        version: link:../octo-runtime-core
+        version: link:../octo-runtime-executor-core
       '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
         version: link:../octo-runtime-protocol
@@ -394,6 +388,15 @@ importers:
         specifier: ^2.8.1
         version: 2.9.1
 
+  packages/octo-runtime-executor-core:
+    dependencies:
+      '@mininglamp-oss/octo-runtime-adapter-sdk':
+        specifier: workspace:*
+        version: link:../octo-runtime-adapter-sdk
+      '@mininglamp-oss/octo-runtime-protocol':
+        specifier: workspace:*
+        version: link:../octo-runtime-protocol
+
   packages/octo-runtime-extra-channel-gateway:
     dependencies:
       '@mininglamp-oss/octo-runtime-adapter-host':
@@ -402,12 +405,12 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-sdk':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-sdk
-      '@mininglamp-oss/octo-runtime-core':
-        specifier: workspace:*
-        version: link:../octo-runtime-core
       '@mininglamp-oss/octo-runtime-daemon':
         specifier: workspace:*
         version: link:../octo-runtime-daemon
+      '@mininglamp-oss/octo-runtime-executor-core':
+        specifier: workspace:*
+        version: link:../octo-runtime-executor-core
       '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
         version: link:../octo-runtime-protocol
@@ -427,12 +430,12 @@ importers:
       '@mininglamp-oss/octo-runtime-adapter-host':
         specifier: workspace:*
         version: link:../octo-runtime-adapter-host
-      '@mininglamp-oss/octo-runtime-core':
-        specifier: workspace:*
-        version: link:../octo-runtime-core
       '@mininglamp-oss/octo-runtime-daemon':
         specifier: workspace:*
         version: link:../octo-runtime-daemon
+      '@mininglamp-oss/octo-runtime-executor-core':
+        specifier: workspace:*
+        version: link:../octo-runtime-executor-core
       '@mininglamp-oss/octo-runtime-protocol':
         specifier: workspace:*
         version: link:../octo-runtime-protocol

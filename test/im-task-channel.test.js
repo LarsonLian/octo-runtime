@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { setImmediate as settle } from "node:timers/promises";
 import { ImRuntime } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import { GatewayTransport } from "../packages/octo-runtime-extra-channel-gateway/dist/transport/channel.js";
-import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
+import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-executor-core";
 import { failurePayload } from "@mininglamp-oss/octo-runtime-protocol";
 import { canonicalEvents, invocationInput } from "@mininglamp-oss/octo-runtime-protocol";
 import { spawnAdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";

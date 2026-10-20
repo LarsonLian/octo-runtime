@@ -1,4 +1,4 @@
-import { prepareInvokeInput } from "../packages/octo-runtime-core/dist/invoke-input.js";
+import { prepareInvokeInput } from "../packages/octo-runtime-executor-core/dist/invoke-input.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, readFile, rm, stat } from "node:fs/promises";

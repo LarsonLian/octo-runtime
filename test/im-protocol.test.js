@@ -1,4 +1,4 @@
-import { prepareInvokeInput } from "../packages/octo-runtime-core/dist/invoke-input.js";
+import { prepareInvokeInput } from "../packages/octo-runtime-executor-core/dist/invoke-input.js";
 import { imBotIdentity } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 // 协议与展示回归：验证 Context、公开事件投影、卡片合同、终态和投递幂等。
 // 服务端 0.4.1 schema fixture 防止合法 TypeScript 对象生成不合法卡片报文。

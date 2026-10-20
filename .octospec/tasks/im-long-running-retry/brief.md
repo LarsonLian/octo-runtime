@@ -26,7 +26,7 @@ timestamp: 2026-10-15T00:00:00Z
 | IM projector | notice 映射为“正在重试” | 更新进度卡，不执行重试 |
 | IM 执行循环 | run.failed 后结束本轮；流异常按结果未知处理 | 尚无业务自动重试编排 |
 
-源码依据：[IM 请求构造](../../../packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts)、[Bot 校验](../../../packages/octo-runtime-extra-channel-gateway/src/lifecycle/configuration.ts)、[协议时限](../../../packages/octo-runtime-protocol/src/context.ts)、[Host watchdog](../../../packages/octo-runtime-adapter-host/src/watchdog.ts)、[Codex 转换](../../../packages/octo-runtime-adapter-codex/src/app-server.ts)、[IM 执行](../../../packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts)。运行版本、Bot 配置和本轮 Context 决定实际值，源码默认值不能代替线上生效证据。
+源码依据：[IM 请求构造](../../../packages/octo-runtime-extra-channel-gateway/src/execution/dispatcher.ts)、[Bot 校验](../../../packages/octo-runtime-extra-channel-gateway/src/lifecycle/configuration.ts)、[协议时限](../../../packages/octo-runtime-protocol/src/context.ts)、[Host watchdog](../../../packages/octo-runtime-executor-core/src/watchdog.ts)、[Codex 转换](../../../packages/octo-runtime-adapter-codex/src/app-server.ts)、[IM 执行](../../../packages/octo-runtime-extra-channel-gateway/src/application/im-channel.ts)。运行版本、Bot 配置和本轮 Context 决定实际值，源码默认值不能代替线上生效证据。
 
 ## 时限模型
 

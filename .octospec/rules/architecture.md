@@ -17,6 +17,27 @@ supersedes: []
 
 # Octo Runtime 基础架构
 
+## ExecutorCore 抽取后的执行边界
+
+接入选型以稳定性为优先：推荐宿主通过 SDK 经 IPC 调用独立 Executor Kernel，尤其是
+Electron 等长期运行的宿主。允许宿主显式选择直接嵌入 Core，作为 SDK 简易接入方案；
+直接入口的存在不改变隔离执行的推荐优先级。新 Kernel 的实现状态按下方 #47 边界记录。
+
+#46 将唯一执行实现收敛到 `octo-runtime-executor-core` 的 `AgentExecutor`。主发行物公开
+`@mininglamp-oss/octo-runtime/executor-core`，宿主可显式注册 Adapter 并直接执行，不需要
+Kernel、IPC、Extra、云端账号或进程信号接线。默认生产链路仍通过原 adapter-host 独立
+worker 和 stdio NDJSON 调用同一实现；旧包的 AdapterHost 导出只是同一类的过渡别名。
+
+直接执行与宿主共享进程故障域，不能隔离 process.exit、OOM 或同步阻塞。Core 负责输入准备、
+本轮固定渲染、接纳身份、执行、交互路由、取消和正常终态；不加载业务、安装 Provider 或保存
+业务历史。实例所有者必须检查 shutdown 的 cleanup 结果，closed 不等于资源已回收或 Home
+锁可释放。失败或未确认的 iterator 清理持续报告 incomplete，不得用再次 return 的空操作
+宣称清理成功；后续 shutdown 只能继续观察尚未结束的清理。具体 API 和限制见 [Core](../../packages/octo-runtime-executor-core/README.md)。
+
+ExecutorKernel 的新包、IPC 命令及监督由 #47 实施，当前不能把旧传输壳称为已完成的新 Kernel。
+Extra 独立运行、CLI 重组与 SDK 模式选择分别属于后续 issue。LoopDaemon 是另一个项目的 Go
+二进制，不在 Core 实施范围；既有 daemon 包和 CLI 命令的历史名称在各自迁移完成前保留。
+
 ## CLI 使用与 SDK 原生接入
 
 **SDK 是 Octo Runtime 的主要接入方式。** 不同团队维护各自的 HostApp，经 SDK 装配并使用统一执行能力。用户明确 Buddy 就是由其他团队维护的宿主产品；其产品策略、认证、配置、凭据保护和应用生命周期由该团队负责，Runtime 团队维护通用 SDK、执行合同及其实现。
@@ -289,7 +310,7 @@ CLI 的第三方追加目标为：专属默认 JSON 集合，加 `<home>/extra_a
 
 CLI 与客户产品的 SDK 嵌入代码各自决定加载哪些 Adapter。CLI 维护自己的默认 JSON，SDK 在代码中直接导入；SDK 是产品内部嵌入实现，不独立发包，也不要求终端用户另行装配。框架支持的全部 Adapter 不等于产品本次加载集合，Host 只加载显式选择，不自行扩充。Provider 的安装仍由 HostApp 决定。
 
-2026-10-15 最新明确：CLI 的默认清单必须位于 `apps/cli/src/default_adapters.json`，作为 CLI 专属资源构建和交付，不能再放在仓库根目录伪装成全产品共享配置。SDK 的选择写在其独立 Host 入口的代码中，直接 `import` 所需 Adapter 并注册，不维护或复制 CLI 的 JSON。实例只在 Host 子进程内创建，不能把函数或实例跨进程序列化。宿主通过自己的 Host 入口决定集合，CLI 与 SDK 共享执行机制，不共享选择来源。
+CLI 的默认清单必须位于 `apps/cli/src/default_adapters.json`，作为 CLI 专属资源构建和交付，不能放在仓库根目录伪装成全产品共享配置。SDK 的选择写在其自身装配代码中，直接 `import` 所需 Adapter 并注册，不维护或复制 CLI 的 JSON。隔离模式的实例在 worker 子进程内创建；显式 direct 模式在宿主进程创建，不把函数或实例跨进程序列化。宿主决定集合，CLI 与 SDK 共享执行机制，不共享选择来源。
 
 通用执行层共享加载与校验机制，不共享产品默认全量清单。SDK 不得通过构建复制 CLI 清单而继承 CLI 的选择。生产依赖、依赖裁剪及最终包体由宿主 App 自行管理，Runtime 只要求选中模块可解析，不承诺产物只包含选中项，也不替客户调整依赖树。独立 Host 子进程保留。
 

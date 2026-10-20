@@ -18,7 +18,7 @@ import { WebSocketServer } from "ws";
 import { ImRuntime } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import { validateImBots } from "../packages/octo-runtime-extra-channel-gateway/dist/index.js";
 import { waitFor } from "./runtime-fixture.js";
-import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-core";
+import { prepareInvokeInput } from "@mininglamp-oss/octo-runtime-executor-core";
 import { imCardProfile } from "./fixtures/im-card-profile.js";
 const md5 = (s) => createHash("md5").update(s).digest("hex");
 const str = (s) => {

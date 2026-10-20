@@ -2,7 +2,7 @@ import { preparedFrames } from "./runtime-fixture.js";
 import { preparedTestInvoke } from "./runtime-fixture.js";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { InvocationWatchdog } from "../packages/octo-runtime-adapter-host/dist/watchdog.js";
+import { InvocationWatchdog } from "../packages/octo-runtime-executor-core/dist/watchdog.js";
 import { AdapterHost } from "@mininglamp-oss/octo-runtime-adapter-host";
 import { assertRuntimeLimits } from "@mininglamp-oss/octo-runtime-protocol";
 

@@ -563,9 +563,27 @@ export async function* runZcodeAppServerTurn({
   } finally {
     request.signal?.removeEventListener("abort", abort);
     if (abortTimer) clearTimeout(abortTimer);
-    await client.close();
-    await spec.cleanup?.();
+    await closeZcodeResources(client, spec);
   }
+}
+
+async function closeZcodeResources(
+  client: ZcodeAppServerClient,
+  spec: ZcodeAppServerCommand
+): Promise<void> {
+  const failures: unknown[] = [];
+  try {
+    await client.close();
+  } catch (error) {
+    failures.push(error);
+  }
+  try {
+    await spec.cleanup?.();
+  } catch (error) {
+    failures.push(error);
+  }
+  if (failures.length === 1) throw failures[0];
+  if (failures.length) throw new AggregateError(failures, "ZCode resource cleanup failed");
 }
 
 class ZcodeAppServerClient {

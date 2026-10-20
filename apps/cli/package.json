@@ -18,6 +18,6 @@
     "@mininglamp-oss/octo-runtime-daemon-app": "workspace:*",
     "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-host": "workspace:*",
-    "@mininglamp-oss/octo-runtime-core": "workspace:*"
+    "@mininglamp-oss/octo-runtime-executor-core": "workspace:*"
   }
 }

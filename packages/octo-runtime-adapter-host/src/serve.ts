@@ -1,4 +1,4 @@
-import { AdapterHost, type HostedAdapter } from "./index.js";
+import { AgentExecutor, type HostedAdapter } from "@mininglamp-oss/octo-runtime-executor-core";
 import { AdapterHostRpcServer } from "./rpc.js";
 import {
   RuntimeLogging,
@@ -23,7 +23,7 @@ export function serveAdapterHost(
   process.on("uncaughtExceptionMonitor", () =>
     logging.kernel("error", "host.uncaught", { code: "HOST_UNCAUGHT_EXCEPTION" })
   );
-  const host = new AdapterHost({ log: logging.kernel });
+  const host = new AgentExecutor({ log: logging.kernel });
   for (const adapter of adapters) {
     // 注册阶段保留协议校验和重复类型检查，失败时不建立就绪的 RPC 服务。
     host.register(adapter);
@@ -45,9 +45,15 @@ export function serveAdapterHost(
     if (stopping) return;
     stopping = true;
     void host.shutdown().then(
-      async () => {
+      async (result) => {
+        if (result.cleanup === "incomplete") {
+          logging.kernel("error", "host.cleanup_incomplete", {
+            code: "EXECUTOR_CLEANUP_INCOMPLETE",
+            unresolved_count: result.unresolvedInvocationIds.length
+          });
+        }
         await logging.close();
-        process.exit(0);
+        process.exit(result.cleanup === "complete" ? 0 : 1);
       },
       async () => {
         await logging.close();

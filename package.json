@@ -6,6 +6,10 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
+    "./executor-core": {
+      "types": "./dist/public/executor-core.d.ts",
+      "import": "./dist/public/executor-core.js"
+    },
     "./extras/channel-gateway/config-schema.json": "./packages/octo-runtime-extra-channel-gateway/config-schema.json",
     "./extras/channel-wecom/config-schema.json": "./packages/octo-runtime-extra-channel-wecom/config-schema.json",
     "./extras/webui/config-schema.json": "./packages/octo-runtime-extra-webui/config-schema.json",
@@ -76,7 +80,7 @@
     "@mininglamp-oss/octo-runtime-adapter-qoderclicn": "workspace:*",
     "@mininglamp-oss/octo-runtime-adapter-zcode-gui": "workspace:*",
     "@mininglamp-oss/octo-runtime-extra-channel-gateway": "workspace:*",
-    "@mininglamp-oss/octo-runtime-core": "workspace:*",
+    "@mininglamp-oss/octo-runtime-executor-core": "workspace:*",
     "@mininglamp-oss/octo-runtime-cross-service": "workspace:*",
     "@mininglamp-oss/octo-runtime-daemon": "workspace:*",
     "@mininglamp-oss/octo-runtime-protocol": "workspace:*",
